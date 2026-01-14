@@ -6,8 +6,15 @@ dist/
 build/
 *.tsbuildinfo
 
-# Content (private knowledge base - separate repo)
-content/
+# Private content repo (separate git repo)
+# Clone your agn repo here and it will be ignored
+# e.g., git clone git@github.com:user/personal-agn.git
+*-agn/
+
+# Prevent accidentally initializing KB in app repo root
+.algerknown/
+entries/
+summaries/
 
 # Environment
 .env

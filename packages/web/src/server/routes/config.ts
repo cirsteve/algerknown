@@ -5,13 +5,18 @@ import * as fs from 'fs';
 
 const router = Router();
 
+// Default ZKB path from environment, or current working directory
+const DEFAULT_ZKB_PATH = process.env.ZKB_PATH || process.cwd();
+
 const getZkbPath = (req: Request): string => {
   const zkbPath = req.headers['x-zkb-path'] as string;
-  if (!zkbPath) {
-    throw new Error('x-zkb-path header required');
-  }
-  return zkbPath;
+  return zkbPath || DEFAULT_ZKB_PATH;
 };
+
+// GET /api/config/zkb-path - Get the default ZKB path
+router.get('/zkb-path', (_req: Request, res: Response) => {
+  res.json({ path: DEFAULT_ZKB_PATH });
+});
 
 // GET /api/config - Get knowledge base configuration
 router.get('/', async (req: Request, res: Response) => {

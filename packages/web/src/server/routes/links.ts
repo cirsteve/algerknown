@@ -3,12 +3,12 @@ import * as core from '@algerknown/core';
 
 const router = Router();
 
+// Default ZKB path from environment, or current working directory
+const DEFAULT_ZKB_PATH = process.env.ZKB_PATH || process.cwd();
+
 const getZkbPath = (req: Request): string => {
   const zkbPath = req.headers['x-zkb-path'] as string;
-  if (!zkbPath) {
-    throw new Error('x-zkb-path header required');
-  }
-  return zkbPath;
+  return zkbPath || DEFAULT_ZKB_PATH;
 };
 
 // POST /api/links - Create a link between entries

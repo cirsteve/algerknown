@@ -15,14 +15,31 @@ Algerknown helps you build a structured, searchable knowledge base using plain Y
 ## Architecture
 
 ```
-algerknown/
+algerknown/                      # Public app repo
 ├── packages/
-│   ├── core/     # Shared library (file ops, validation, indexing)
-│   ├── cli/      # Command-line interface
-│   └── web/      # Express API + React frontend
+│   ├── core/
+│   │   ├── src/                 # Shared library (file ops, validation, indexing)
+│   │   └── schemas/             # JSON Schema definitions (source of truth)
+│   │       ├── summary.schema.json
+│   │       ├── entry.schema.json
+│   │       └── index.schema.json
+│   ├── cli/                     # Command-line interface
+│   └── web/                     # Express API + React frontend
+├── README.md
+├── LLM_INSTRUCTIONS.md          # Instructions for AI assistants
+└── LICENSE
 ```
 
-The app repo (this repository) is **public**. Your actual knowledge base content lives in a separate **private** repository.
+Your knowledge base content lives in a separate **private** repository (use `-agn` suffix):
+
+```
+content-agn/                     # Private content repo
+├── index.yaml                   # Entry index (tracked)
+├── .algerknown/
+│   └── schemas/                 # Copied from app during init (gitignored)
+├── entries/                     # Journal entries (tracked)
+└── summaries/                   # Topic summaries (tracked)
+```
 
 ## Installation
 
@@ -66,16 +83,14 @@ agn validate
 
 ### Web Interface
 
+From inside your knowledge base directory:
+
 ```bash
-cd packages/web
-npm run dev
+cd your-content-agn
+agn web
 ```
 
-Opens:
-- Frontend: http://localhost:5173
-- API: http://localhost:3001
-
-The web interface provides:
+Opens at http://localhost:3001 with:
 - Dashboard with stats
 - Entry list with type filtering
 - Entry detail view with links
@@ -84,11 +99,13 @@ The web interface provides:
 
 ### API
 
-All API requests require the `x-zkb-path` header pointing to your knowledge base:
+The API server runs on port 3001. If you need to point to a different knowledge base, use the `x-zkb-path` header:
 
 ```bash
-curl -H "x-zkb-path: /path/to/your/kb" http://localhost:3001/entries
+curl -H "x-zkb-path: /path/to/other/kb" http://localhost:3001/api/entries
 ```
+
+By default, the server uses the knowledge base directory it was started from (via `agn web`).
 
 ## Knowledge Base Structure
 
@@ -162,27 +179,30 @@ Link entries together with typed relationships:
 
 ## Private Content Repository
 
-Your knowledge base content (entries, summaries, schemas) should live in a separate private repository:
+Your knowledge base content (entries, summaries) lives in a separate private repository. Use the `-agn` suffix naming convention:
 
 ```bash
-# Create private repo
-mkdir my-kb && cd my-kb
-git init
+# Create a private repo named "content-agn" (or "personal-agn", "work-agn", etc.)
+# Then clone it into the algerknown directory:
+cd algerknown
+git clone git@github.com:your-username/content-agn.git
+cd content-agn
+
+# Initialize or update schemas
 agn init
 
-# Add to .gitignore in the content repo
-# (nothing — you want to version your knowledge)
-
-# Push to private remote
-git remote add origin git@github.com:your-username/my-kb-private.git
-git push -u origin main
+# Start the web UI
+agn web
 ```
 
-Point algerknown to your content:
-```bash
-agn --path /path/to/my-kb list
-# Or use the x-zkb-path header for API requests
+The `.gitignore` in the algerknown app ignores any `*-agn/` directories, keeping your private content separate.
+
+Your content repo's `.gitignore` should include:
 ```
+.algerknown/
+```
+
+This ignores the schemas (they're copied fresh on `agn init`).
 
 ## Development
 

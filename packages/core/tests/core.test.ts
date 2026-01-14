@@ -1,11 +1,11 @@
 /**
  * Core Library Tests
- * Tests using the zkb-populated sample data
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import * as os from 'node:os';
 import {
   findRoot,
   init,
@@ -25,18 +25,28 @@ import {
   type Entry,
 } from '../src/index.js';
 
-// Use zkb-populated as test fixture
-const FIXTURE_PATH = path.resolve(__dirname, '..', '..', '..', 'zkb-populated');
-const TEMP_TEST_PATH = path.resolve(__dirname, '..', '.test-kb');
+// Use system temp directory for isolated tests
+const TEMP_TEST_PATH = path.join(os.tmpdir(), 'algerknown-test-' + Date.now());
+const EMPTY_DIR_PATH = path.join(os.tmpdir(), 'algerknown-empty-' + Date.now());
 
 describe('Config Module', () => {
-  it('should find root from zkb-populated', () => {
-    // zkb-populated doesn't have .algerknown, so this should fail
-    expect(() => findRoot(FIXTURE_PATH)).toThrow();
+  beforeAll(() => {
+    // Create an empty directory that has no .algerknown anywhere in its path
+    fs.mkdirSync(EMPTY_DIR_PATH, { recursive: true });
+  });
+
+  afterAll(() => {
+    if (fs.existsSync(EMPTY_DIR_PATH)) {
+      fs.rmSync(EMPTY_DIR_PATH, { recursive: true });
+    }
+  });
+
+  it('should throw when not inside knowledge base', () => {
+    expect(() => findRoot(EMPTY_DIR_PATH)).toThrow(/Not inside an Algerknown knowledge base/);
   });
 
   it('should detect when not inside knowledge base', () => {
-    expect(isInsideKnowledgeBase(FIXTURE_PATH)).toBe(false);
+    expect(isInsideKnowledgeBase(EMPTY_DIR_PATH)).toBe(false);
   });
 
   describe('init', () => {
@@ -58,8 +68,8 @@ describe('Config Module', () => {
     it('should initialize a new knowledge base', () => {
       init(TEMP_TEST_PATH);
 
+      expect(fs.existsSync(path.join(TEMP_TEST_PATH, 'index.yaml'))).toBe(true);  // index.yaml at root
       expect(fs.existsSync(path.join(TEMP_TEST_PATH, '.algerknown'))).toBe(true);
-      expect(fs.existsSync(path.join(TEMP_TEST_PATH, '.algerknown', 'index.yaml'))).toBe(true);
       expect(fs.existsSync(path.join(TEMP_TEST_PATH, '.algerknown', 'schemas'))).toBe(true);
       expect(fs.existsSync(path.join(TEMP_TEST_PATH, 'summaries'))).toBe(true);
       expect(fs.existsSync(path.join(TEMP_TEST_PATH, 'entries'))).toBe(true);
@@ -70,8 +80,21 @@ describe('Config Module', () => {
       expect(root).toBe(TEMP_TEST_PATH);
     });
 
-    it('should throw if already initialized', () => {
-      expect(() => init(TEMP_TEST_PATH)).toThrow(/Already initialized/);
+    it('should update schemas when called on existing repo', () => {
+      // Delete schemas to simulate cloning a repo without them
+      const schemasPath = path.join(TEMP_TEST_PATH, '.algerknown', 'schemas');
+      if (fs.existsSync(schemasPath)) {
+        fs.rmSync(schemasPath, { recursive: true });
+      }
+      expect(fs.existsSync(schemasPath)).toBe(false);
+
+      // Re-run init - should restore schemas without error
+      init(TEMP_TEST_PATH);
+
+      expect(fs.existsSync(schemasPath)).toBe(true);
+      expect(fs.existsSync(path.join(schemasPath, 'summary.schema.json'))).toBe(true);
+      expect(fs.existsSync(path.join(schemasPath, 'entry.schema.json'))).toBe(true);
+      expect(fs.existsSync(path.join(schemasPath, 'index.schema.json'))).toBe(true);
     });
   });
 });

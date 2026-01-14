@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://algerknown.dev/schemas/index.schema.json",
+  "title": "Algerknown Index",
+  "description": "Index file mapping entry IDs to file paths",
+  "type": "object",
+  "required": ["version", "entries"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Schema version",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "entries": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/indexEntry"
+      }
+    }
+  },
+  "$defs": {
+    "indexEntry": {
+      "type": "object",
+      "required": ["path", "type"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Relative path to the entry file"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["summary", "entry"],
+          "description": "Entry type"
+        }
+      }
+    }
+  }
+}

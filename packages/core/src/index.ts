@@ -30,6 +30,7 @@ export { isSummary, isEntry } from './types.js';
 export {
   findRoot,
   init,
+  updateSchemas,
   isInsideKnowledgeBase,
   getAlgerknownDir,
   getIndexPath,

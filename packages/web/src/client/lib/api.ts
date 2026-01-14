@@ -1,11 +1,30 @@
-const DEFAULT_ZKB_PATH = '/home/steve/codes/personal/algerknown/zkb-populated';
+let cachedDefaultPath: string | null = null;
 
 export function setZkbPath(path: string) {
   localStorage.setItem('zkbPath', path);
 }
 
+export async function fetchDefaultZkbPath(): Promise<string> {
+  if (cachedDefaultPath) return cachedDefaultPath;
+  try {
+    const response = await fetch('/api/config/zkb-path');
+    const data = await response.json();
+    cachedDefaultPath = data.path;
+    return data.path;
+  } catch {
+    return process.cwd?.() || '.';
+  }
+}
+
 export function getZkbPath(): string {
-  return localStorage.getItem('zkbPath') || DEFAULT_ZKB_PATH;
+  return localStorage.getItem('zkbPath') || cachedDefaultPath || '';
+}
+
+export async function initZkbPath(): Promise<string> {
+  const stored = localStorage.getItem('zkbPath');
+  if (stored) return stored;
+  const defaultPath = await fetchDefaultZkbPath();
+  return defaultPath;
 }
 
 async function apiRequest<T>(
@@ -111,6 +130,7 @@ export const api = {
   // Config
   getConfig: () => apiRequest<{ version: string; entryCount: number }>('/config'),
   getSchemas: () => apiRequest<Array<{ file: string; title: string; $id: string }>>('/config/schemas'),
+  getDefaultZkbPath: () => fetch('/api/config/zkb-path').then(r => r.json()).then(d => d.path as string),
   validate: () => apiRequest<{ 
     valid: boolean; 
     totalChecked: number;
