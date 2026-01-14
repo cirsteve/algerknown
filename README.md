@@ -90,7 +90,7 @@ cd your-content-agn
 agn web
 ```
 
-Opens at http://localhost:3001 with:
+Opens at http://localhost:2393 with:
 - Dashboard with stats
 - Entry list with type filtering
 - Entry detail view with links
@@ -99,10 +99,10 @@ Opens at http://localhost:3001 with:
 
 ### API
 
-The API server runs on port 3001. If you need to point to a different knowledge base, use the `x-zkb-path` header:
+The API server runs on port 2393. If you need to point to a different knowledge base, use the `x-zkb-path` header:
 
 ```bash
-curl -H "x-zkb-path: /path/to/other/kb" http://localhost:3001/api/entries
+curl -H "x-zkb-path: /path/to/other/kb" http://localhost:2393/api/entries
 ```
 
 By default, the server uses the knowledge base directory it was started from (via `agn web`).

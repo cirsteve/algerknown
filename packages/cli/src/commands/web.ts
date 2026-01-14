@@ -14,7 +14,7 @@ const require = createRequire(import.meta.url);
 
 export const webCommand = new Command('web')
   .description('Start the web UI for the current knowledge base')
-  .option('-p, --port <port>', 'Server port', '3001')
+  .option('-p, --port <port>', 'Server port', '2393')
   .action((options) => {
     const cwd = process.cwd();
     
