@@ -206,13 +206,22 @@ This ignores the schemas (they're copied fresh on `agn init`).
 
 ## Development
 
+For working on the algerknown app itself:
+
 ```bash
 # Run tests
 npm test
 
-# Development mode
-npm run dev:cli   # CLI with watch
-npm run dev:web   # Web with hot reload
+# Development mode with hot reload
+npm run dev:web   # Web with hot reload (needs ZKB_PATH env var)
+
+# Build all packages
+npm run build
+```
+
+To develop with a content directory:
+```bash
+ZKB_PATH=/path/to/content-agn npm run dev:web
 ```
 
 ## License
