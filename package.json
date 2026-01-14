@@ -1,0 +1,24 @@
+{
+  "name": "algerknown",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A CLI + React frontend for managing a personal knowledge base with YAML files",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "dev:cli": "npm run dev --workspace=@algerknown/cli",
+    "dev:web": "npm run dev --workspace=@algerknown/web",
+    "test": "npm run test --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present"
+  },
+  "keywords": [
+    "knowledge-base",
+    "yaml",
+    "cli",
+    "personal-wiki"
+  ],
+  "author": "",
+  "license": "MIT"
+}
