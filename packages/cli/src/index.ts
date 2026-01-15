@@ -15,6 +15,7 @@ import { linkCommand, unlinkCommand } from './commands/link.js';
 import { searchCommand } from './commands/search.js';
 import { validateCommand } from './commands/validate.js';
 import { webCommand } from './commands/web.js';
+import { indexCommand } from './commands/index-cmd.js';
 
 const program = new Command();
 
@@ -35,5 +36,6 @@ program.addCommand(unlinkCommand);
 program.addCommand(searchCommand);
 program.addCommand(validateCommand);
 program.addCommand(webCommand);
+program.addCommand(indexCommand);
 
 program.parse();

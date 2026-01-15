@@ -79,6 +79,10 @@ agn search "query"
 
 # Validate all entries against schemas
 agn validate
+
+# Scan and add missing files to index.yaml
+agn index
+agn index --dry-run  # Preview without modifying
 ```
 
 ### Web Interface
