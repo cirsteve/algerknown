@@ -7,7 +7,7 @@ import { useNavigate } from 'react-router-dom';
 // It seems to have id, type, topic, etc.
 
 interface EntryFormProps {
-    initialData?: any; // strict typing would be better but fast iteration first
+    initialData?: any; // TODO: Replace 'any' with a stricter type once shared entry types are available to the frontend.
     onSubmit: (data: any) => Promise<void>;
     submitLabel: string;
 }
