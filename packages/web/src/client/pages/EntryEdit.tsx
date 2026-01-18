@@ -85,7 +85,7 @@ export function EntryEdit() {
         try {
             const updatedEntry = {
                 ...preview.frontmatter,
-                content: preview.content || preview.frontmatter.content,
+                content: preview.content ?? preview.frontmatter.content,
             };
             await api.updateEntry(id, updatedEntry);
             navigate(`/entries/${id}`);
