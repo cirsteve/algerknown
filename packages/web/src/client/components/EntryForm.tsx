@@ -112,10 +112,7 @@ export function EntryForm({ initialData, onSubmit, submitLabel }: EntryFormProps
                 />
             </div>
 
-            {/* Dynamic Fields based on Type? For now just generic Text Areas or JSON editors for flexibility?
-          Let's stick to simple textarea fields for specific standard properties like 'context', 'content', 'summary'.
-       */}
-
+            {/* Dynamic fields for standard properties such as 'context', 'content', and 'summary'. */}
             {formData.type === 'summary' ? (
                 <div>
                     <label className="block text-sm font-medium text-slate-400 mb-1">Summary Content</label>
