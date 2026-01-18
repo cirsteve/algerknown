@@ -17,7 +17,7 @@ export function EntryNew() {
 
     const parseContent = (text: string): { frontmatter: any; content: string } => {
         // Try markdown with YAML frontmatter first
-        const frontmatterMatch = text.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
+        const frontmatterMatch = text.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
         if (frontmatterMatch) {
             const frontmatter = yaml.parse(frontmatterMatch[1]);
             const content = frontmatterMatch[2].trim();
