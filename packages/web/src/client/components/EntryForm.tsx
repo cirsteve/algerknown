@@ -24,8 +24,8 @@ export function EntryForm({ initialData, onSubmit, submitLabel }: EntryFormProps
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    // If editing, obscure ID field? typically ID is immutable in file-based systems unless we move the file.
-    // The backend put supports ID in params, but body ID should match?
+    // When editing, the ID field is expected to remain immutable in file-based systems unless the underlying file is moved.
+    // TODO: Confirm and document the expected backend PUT behavior for IDs in path parameters versus the request body.
     const isEditing = !!initialData;
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
