@@ -179,8 +179,9 @@ Content here...`}
                             ? 'border-blue-500 bg-blue-500/10'
                             : 'border-slate-600 hover:border-slate-500'
                     }`}
+                    onDragEnter={(e) => { e.preventDefault(); setDragActive(true); }}
                     onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
-                    onDragLeave={() => setDragActive(false)}
+                    onDragLeave={(e) => { e.preventDefault(); setDragActive(false); }}
                     onDrop={handleDrop}
                 >
                     <input
