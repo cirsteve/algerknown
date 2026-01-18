@@ -20,9 +20,16 @@ export function EntryEdit() {
             try {
                 const data = await api.getEntry(id);
                 setEntry(data);
-                // Convert to YAML for editing
-                setYamlContent(yaml.stringify(data));
-                setPreview({ frontmatter: data, content: '' });
+                // Convert to YAML for editing, separating content if present
+                const { content, ...frontmatter } = data;
+                if (content && typeof content === 'string' && content.trim()) {
+                    // Format as markdown with frontmatter
+                    setYamlContent(`---\n${yaml.stringify(frontmatter)}---\n\n${content}`);
+                    setPreview({ frontmatter, content });
+                } else {
+                    setYamlContent(yaml.stringify(data));
+                    setPreview({ frontmatter: data, content: '' });
+                }
             } catch (err) {
                 setError((err as Error).message);
             } finally {
