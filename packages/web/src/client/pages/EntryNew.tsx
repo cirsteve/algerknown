@@ -100,7 +100,7 @@ export function EntryNew() {
         try {
             const entry = {
                 ...preview.frontmatter,
-                content: preview.content || preview.frontmatter.content,
+                content: preview.content ?? preview.frontmatter.content,
                 date: preview.frontmatter.date || new Date().toISOString().split('T')[0],
             };
 
