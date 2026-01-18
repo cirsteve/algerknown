@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, Link } from 'react-router-dom';
 import { api, IndexEntryRef } from '../lib/api';
 import { EntryCard } from '../components/EntryCard';
 
 export function EntryList() {
   const [searchParams] = useSearchParams();
   const typeFilter = searchParams.get('type') as 'summary' | 'entry' | null;
-  
+
   const [entries, setEntries] = useState<IndexEntryRef[]>([]);
   const [selectedType, setSelectedType] = useState<string>(typeFilter || '');
   const [loading, setLoading] = useState(true);
@@ -46,15 +46,23 @@ export function EntryList() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-slate-100">Entries</h1>
-        <select
-          value={selectedType}
-          onChange={(e) => setSelectedType(e.target.value)}
-          className="bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-slate-100"
-        >
-          <option value="">All Types</option>
-          <option value="summary">Summaries</option>
-          <option value="entry">Entries</option>
-        </select>
+        <div className="flex gap-4">
+          <Link
+            to="/entries/new"
+            className="bg-sky-600 hover:bg-sky-500 text-white px-4 py-2 rounded-lg text-sm font-medium"
+          >
+            + New Entry
+          </Link>
+          <select
+            value={selectedType}
+            onChange={(e) => setSelectedType(e.target.value)}
+            className="bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-slate-100"
+          >
+            <option value="">All Types</option>
+            <option value="summary">Summaries</option>
+            <option value="entry">Entries</option>
+          </select>
+        </div>
       </div>
 
       <div className="text-sm text-slate-400">

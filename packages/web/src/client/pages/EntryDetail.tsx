@@ -1,12 +1,16 @@
 import { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { api, Entry, Link as EntryLink } from '../lib/api';
 
 export function EntryDetail() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const [entry, setEntry] = useState<Entry | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     async function loadData() {
@@ -22,6 +26,18 @@ export function EntryDetail() {
     }
     loadData();
   }, [id]);
+
+  const handleDelete = async () => {
+    if (!id || deleteConfirmText !== id) return;
+    setDeleting(true);
+    try {
+      await api.deleteEntry(id);
+      navigate('/entries');
+    } catch (err) {
+      setError((err as Error).message);
+      setDeleting(false);
+    }
+  };
 
   if (loading) {
     return <div className="text-slate-400">Loading...</div>;
@@ -47,6 +63,44 @@ export function EntryDetail() {
 
   return (
     <div className="space-y-6">
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+          <div className="bg-slate-800 rounded-lg p-6 max-w-md w-full mx-4 space-y-4">
+            <h2 className="text-xl font-bold text-red-400">Delete Entry</h2>
+            <p className="text-slate-300">
+              This action cannot be undone. To confirm, type the entry ID:
+            </p>
+            <p className="font-mono text-sm bg-slate-900 p-2 rounded text-slate-100">
+              {id}
+            </p>
+            <input
+              type="text"
+              value={deleteConfirmText}
+              onChange={(e) => setDeleteConfirmText(e.target.value)}
+              placeholder="Type entry ID to confirm"
+              className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-slate-100 font-mono text-sm focus:border-red-500 focus:outline-none"
+              autoFocus
+            />
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => { setShowDeleteModal(false); setDeleteConfirmText(''); }}
+                className="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={deleteConfirmText !== id || deleting}
+                className="bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2 rounded-lg text-sm"
+              >
+                {deleting ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
@@ -57,29 +111,41 @@ export function EntryDetail() {
             {entry.topic || entry.id}
           </h1>
           <div className="flex items-center gap-4 mt-2 text-sm text-slate-400">
-            <span className={`entry-type-badge ${
-              entry.type === 'summary' 
-                ? 'bg-blue-500/20 text-blue-300'
-                : 'bg-green-500/20 text-green-300'
-            }`}>
+            <span className={`entry-type-badge ${entry.type === 'summary'
+              ? 'bg-blue-500/20 text-blue-300'
+              : 'bg-green-500/20 text-green-300'
+              }`}>
               {entry.type}
             </span>
             <span>{entry.id}</span>
-            <span className={`px-2 py-0.5 rounded text-xs ${
-              entry.status === 'active' ? 'bg-green-500/20 text-green-300' :
+            <span className={`px-2 py-0.5 rounded text-xs ${entry.status === 'active' ? 'bg-green-500/20 text-green-300' :
               entry.status === 'archived' ? 'bg-gray-500/20 text-gray-300' :
-              'bg-yellow-500/20 text-yellow-300'
-            }`}>
+                'bg-yellow-500/20 text-yellow-300'
+              }`}>
               {entry.status}
             </span>
           </div>
         </div>
-        <Link
-          to={`/graph/${id}`}
-          className="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg text-sm"
-        >
-          View Graph
-        </Link>
+        <div className="flex gap-2">
+          <Link
+            to={`/entries/${id}/edit`}
+            className="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg text-sm"
+          >
+            Edit
+          </Link>
+          <Link
+            to={`/graph/${id}`}
+            className="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg text-sm"
+          >
+            View Graph
+          </Link>
+          <button
+            onClick={() => setShowDeleteModal(true)}
+            className="bg-red-600/20 hover:bg-red-600/40 text-red-400 px-4 py-2 rounded-lg text-sm"
+          >
+            Delete
+          </button>
+        </div>
       </div>
 
       {/* Tags */}
