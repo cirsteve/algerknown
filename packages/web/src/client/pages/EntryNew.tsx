@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
-import * as yaml from 'yaml';
+import { parseContent } from '../lib/parseContent';
 
 type InputMode = 'upload' | 'paste';
 
@@ -14,28 +14,6 @@ export function EntryNew() {
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const [dragActive, setDragActive] = useState(false);
-
-    const parseContent = (text: string): { frontmatter: any; content: string } => {
-        // Try markdown with YAML frontmatter first
-        const frontmatterMatch = text.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
-        if (frontmatterMatch) {
-            const frontmatter = yaml.parse(frontmatterMatch[1]);
-            const content = frontmatterMatch[2].trim();
-            return { frontmatter, content };
-        }
-
-        // Try pure YAML (no frontmatter delimiters)
-        try {
-            const parsed = yaml.parse(text);
-            if (typeof parsed === 'object' && parsed !== null && parsed.id) {
-                return { frontmatter: parsed, content: '' };
-            }
-        } catch {
-            // Not valid YAML either
-        }
-
-        throw new Error('Invalid format: expected YAML or markdown with YAML frontmatter');
-    };
 
     const parseAndPreview = useCallback((text: string) => {
         setError(null);

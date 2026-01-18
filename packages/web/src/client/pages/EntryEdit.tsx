@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, Link } from 'react-router-dom';
 import { api } from '../lib/api';
+import { parseContent } from '../lib/parseContent';
 import * as yaml from 'yaml';
 
 export function EntryEdit() {
@@ -30,28 +31,6 @@ export function EntryEdit() {
         }
         load();
     }, [id]);
-
-    const parseContent = (text: string): { frontmatter: any; content: string } => {
-        // Try markdown with YAML frontmatter first
-        const frontmatterMatch = text.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
-        if (frontmatterMatch) {
-            const frontmatter = yaml.parse(frontmatterMatch[1]);
-            const content = frontmatterMatch[2].trim();
-            return { frontmatter, content };
-        }
-
-        // Try pure YAML
-        try {
-            const parsed = yaml.parse(text);
-            if (typeof parsed === 'object' && parsed !== null) {
-                return { frontmatter: parsed, content: '' };
-            }
-        } catch {
-            // Not valid YAML
-        }
-
-        throw new Error('Invalid format: expected YAML or markdown with YAML frontmatter');
-    };
 
     const handleYamlChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
         const text = e.target.value;
@@ -104,6 +83,19 @@ export function EntryEdit() {
     };
 
     if (loading) return <div className="text-slate-400">Loading...</div>;
+
+    if (error && !entry) {
+        return (
+            <div className="space-y-4">
+                <Link to="/entries" className="text-sky-400 hover:text-sky-300 text-sm">
+                    ← Back to entries
+                </Link>
+                <div className="bg-red-500/20 text-red-300 p-4 rounded-lg">
+                    Failed to load entry: {error}
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-6">
