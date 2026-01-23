@@ -1,5 +1,6 @@
 import { Link, useLocation } from 'react-router-dom';
 import { ReactNode } from 'react';
+import { RagStatus } from './RagStatus';
 
 interface LayoutProps {
   children: ReactNode;
@@ -13,6 +14,8 @@ export function Layout({ children }: LayoutProps) {
     { path: '/entries', label: 'Entries', icon: '📝' },
     { path: '/search', label: 'Search', icon: '🔍' },
     { path: '/graph', label: 'Graph', icon: '🕸️' },
+    { path: '/ask', label: 'Ask', icon: '💬' },
+    { path: '/ingest', label: 'Ingest', icon: '📥' },
   ];
 
   return (
@@ -44,8 +47,11 @@ export function Layout({ children }: LayoutProps) {
           </ul>
         </nav>
         
-        <div className="p-4 border-t border-slate-700 text-xs text-slate-500">
-          YAML-first knowledge base
+        <div className="p-4 border-t border-slate-700">
+          <RagStatus showSettings />
+          <div className="text-xs text-slate-500 mt-2">
+            YAML-first knowledge base
+          </div>
         </div>
       </aside>
 

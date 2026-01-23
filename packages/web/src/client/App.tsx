@@ -7,6 +7,8 @@ import { EntryNew } from './pages/EntryNew';
 import { EntryEdit } from './pages/EntryEdit';
 import { Search } from './pages/Search';
 import { GraphView } from './pages/GraphView';
+import { AskPage } from './pages/AskPage';
+import { IngestPage } from './pages/IngestPage';
 
 export default function App() {
   return (
@@ -20,6 +22,8 @@ export default function App() {
         <Route path="/search" element={<Search />} />
         <Route path="/graph" element={<GraphView />} />
         <Route path="/graph/:id" element={<GraphView />} />
+        <Route path="/ask" element={<AskPage />} />
+        <Route path="/ingest" element={<IngestPage />} />
       </Routes>
     </Layout>
   );

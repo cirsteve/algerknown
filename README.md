@@ -25,6 +25,7 @@ algerknown/                      # Public app repo
 │   │       └── index.schema.json
 │   ├── cli/                     # Command-line interface
 │   └── web/                     # Express API + React frontend
+├── rag-backend/                 # Python RAG backend (FastAPI + ChromaDB)
 ├── README.md
 ├── LLM_INSTRUCTIONS.md          # Instructions for AI assistants
 └── LICENSE
@@ -100,6 +101,53 @@ Opens at http://localhost:2393 with:
 - Entry detail view with links
 - Full-text search
 - Graph visualization
+- **Ask page** - Natural language queries with AI-synthesized answers
+- **Ingest page** - Add entries and auto-propose updates to related summaries
+
+## RAG Backend
+
+The RAG (Retrieval-Augmented Generation) backend provides AI-powered features:
+
+- **Query Mode**: Ask questions in natural language, get synthesized answers with citations
+- **Ingest Mode**: When adding new entries, automatically identify related summaries and propose updates
+
+### Setup
+
+```bash
+# From project root, copy and configure environment
+cp .env.example .env
+# Edit .env with your OPENAI_API_KEY and ANTHROPIC_API_KEY
+
+# Start with Docker (recommended)
+cd rag-backend
+docker-compose up --build
+```
+
+The RAG backend runs on http://localhost:8000. The web UI will automatically connect to it.
+
+<details>
+<summary>Alternative: Local Python setup (for development)</summary>
+
+```bash
+cd rag-backend
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+pip install -r requirements.txt
+python api.py
+```
+
+</details>
+
+### API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/query` | POST | Query knowledge base, get synthesized answer |
+| `/search` | POST | Vector search without LLM synthesis |
+| `/ingest` | POST | Ingest new entry, get update proposals |
+| `/approve` | POST | Apply approved proposal to YAML |
+| `/reindex` | POST | Re-index all content |
+| `/health` | GET | Health check and status |
 
 ### API
 
@@ -221,6 +269,10 @@ npm run dev:web   # Web with hot reload (needs ZKB_PATH env var)
 
 # Build all packages
 npm run build
+
+# Run RAG backend tests
+cd rag-backend
+pytest tests/ -v
 ```
 
 To develop with a content directory:
