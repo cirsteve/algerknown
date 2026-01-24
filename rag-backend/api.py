@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Optional
 from contextlib import asynccontextmanager
+from datetime import date
 import os
 import logging
 from pathlib import Path
@@ -289,7 +290,6 @@ def ingest(request: IngestRequest):
     }
     
     # Update last_ingested date in the entry file
-    from datetime import date
     raw_entry["last_ingested"] = date.today().isoformat()
     try:
         with open(request.file_path, 'w') as f:
