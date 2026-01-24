@@ -157,7 +157,6 @@ class TestIngestEndpoint:
         """Should return 404 for missing file."""
         from api import app
         
-        import tempfile
         with tempfile.TemporaryDirectory() as tmpdir:
             # Set CONTENT_DIR to tmpdir so path validation passes
             import api
