@@ -4,7 +4,6 @@ Tests for the vectorstore module.
 
 import pytest
 import tempfile
-from pathlib import Path
 
 from vectorstore import VectorStore
 
