@@ -22,7 +22,7 @@ load_dotenv()  # Local .env (overrides)
 from loader import load_content, flatten_document
 from vectorstore import VectorStore
 from synthesizer import synthesize_answer
-from proposer import generate_all_proposals, identify_related_summaries
+from proposer import generate_all_proposals
 from writer import apply_update, preview_update, validate_proposal
 
 # Configure logging
