@@ -5,7 +5,6 @@ Tests for the API endpoints.
 import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import patch, MagicMock
-import tempfile
 import os
 
 # Mock environment variables before importing api
