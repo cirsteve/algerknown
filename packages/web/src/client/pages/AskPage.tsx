@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { ragApi, QueryResponse, checkRagConnection } from '../lib/ragApi';
+import { ragApi, checkRagConnection } from '../lib/ragApi';
 
 interface Message {
   id: string;
