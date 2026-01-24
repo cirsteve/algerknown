@@ -3,7 +3,7 @@ Tests for the API endpoints.
 """
 
 from fastapi.testclient import TestClient
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 import os
 
 # Mock environment variables before importing api
