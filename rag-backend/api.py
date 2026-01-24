@@ -241,9 +241,18 @@ def ingest(request: IngestRequest):
     yaml_parser = YAML()
     
     # Security: ensure file is within content directory
+    # Use commonpath to prevent prefix bypass (e.g., content-agn vs content-agn-backup)
     abs_path = os.path.abspath(request.file_path)
     
-    if not abs_path.startswith(CONTENT_DIR):
+    try:
+        common = os.path.commonpath([CONTENT_DIR, abs_path])
+        if common != CONTENT_DIR:
+            raise HTTPException(
+                status_code=400,
+                detail=f"File must be within content directory: {CONTENT_DIR}"
+            )
+    except ValueError:
+        # commonpath raises ValueError if paths are on different drives (Windows)
         raise HTTPException(
             status_code=400,
             detail=f"File must be within content directory: {CONTENT_DIR}"
