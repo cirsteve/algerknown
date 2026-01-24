@@ -50,6 +50,7 @@ export interface RagSearchResponse {
 
 export interface IngestRequest {
   file_path: string;
+  max_proposals?: number;
 }
 
 export interface ProposalData {
@@ -104,6 +105,7 @@ export interface EntryListItem {
   topic: string;
   status: string;
   path: string;
+  last_ingested?: string;
 }
 
 export interface EntriesResponse {
@@ -170,10 +172,10 @@ export const ragApi = {
     }),
 
   // Ingest mode - add new entry and get proposals
-  ingest: (file_path: string) =>
+  ingest: (file_path: string, max_proposals?: number) =>
     ragRequest<IngestResponse>('/ingest', {
       method: 'POST',
-      body: JSON.stringify({ file_path }),
+      body: JSON.stringify({ file_path, max_proposals }),
     }),
 
   // Preview proposal changes

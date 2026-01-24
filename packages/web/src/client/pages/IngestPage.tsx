@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { ragApi, ProposalData, checkRagConnection, EntryListItem } from '../lib/ragApi';
 
 type IngestState = 'idle' | 'selecting' | 'ingesting' | 'reviewing' | 'applying';
 
 export function IngestPage() {
+  const location = useLocation();
   const [state, setState] = useState<IngestState>('idle');
   const [ragConnected, setRagConnected] = useState<boolean | null>(null);
   const [entries, setEntries] = useState<EntryListItem[]>([]);
@@ -15,10 +16,11 @@ export function IngestPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // Refetch entries every time page is loaded/navigated to
   useEffect(() => {
     checkConnection();
     loadEntries();
-  }, []);
+  }, [location.key]);
 
   const checkConnection = async () => {
     const result = await checkRagConnection();
@@ -107,6 +109,7 @@ export function IngestPage() {
     setApprovedProposals(new Set());
     setApplyResults([]);
     setError(null);
+    loadEntries(); // Reload entries to get updated last_ingested dates
   };
 
   const renderProposal = (proposal: ProposalData, index: number) => {
@@ -256,7 +259,7 @@ export function IngestPage() {
             <option value="">Select an entry...</option>
             {entries.map(entry => (
               <option key={entry.id} value={entry.id}>
-                {entry.id}
+                {entry.id}{entry.last_ingested ? ` (ingested: ${entry.last_ingested})` : ' (never ingested)'}
               </option>
             ))}
           </select>

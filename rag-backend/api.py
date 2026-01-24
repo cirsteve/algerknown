@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Optional
 from contextlib import asynccontextmanager
+from datetime import date
 import os
 import logging
 from pathlib import Path
@@ -207,6 +208,7 @@ def search(request: SearchRequest):
 
 class IngestRequest(BaseModel):
     file_path: str = Field(..., description="Path to new entry YAML file")
+    max_proposals: Optional[int] = Field(default=None, ge=1, le=20, description="Maximum proposals to generate (default: MAX_PROPOSALS env var or 5)")
 
 
 class ProposalData(BaseModel):
@@ -239,6 +241,8 @@ def ingest(request: IngestRequest):
     
     from ruamel.yaml import YAML
     yaml_parser = YAML()
+    yaml_parser.preserve_quotes = True
+    yaml_parser.indent(mapping=2, sequence=4, offset=2)
     
     # Security: ensure file is within content directory
     # Use commonpath to prevent prefix bypass (e.g., content-agn vs content-agn-backup)
@@ -285,13 +289,28 @@ def ingest(request: IngestRequest):
         "raw": raw_entry
     }
     
+    # Update last_ingested date in the entry file
+    last_ingested = date.today().isoformat()
+    raw_entry["last_ingested"] = last_ingested
+    try:
+        with open(request.file_path, 'w') as f:
+            yaml_parser.dump(raw_entry, f)
+        logger.info(f"Updated last_ingested for entry: {entry['id']}")
+        # Only update cache with last_ingested if file write succeeded
+        entry["raw"] = raw_entry
+        entry["metadata"]["last_ingested"] = last_ingested
+    except Exception as e:
+        # Revert last_ingested in raw_entry since file write failed
+        raw_entry.pop("last_ingested", None)
+        logger.warning(f"Failed to update last_ingested: {e}")
+    
     # Index the new entry
     vector_store.index_documents([entry])
     entries_cache[entry["id"]] = entry
     logger.info(f"Indexed new entry: {entry['id']}")
     
     # Generate proposals
-    proposals = generate_all_proposals(entry, vector_store)
+    proposals = generate_all_proposals(entry, vector_store, max_proposals=request.max_proposals)
     
     return IngestResponse(
         entry_id=entry["id"],
@@ -380,12 +399,14 @@ def list_entries():
     entries = []
     for doc_id, doc in entries_cache.items():
         metadata = doc.get("metadata", {})
+        raw = doc.get("raw", {})
         entries.append({
             "id": doc_id,
             "type": metadata.get("type", "entry"),
             "topic": metadata.get("topic", ""),
             "status": metadata.get("status", ""),
             "path": metadata.get("file_path", ""),
+            "last_ingested": raw.get("last_ingested") or metadata.get("last_ingested"),
         })
     
     # Sort by type (summaries first) then by id
