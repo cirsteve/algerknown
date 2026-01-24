@@ -1,14 +1,13 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { ragApi, ProposalData, checkRagConnection } from '../lib/ragApi';
-import { api } from '../lib/api';
+import { ragApi, ProposalData, checkRagConnection, EntryListItem } from '../lib/ragApi';
 
 type IngestState = 'idle' | 'selecting' | 'ingesting' | 'reviewing' | 'applying';
 
 export function IngestPage() {
   const [state, setState] = useState<IngestState>('idle');
   const [ragConnected, setRagConnected] = useState<boolean | null>(null);
-  const [entries, setEntries] = useState<Array<{ id: string; path: string; type: string }>>([]);
+  const [entries, setEntries] = useState<EntryListItem[]>([]);
   const [selectedEntry, setSelectedEntry] = useState<string | null>(null);
   const [proposals, setProposals] = useState<ProposalData[]>([]);
   const [approvedProposals, setApprovedProposals] = useState<Set<number>>(new Set());
@@ -28,9 +27,9 @@ export function IngestPage() {
 
   const loadEntries = async () => {
     try {
-      const data = await api.getEntries();
+      const response = await ragApi.listEntries();
       // Filter to only show entries (not summaries) for ingestion
-      setEntries(data.filter(e => e.type === 'entry'));
+      setEntries(response.entries.filter(e => e.type === 'entry'));
     } catch (err) {
       console.error('Failed to load entries:', err);
     }

@@ -103,6 +103,7 @@ export interface EntryListItem {
   type: string;
   topic: string;
   status: string;
+  path: string;
 }
 
 export interface EntriesResponse {

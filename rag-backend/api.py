@@ -33,7 +33,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Configuration
-CONTENT_DIR = os.getenv("CONTENT_DIR", "../content-agn")
+CONTENT_DIR = os.path.abspath(os.getenv("CONTENT_DIR", "../content-agn"))
 CHROMA_DB_DIR = os.getenv("CHROMA_DB_DIR", "./chroma_db")
 
 # Global state
@@ -79,8 +79,10 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
+        "http://localhost:2393",
         "http://localhost:3000",
         "http://localhost:5173",
+        "http://127.0.0.1:2393",
         "http://127.0.0.1:3000",
         "http://127.0.0.1:5173",
     ],
@@ -240,9 +242,8 @@ def ingest(request: IngestRequest):
     
     # Security: ensure file is within content directory
     abs_path = os.path.abspath(request.file_path)
-    abs_content = os.path.abspath(CONTENT_DIR)
     
-    if not abs_path.startswith(abs_content):
+    if not abs_path.startswith(CONTENT_DIR):
         raise HTTPException(
             status_code=400,
             detail=f"File must be within content directory: {CONTENT_DIR}"
@@ -375,6 +376,7 @@ def list_entries():
             "type": metadata.get("type", "entry"),
             "topic": metadata.get("topic", ""),
             "status": metadata.get("status", ""),
+            "path": metadata.get("file_path", ""),
         })
     
     # Sort by type (summaries first) then by id

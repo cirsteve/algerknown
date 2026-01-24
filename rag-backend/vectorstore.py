@@ -15,9 +15,19 @@ logger = logging.getLogger(__name__)
 
 def get_embedding_function():
     """
-    Get the embedding function based on available API keys.
-    Prefers OpenAI, falls back to local sentence-transformers.
+    Get the embedding function based on configuration and available API keys.
+    Set USE_LOCAL_EMBEDDINGS=true to force local sentence-transformers.
+    Otherwise prefers OpenAI, falls back to local if key is missing/invalid.
     """
+    # Check if local embeddings are explicitly requested
+    use_local = os.getenv("USE_LOCAL_EMBEDDINGS", "").lower() in ("true", "1", "yes")
+    
+    if use_local:
+        logger.info("Using local sentence-transformers embeddings (USE_LOCAL_EMBEDDINGS=true)")
+        return embedding_functions.SentenceTransformerEmbeddingFunction(
+            model_name="all-MiniLM-L6-v2"
+        )
+    
     openai_key = os.getenv("OPENAI_API_KEY", "")
     
     # Use OpenAI if we have a real API key (not placeholder or test key)
@@ -28,7 +38,7 @@ def get_embedding_function():
             model_name="text-embedding-3-small"
         )
     else:
-        logger.info("Using local sentence-transformers embeddings")
+        logger.info("Using local sentence-transformers embeddings (no valid OpenAI key)")
         return embedding_functions.SentenceTransformerEmbeddingFunction(
             model_name="all-MiniLM-L6-v2"
         )
