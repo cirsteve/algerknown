@@ -5,6 +5,7 @@ Tests for the API endpoints.
 from fastapi.testclient import TestClient
 from unittest.mock import patch
 import os
+import tempfile
 
 # Mock environment variables before importing api
 os.environ["CONTENT_DIR"] = "/tmp/test-content"
@@ -170,6 +171,113 @@ class TestIngestEndpoint:
                     assert response.status_code == 404
             finally:
                 api.CONTENT_DIR = old_content_dir
+    
+    @patch("api.generate_all_proposals")
+    @patch("api.vector_store")
+    def test_ingest_updates_last_ingested(self, mock_store, mock_proposals):
+        """Should update last_ingested field in entry file after ingestion."""
+        from api import app
+        from datetime import date
+        from ruamel.yaml import YAML
+        
+        yaml = YAML()
+        yaml.preserve_quotes = True
+        
+        mock_proposals.return_value = []
+        mock_store.index_documents = lambda x: None
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create test entry file
+            entries_dir = os.path.join(tmpdir, "entries")
+            os.makedirs(entries_dir)
+            entry_file = os.path.join(entries_dir, "test-entry.yaml")
+            
+            with open(entry_file, "w") as f:
+                yaml.dump({
+                    "id": "test-entry",
+                    "type": "entry",
+                    "topic": "Test Topic",
+                    "content": "Test content"
+                }, f)
+            
+            import api
+            old_content_dir = api.CONTENT_DIR
+            api.CONTENT_DIR = tmpdir
+            api.entries_cache.clear()
+            
+            try:
+                with TestClient(app) as client:
+                    response = client.post("/ingest", json={
+                        "file_path": entry_file
+                    })
+                    
+                    assert response.status_code == 200
+                    
+                    # Verify last_ingested was written to file
+                    with open(entry_file) as f:
+                        updated_entry = yaml.load(f)
+                    
+                    assert "last_ingested" in updated_entry
+                    assert updated_entry["last_ingested"] == date.today().isoformat()
+            finally:
+                api.CONTENT_DIR = old_content_dir
+
+
+class TestEntriesEndpoint:
+    """Tests for the /entries endpoint."""
+    
+    def test_entries_includes_last_ingested(self):
+        """Should include last_ingested in entries response."""
+        from api import app, entries_cache
+        
+        # Add test entry to cache with last_ingested
+        entries_cache["test-with-date"] = {
+            "id": "test-with-date",
+            "content": "Test content",
+            "metadata": {
+                "type": "entry",
+                "topic": "Test",
+                "status": "active",
+                "file_path": "/test/path.yaml",
+                "last_ingested": "2026-01-24"
+            },
+            "raw": {
+                "id": "test-with-date",
+                "last_ingested": "2026-01-24"
+            }
+        }
+        
+        entries_cache["test-without-date"] = {
+            "id": "test-without-date",
+            "content": "Test content",
+            "metadata": {
+                "type": "entry",
+                "topic": "Test",
+                "status": "active",
+                "file_path": "/test/path2.yaml"
+            },
+            "raw": {
+                "id": "test-without-date"
+            }
+        }
+        
+        try:
+            with TestClient(app) as client:
+                response = client.get("/entries")
+                
+                assert response.status_code == 200
+                data = response.json()
+                
+                entries_by_id = {e["id"]: e for e in data["entries"]}
+                
+                # Entry with last_ingested should have the date
+                assert entries_by_id["test-with-date"]["last_ingested"] == "2026-01-24"
+                
+                # Entry without last_ingested should have None
+                assert entries_by_id["test-without-date"]["last_ingested"] is None
+        finally:
+            entries_cache.pop("test-with-date", None)
+            entries_cache.pop("test-without-date", None)
 
 
 class TestApproveEndpoint:

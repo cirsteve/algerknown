@@ -207,6 +207,7 @@ def search(request: SearchRequest):
 
 class IngestRequest(BaseModel):
     file_path: str = Field(..., description="Path to new entry YAML file")
+    max_proposals: Optional[int] = Field(default=None, ge=1, le=20, description="Maximum proposals to generate (default: MAX_PROPOSALS env var or 5)")
 
 
 class ProposalData(BaseModel):
@@ -285,13 +286,27 @@ def ingest(request: IngestRequest):
         "raw": raw_entry
     }
     
+    # Update last_ingested date in the entry file
+    from datetime import date
+    raw_entry["last_ingested"] = date.today().isoformat()
+    try:
+        with open(request.file_path, 'w') as f:
+            yaml_parser.dump(raw_entry, f)
+        logger.info(f"Updated last_ingested for entry: {entry['id']}")
+    except Exception as e:
+        logger.warning(f"Failed to update last_ingested: {e}")
+    
+    # Update entry with new last_ingested
+    entry["raw"] = raw_entry
+    entry["metadata"]["last_ingested"] = raw_entry["last_ingested"]
+    
     # Index the new entry
     vector_store.index_documents([entry])
     entries_cache[entry["id"]] = entry
     logger.info(f"Indexed new entry: {entry['id']}")
     
     # Generate proposals
-    proposals = generate_all_proposals(entry, vector_store)
+    proposals = generate_all_proposals(entry, vector_store, max_proposals=request.max_proposals)
     
     return IngestResponse(
         entry_id=entry["id"],
@@ -380,12 +395,14 @@ def list_entries():
     entries = []
     for doc_id, doc in entries_cache.items():
         metadata = doc.get("metadata", {})
+        raw = doc.get("raw", {})
         entries.append({
             "id": doc_id,
             "type": metadata.get("type", "entry"),
             "topic": metadata.get("topic", ""),
             "status": metadata.get("status", ""),
             "path": metadata.get("file_path", ""),
+            "last_ingested": raw.get("last_ingested") or metadata.get("last_ingested"),
         })
     
     # Sort by type (summaries first) then by id

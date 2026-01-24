@@ -14,6 +14,9 @@ from vectorstore import VectorStore
 
 logger = logging.getLogger(__name__)
 
+# Default max proposals (configurable via MAX_PROPOSALS env var)
+DEFAULT_MAX_PROPOSALS = int(os.getenv("MAX_PROPOSALS", "5"))
+
 
 def get_anthropic_client() -> anthropic.Anthropic:
     """Get configured Anthropic client."""
@@ -26,7 +29,7 @@ def get_anthropic_client() -> anthropic.Anthropic:
 def identify_related_summaries(
     entry: dict,
     vector_store: VectorStore,
-    max_results: int = 5
+    max_results: int | None = None
 ) -> list[dict]:
     """
     Find summaries that should be updated based on a new entry.
@@ -39,11 +42,14 @@ def identify_related_summaries(
     Args:
         entry: The new entry document
         vector_store: VectorStore instance
-        max_results: Maximum number of summaries to return
+        max_results: Maximum number of summaries to return (defaults to MAX_PROPOSALS env var or 5)
         
     Returns:
         List of related summaries sorted by relevance score
     """
+    if max_results is None:
+        max_results = DEFAULT_MAX_PROPOSALS
+    
     all_summaries = vector_store.get_summaries()
     
     if not all_summaries:
@@ -224,7 +230,8 @@ Return only valid JSON, no markdown code blocks:"""
 def generate_all_proposals(
     entry: dict,
     vector_store: VectorStore,
-    model: str = "claude-sonnet-4-20250514"
+    model: str = "claude-sonnet-4-20250514",
+    max_proposals: int | None = None
 ) -> list[dict]:
     """
     Generate update proposals for all related summaries.
@@ -233,11 +240,12 @@ def generate_all_proposals(
         entry: The new entry document
         vector_store: VectorStore instance
         model: Claude model to use
+        max_proposals: Maximum number of proposals to generate (defaults to MAX_PROPOSALS env var or 5)
         
     Returns:
         List of proposal dicts (excluding no_updates)
     """
-    related = identify_related_summaries(entry, vector_store)
+    related = identify_related_summaries(entry, vector_store, max_results=max_proposals)
     
     if not related:
         logger.info(f"No related summaries found for {entry['id']}")
