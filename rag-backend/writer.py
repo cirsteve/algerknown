@@ -43,6 +43,13 @@ def validate_proposal(proposal: dict) -> tuple[bool, Optional[str]]:
                 return False, f"new_learnings[{i}] is not a dict"
             if "insight" not in learning:
                 return False, f"new_learnings[{i}] missing 'insight' field"
+            # Validate relevance field if present
+            if "relevance" in learning:
+                if not isinstance(learning["relevance"], list):
+                    return False, f"new_learnings[{i}] 'relevance' must be a list"
+                for j, rel in enumerate(learning["relevance"]):
+                    if not isinstance(rel, str):
+                        return False, f"new_learnings[{i}]['relevance'][{j}] must be a string"
     
     # Validate new_decisions structure
     new_decisions = proposal.get("new_decisions")

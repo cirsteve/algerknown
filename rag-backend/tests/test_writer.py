@@ -114,6 +114,53 @@ class TestValidateProposal:
         assert is_valid is False
         assert "insight" in error
     
+    def test_invalid_learning_relevance_not_list(self):
+        """Should reject learning where relevance is not a list."""
+        proposal = {
+            "target_summary_id": "test-summary",
+            "source_entry_id": "test-entry",
+            "new_learnings": [
+                {"insight": "Some insight", "relevance": "not-a-list"}
+            ]
+        }
+        
+        is_valid, error = validate_proposal(proposal)
+        
+        assert is_valid is False
+        assert "relevance" in error
+        assert "must be a list" in error
+    
+    def test_invalid_learning_relevance_non_string_items(self):
+        """Should reject learning where relevance contains non-strings."""
+        proposal = {
+            "target_summary_id": "test-summary",
+            "source_entry_id": "test-entry",
+            "new_learnings": [
+                {"insight": "Some insight", "relevance": ["valid-id", 123]}
+            ]
+        }
+        
+        is_valid, error = validate_proposal(proposal)
+        
+        assert is_valid is False
+        assert "relevance" in error
+        assert "must be a string" in error
+    
+    def test_valid_learning_with_relevance_list(self):
+        """Should accept learning with valid relevance list."""
+        proposal = {
+            "target_summary_id": "test-summary",
+            "source_entry_id": "test-entry",
+            "new_learnings": [
+                {"insight": "Some insight", "relevance": ["entry-1", "entry-2"]}
+            ]
+        }
+        
+        is_valid, error = validate_proposal(proposal)
+        
+        assert is_valid is True
+        assert error is None
+    
     def test_invalid_decision_structure(self):
         """Should reject decision without decision field."""
         proposal = {
