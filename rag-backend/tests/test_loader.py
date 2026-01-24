@@ -5,7 +5,6 @@ Tests for the loader module.
 import pytest
 from pathlib import Path
 import tempfile
-import os
 
 from loader import (
     load_content,
