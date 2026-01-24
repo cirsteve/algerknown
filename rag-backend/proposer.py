@@ -9,7 +9,6 @@ import anthropic
 import json
 import os
 import logging
-from typing import Optional
 
 from vectorstore import VectorStore
 
