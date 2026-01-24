@@ -46,3 +46,12 @@ coverage/
 .cache/
 tmp/
 temp/
+# RAG Backend - Python
+rag-backend/venv/
+rag-backend/__pycache__/
+rag-backend/**/__pycache__/
+rag-backend/*.pyc
+rag-backend/.pytest_cache/
+rag-backend/chroma_db/
+*.egg-info/
+.eggs/
