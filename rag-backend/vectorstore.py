@@ -44,18 +44,64 @@ def get_embedding_function():
         )
 
 
+class MockEmbeddingFunction:
+    """
+    Mock embedding function for testing.
+    Returns deterministic fixed-dimension vectors without network calls.
+    Compatible with ChromaDB's embedding function interface.
+    """
+    
+    # Tell ChromaDB this is not a legacy embedding function
+    is_legacy = False
+    
+    def name(self) -> str:
+        """Return the name of the embedding function (required by ChromaDB)."""
+        return "mock_embedding"
+    
+    def __call__(self, input: list[str]) -> list[list[float]]:
+        """Generate deterministic mock embeddings."""
+        return self._embed(input)
+    
+    def embed_documents(self, input: list[str]) -> list[list[float]]:
+        """Embed a list of documents (alias for __call__)."""
+        return self._embed(input)
+    
+    def embed_query(self, input: list[str]) -> list[list[float]]:
+        """Embed a query (alias for __call__)."""
+        return self._embed(input)
+    
+    def _embed(self, input: list[str]) -> list[list[float]]:
+        """Generate deterministic mock embeddings."""
+        # Return 384-dimensional vectors (same as all-MiniLM-L6-v2)
+        # Use hash of text to make embeddings deterministic but unique
+        embeddings = []
+        for text in input:
+            # Create a simple deterministic embedding based on text hash
+            hash_val = hash(text)
+            # Generate 384 values between -1 and 1
+            embedding = [
+                ((hash_val * (i + 1)) % 1000) / 500.0 - 1.0
+                for i in range(384)
+            ]
+            embeddings.append(embedding)
+        return embeddings
+
+
 class VectorStore:
     """ChromaDB vector store for algerknown documents."""
     
-    def __init__(self, persist_dir: str = "./chroma_db"):
+    def __init__(self, persist_dir: str = "./chroma_db", embedding_function=None):
         """
         Initialize the vector store.
         
         Args:
             persist_dir: Directory to persist ChromaDB data
+            embedding_function: Optional custom embedding function.
+                               If None, uses get_embedding_function().
+                               Pass MockEmbeddingFunction() for tests.
         """
         self.client = chromadb.PersistentClient(path=persist_dir)
-        self.embedding_fn = get_embedding_function()
+        self.embedding_fn = embedding_function if embedding_function is not None else get_embedding_function()
         self.collection = self.client.get_or_create_collection(
             name="algerknown",
             embedding_function=self.embedding_fn

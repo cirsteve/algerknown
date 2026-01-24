@@ -115,7 +115,21 @@ Once running, visit:
 - Swagger UI: http://localhost:8000/docs
 - ReDoc: http://localhost:8000/redoc
 
+## Embedding Options
+
+The vector store supports multiple embedding backends:
+
+| Mode | When Used | Model |
+|------|-----------|-------|
+| OpenAI | `OPENAI_API_KEY` is valid | `text-embedding-3-small` |
+| Local | No valid OpenAI key | `all-MiniLM-L6-v2` (sentence-transformers) |
+| Mock | Testing only | Deterministic 384-dim vectors |
+
+The Docker image pre-downloads the sentence-transformers model to avoid cold-start delays.
+
 ## Testing
+
+Tests use `MockEmbeddingFunction` for deterministic behavior without network calls:
 
 ```bash
 # Run tests
@@ -124,6 +138,9 @@ pytest tests/ -v
 # Run with coverage
 pytest tests/ -v --cov=. --cov-report=term-missing
 ```
+
+The mock embedding function returns consistent 384-dimensional vectors based on input hashing,
+allowing reliable testing without downloading models or making API calls.
 
 ## Architecture
 
