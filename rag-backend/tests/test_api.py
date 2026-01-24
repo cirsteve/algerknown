@@ -6,7 +6,6 @@ import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import patch, MagicMock
 import tempfile
-from pathlib import Path
 import os
 
 # Mock environment variables before importing api
