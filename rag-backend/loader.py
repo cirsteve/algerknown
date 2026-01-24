@@ -110,7 +110,6 @@ def flatten_document(entry: dict) -> str:
         Flattened text string
     """
     parts = []
-    doc_type = entry.get("type", "entry")
     
     # Common fields
     if entry.get("topic"):
