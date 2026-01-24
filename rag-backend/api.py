@@ -290,17 +290,19 @@ def ingest(request: IngestRequest):
     }
     
     # Update last_ingested date in the entry file
-    raw_entry["last_ingested"] = date.today().isoformat()
+    last_ingested = date.today().isoformat()
+    raw_entry["last_ingested"] = last_ingested
     try:
         with open(request.file_path, 'w') as f:
             yaml_parser.dump(raw_entry, f)
         logger.info(f"Updated last_ingested for entry: {entry['id']}")
+        # Only update cache with last_ingested if file write succeeded
+        entry["raw"] = raw_entry
+        entry["metadata"]["last_ingested"] = last_ingested
     except Exception as e:
+        # Revert last_ingested in raw_entry since file write failed
+        raw_entry.pop("last_ingested", None)
         logger.warning(f"Failed to update last_ingested: {e}")
-    
-    # Update entry with new last_ingested
-    entry["raw"] = raw_entry
-    entry["metadata"]["last_ingested"] = raw_entry["last_ingested"]
     
     # Index the new entry
     vector_store.index_documents([entry])
