@@ -240,6 +240,8 @@ def ingest(request: IngestRequest):
     
     from ruamel.yaml import YAML
     yaml_parser = YAML()
+    yaml_parser.preserve_quotes = True
+    yaml_parser.indent(mapping=2, sequence=4, offset=2)
     
     # Security: ensure file is within content directory
     # Use commonpath to prevent prefix bypass (e.g., content-agn vs content-agn-backup)
