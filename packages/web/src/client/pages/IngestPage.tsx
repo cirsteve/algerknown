@@ -225,7 +225,11 @@ export function IngestPage() {
             }`}
           />
           <span className="text-sm text-slate-400">
-            {ragConnected ? 'RAG Online' : 'RAG Offline'}
+            {ragConnected === null
+              ? 'Checking RAG...'
+              : ragConnected
+              ? 'RAG Online'
+              : 'RAG Offline'}
           </span>
         </div>
       </div>
