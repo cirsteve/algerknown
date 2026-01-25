@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { ragApi, ChangelogEntry, ChangelogStats, checkRagConnection } from '../lib/ragApi';
 
 type ChangeTypeFilter = 'all' | 'added' | 'modified' | 'removed';
@@ -20,40 +20,40 @@ export function ChangesPage() {
     checkConnection();
   }, []);
 
-  useEffect(() => {
+  const loadData = useCallback(async () => {
     if (!ragConnected) return;
 
-    const loadData = async () => {
-      setLoading(true);
-      setError(null);
+    setLoading(true);
+    setError(null);
 
-      try {
-        // Load changes with filters
-        const changelogResponse = await ragApi.getChangelog({
-          limit,
-          source: sourceFilter || undefined,
-          change_type: typeFilter !== 'all' ? typeFilter : undefined,
-        });
-        setChanges(changelogResponse.changes);
+    try {
+      // Load changes with filters
+      const changelogResponse = await ragApi.getChangelog({
+        limit,
+        source: sourceFilter || undefined,
+        change_type: typeFilter !== 'all' ? typeFilter : undefined,
+      });
+      setChanges(changelogResponse.changes);
 
-        // Load stats and sources (only on initial load)
-        if (!stats) {
-          const [statsResponse, sourcesResponse] = await Promise.all([
-            ragApi.getChangelogStats(),
-            ragApi.getChangelogSources(),
-          ]);
-          setStats(statsResponse);
-          setSources(sourcesResponse.sources);
-        }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load changelog');
-      } finally {
-        setLoading(false);
+      // Load stats and sources (only on initial load)
+      if (!stats) {
+        const [statsResponse, sourcesResponse] = await Promise.all([
+          ragApi.getChangelogStats(),
+          ragApi.getChangelogSources(),
+        ]);
+        setStats(statsResponse);
+        setSources(sourcesResponse.sources);
       }
-    };
-
-    loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load changelog');
+    } finally {
+      setLoading(false);
+    }
   }, [ragConnected, typeFilter, sourceFilter, limit, stats]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const checkConnection = async () => {
     const result = await checkRagConnection();
