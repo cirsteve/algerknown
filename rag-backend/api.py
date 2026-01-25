@@ -377,7 +377,7 @@ def approve(request: ApproveRequest):
         if changelog and version_cache:
             file_path = result.get("file", "")
             if file_path:
-                diff_and_log(file_path, updated[0], changelog, version_cache)
+                diff_and_log(file_path, updated[0]["raw"], changelog, version_cache)
     
     return ApproveResponse(
         success=True,
@@ -471,13 +471,6 @@ def list_summaries():
 
 
 # ============ Changelog Endpoints ============
-
-class ChangelogQuery(BaseModel):
-    limit: int = Field(default=50, ge=1, le=500)
-    source: Optional[str] = Field(default=None, description="Filter by source file")
-    path: Optional[str] = Field(default=None, description="Filter by node path prefix")
-    change_type: Optional[str] = Field(default=None, description="Filter by type: added, modified, removed")
-
 
 @app.get("/changelog")
 def get_changelog(
