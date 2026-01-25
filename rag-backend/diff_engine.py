@@ -375,8 +375,9 @@ class VersionCache:
     
     def _cache_path(self, source_file: str) -> Path:
         """Get cache path for a source file."""
-        # Use the source filename as the cache key
-        safe_name = Path(source_file).name
+        # Use a sanitized version of the path as the cache key to avoid collisions
+        # e.g., "entries/zkSNARKs.yaml" -> ".entries__zkSNARKs.yaml.prev"
+        safe_name = source_file.replace("/", "__").replace("\\", "__")
         return self.cache_dir / f".{safe_name}.prev"
     
     def get_previous(self, source_file: str) -> dict | None:
