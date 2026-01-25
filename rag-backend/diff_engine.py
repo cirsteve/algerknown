@@ -76,7 +76,7 @@ def get_node_value(data: Any, path: str) -> tuple[bool, Any]:
     
     for part in parts:
         if isinstance(part, int):
-            if not isinstance(current, list) or part >= len(current):
+            if not isinstance(current, list) or part < 0 or part >= len(current):
                 return False, None
             current = current[part]
         else:
