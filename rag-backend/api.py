@@ -490,24 +490,29 @@ def get_changelog(
     Get recent changes from the changelog.
     
     Supports filtering by source file, node path, and change type.
+    Multiple filters can be combined (AND logic).
     """
     if not changelog:
         raise HTTPException(status_code=503, detail="Changelog not initialized")
     
-    # Apply filters
-    if source:
-        changes = changelog.read_by_source(source)
-    elif path:
-        changes = changelog.read_by_path(path)
-    elif change_type:
-        if change_type not in ("added", "modified", "removed"):
-            raise HTTPException(status_code=400, detail="Invalid change_type. Must be: added, modified, removed")
-        changes = changelog.read_by_type(change_type)
-    else:
-        changes = changelog.read_recent(limit)
+    # Validate change_type if provided
+    if change_type and change_type not in ("added", "modified", "removed"):
+        raise HTTPException(status_code=400, detail="Invalid change_type. Must be: added, modified, removed")
     
-    # Apply limit after filtering
-    changes = changes[:limit]
+    # Start with all changes and apply filters cumulatively
+    changes = changelog.read_all()
+    
+    if source:
+        changes = [c for c in changes if c.get("source") == source]
+    
+    if path:
+        changes = [c for c in changes if c.get("path", "").startswith(path)]
+    
+    if change_type:
+        changes = [c for c in changes if c.get("type") == change_type]
+    
+    # Sort by timestamp descending (most recent first) and apply limit
+    changes = sorted(changes, key=lambda c: c.get("timestamp", ""), reverse=True)[:limit]
     
     return {
         "changes": changes,
