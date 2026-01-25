@@ -579,22 +579,21 @@ def get_entry_history(entry_id: str, limit: int = 50):
     if not changelog:
         raise HTTPException(status_code=503, detail="Changelog not initialized")
     
-    # Find the entry's source file
+    # Find the entry's source file from cache (preferred - exact match)
     if entry_id in entries_cache:
         source_file = entries_cache[entry_id].get("metadata", {}).get("file_path", "")
         if source_file:
             changes = changelog.read_by_source(source_file)
             return {"entry_id": entry_id, "changes": changes[:limit], "total": len(changes)}
     
-    # Fallback: search by exact entry id match in source filename or path
-    # Use exact matching to avoid false positives from partial ID matches
+    # Fallback: search by exact entry id match in source filename
+    # Only matches files named exactly "{entry_id}.yaml" to avoid false positives
+    # (e.g., "snark" won't match "zkSNARKs.yaml")
     all_changes = changelog.read_all()
     changes = [
         c for c in all_changes 
         if c.get("source", "").endswith(f"/{entry_id}.yaml") 
         or c.get("source", "") == f"{entry_id}.yaml"
-        or c.get("path", "").startswith(f"{entry_id}.")
-        or c.get("path", "") == entry_id
     ]
     changes.sort(key=lambda c: c.get("timestamp", ""), reverse=True)
     
