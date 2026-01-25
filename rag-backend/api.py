@@ -44,7 +44,7 @@ entries_cache: dict = {}
 changelog: Optional[Changelog] = None
 version_cache: Optional[VersionCache] = None
 _stats_cache: Optional[dict] = None
-_stats_cache_timestamp: Optional[str] = None
+_stats_cache_file_info: Optional[tuple[float, int]] = None  # (mtime, size)
 
 
 @asynccontextmanager
@@ -533,19 +533,24 @@ def get_changelog_sources():
 @app.get("/changelog/stats")
 def get_changelog_stats():
     """Get changelog statistics."""
-    global _stats_cache, _stats_cache_timestamp
+    global _stats_cache, _stats_cache_file_info
     
     if not changelog:
         raise HTTPException(status_code=503, detail="Changelog not initialized")
     
-    all_changes = changelog.read_all()
+    # Use file mtime and size for efficient cache validation (no file reads needed)
+    try:
+        stat = changelog.path.stat()
+        current_file_info = (stat.st_mtime, stat.st_size)
+    except FileNotFoundError:
+        current_file_info = (0.0, 0)
     
-    # Check if we can use cached stats (cache is valid if last_change matches)
-    timestamps = [c.get("timestamp", "") for c in all_changes if c.get("timestamp")]
-    current_last_change = max(timestamps) if timestamps else None
-    
-    if _stats_cache and _stats_cache_timestamp == current_last_change:
+    # Return cached stats if file hasn't changed
+    if _stats_cache and _stats_cache_file_info == current_file_info:
         return _stats_cache
+    
+    # Cache miss - read and compute stats
+    all_changes = changelog.read_all()
     
     # Count by type
     by_type = {"added": 0, "modified": 0, "removed": 0}
@@ -554,13 +559,16 @@ def get_changelog_stats():
         if change_type in by_type:
             by_type[change_type] += 1
     
+    # Get date range
+    timestamps = [c.get("timestamp", "") for c in all_changes if c.get("timestamp")]
+    
     _stats_cache = {
         "total_changes": len(all_changes),
         "by_type": by_type,
         "first_change": min(timestamps) if timestamps else None,
-        "last_change": current_last_change,
+        "last_change": max(timestamps) if timestamps else None,
     }
-    _stats_cache_timestamp = current_last_change
+    _stats_cache_file_info = current_file_info
     
     return _stats_cache
 
