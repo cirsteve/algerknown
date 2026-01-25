@@ -4,7 +4,6 @@ Tests for the diff engine module.
 
 import pytest
 import tempfile
-import json
 from pathlib import Path
 from datetime import datetime
 
