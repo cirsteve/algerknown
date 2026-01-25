@@ -504,12 +504,13 @@ def get_changelog(
     if change_type:
         changes = [c for c in changes if c.get("type") == change_type]
     
-    # Sort by timestamp descending (most recent first) and apply limit
-    changes = sorted(changes, key=lambda c: c.get("timestamp", ""), reverse=True)[:limit]
+    # Sort by timestamp descending (most recent first)
+    changes = sorted(changes, key=lambda c: c.get("timestamp", ""), reverse=True)
+    total_matching = len(changes)
     
     return {
-        "changes": changes,
-        "total": len(changes)
+        "changes": changes[:limit],
+        "total": total_matching
     }
 
 
@@ -561,15 +562,15 @@ def get_entry_history(entry_id: str, limit: int = 50):
     if entry_id in entries_cache:
         source_file = entries_cache[entry_id].get("metadata", {}).get("file_path", "")
         if source_file:
-            changes = changelog.read_by_source(source_file)[:limit]
-            return {"entry_id": entry_id, "changes": changes, "total": len(changes)}
+            changes = changelog.read_by_source(source_file)
+            return {"entry_id": entry_id, "changes": changes[:limit], "total": len(changes)}
     
     # Fallback: search by entry id in paths
     all_changes = changelog.read_all()
     changes = [c for c in all_changes if entry_id in c.get("source", "") or entry_id in c.get("path", "")]
     changes.sort(key=lambda c: c.get("timestamp", ""), reverse=True)
     
-    return {"entry_id": entry_id, "changes": changes[:limit], "total": len(changes[:limit])}
+    return {"entry_id": entry_id, "changes": changes[:limit], "total": len(changes)}
 
 
 # ============ Main ============
