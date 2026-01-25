@@ -111,7 +111,12 @@ def _parse_path(path: str) -> list[str | int]:
                     f"Invalid path {path!r}: missing closing ']' for index starting at position {i}"
                 )
             index_str = path[i + 1 : j]
-            parts.append(int(index_str))
+            try:
+                parts.append(int(index_str))
+            except ValueError:
+                raise ValueError(
+                    f"Invalid path {path!r}: array index '{index_str}' is not a valid integer"
+                )
             i = j
         else:
             current += char
