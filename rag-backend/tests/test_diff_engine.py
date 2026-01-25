@@ -224,6 +224,17 @@ class TestComputeDiff:
         assert changes[0]["old"] == "b"
         assert changes[0]["new"] == "B"
 
+    def test_array_item_removed(self):
+        """Should detect removed array item."""
+        old_data = {"tags": ["a", "b", "c"]}
+        new_data = {"tags": ["a", "b"]}
+        changes = compute_diff(old_data, new_data, "test.yaml")
+        
+        assert len(changes) == 1
+        assert changes[0]["path"] == "tags[2]"
+        assert changes[0]["type"] == ChangeType.REMOVED
+        assert changes[0]["old"] == "c"
+
     def test_timestamp_format(self):
         """Should include ISO timestamp in changes."""
         timestamp = datetime(2024, 1, 15, 12, 0, 0)
@@ -336,6 +347,79 @@ class TestChangelog:
             
             filtered = changelog.read_by_type("added")
             assert len(filtered) == 2
+
+    def test_read_by_date_range_both_bounds(self):
+        """Should filter changes within start and end date range."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "changelog.jsonl"
+            changelog = Changelog(path)
+            
+            changelog.append([
+                {"timestamp": "2024-01-10T12:00:00Z", "path": "early"},
+                {"timestamp": "2024-01-15T12:00:00Z", "path": "middle"},
+                {"timestamp": "2024-01-20T12:00:00Z", "path": "late"},
+            ])
+            
+            start = datetime(2024, 1, 14, 0, 0, 0)
+            end = datetime(2024, 1, 16, 0, 0, 0)
+            filtered = changelog.read_by_date_range(start, end)
+            
+            assert len(filtered) == 1
+            assert filtered[0]["path"] == "middle"
+
+    def test_read_by_date_range_start_only(self):
+        """Should filter changes from start date onwards when end is None."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "changelog.jsonl"
+            changelog = Changelog(path)
+            
+            changelog.append([
+                {"timestamp": "2024-01-10T12:00:00Z", "path": "early"},
+                {"timestamp": "2024-01-15T12:00:00Z", "path": "middle"},
+                {"timestamp": "2024-01-20T12:00:00Z", "path": "late"},
+            ])
+            
+            start = datetime(2024, 1, 14, 0, 0, 0)
+            filtered = changelog.read_by_date_range(start=start, end=None)
+            
+            assert len(filtered) == 2
+            assert filtered[0]["path"] == "late"  # newest first
+            assert filtered[1]["path"] == "middle"
+
+    def test_read_by_date_range_end_only(self):
+        """Should filter changes up to end date when start is None."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "changelog.jsonl"
+            changelog = Changelog(path)
+            
+            changelog.append([
+                {"timestamp": "2024-01-10T12:00:00Z", "path": "early"},
+                {"timestamp": "2024-01-15T12:00:00Z", "path": "middle"},
+                {"timestamp": "2024-01-20T12:00:00Z", "path": "late"},
+            ])
+            
+            end = datetime(2024, 1, 16, 0, 0, 0)
+            filtered = changelog.read_by_date_range(start=None, end=end)
+            
+            assert len(filtered) == 2
+            assert filtered[0]["path"] == "middle"  # newest first
+            assert filtered[1]["path"] == "early"
+
+    def test_read_by_date_range_no_bounds(self):
+        """Should return all changes when both start and end are None."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "changelog.jsonl"
+            changelog = Changelog(path)
+            
+            changelog.append([
+                {"timestamp": "2024-01-10T12:00:00Z", "path": "early"},
+                {"timestamp": "2024-01-15T12:00:00Z", "path": "middle"},
+                {"timestamp": "2024-01-20T12:00:00Z", "path": "late"},
+            ])
+            
+            filtered = changelog.read_by_date_range(start=None, end=None)
+            
+            assert len(filtered) == 3
 
 
 class TestVersionCache:
