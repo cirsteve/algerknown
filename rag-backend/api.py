@@ -43,6 +43,8 @@ vector_store: Optional[VectorStore] = None
 entries_cache: dict = {}
 changelog: Optional[Changelog] = None
 version_cache: Optional[VersionCache] = None
+_stats_cache: Optional[dict] = None
+_stats_cache_timestamp: Optional[str] = None
 
 
 @asynccontextmanager
@@ -492,6 +494,8 @@ def get_changelog(
     if change_type and change_type not in ("added", "modified", "removed"):
         raise HTTPException(status_code=400, detail="Invalid change_type. Must be: added, modified, removed")
     
+    # TODO: For large changelogs, consider implementing pagination at the Changelog
+    # class level with indexed queries, or migrate to a database backend.
     # Start with all changes and apply filters cumulatively
     changes = changelog.read_all()
     
@@ -529,10 +533,19 @@ def get_changelog_sources():
 @app.get("/changelog/stats")
 def get_changelog_stats():
     """Get changelog statistics."""
+    global _stats_cache, _stats_cache_timestamp
+    
     if not changelog:
         raise HTTPException(status_code=503, detail="Changelog not initialized")
     
     all_changes = changelog.read_all()
+    
+    # Check if we can use cached stats (cache is valid if last_change matches)
+    timestamps = [c.get("timestamp", "") for c in all_changes if c.get("timestamp")]
+    current_last_change = max(timestamps) if timestamps else None
+    
+    if _stats_cache and _stats_cache_timestamp == current_last_change:
+        return _stats_cache
     
     # Count by type
     by_type = {"added": 0, "modified": 0, "removed": 0}
@@ -541,15 +554,15 @@ def get_changelog_stats():
         if change_type in by_type:
             by_type[change_type] += 1
     
-    # Get date range
-    timestamps = [c.get("timestamp", "") for c in all_changes if c.get("timestamp")]
-    
-    return {
+    _stats_cache = {
         "total_changes": len(all_changes),
         "by_type": by_type,
         "first_change": min(timestamps) if timestamps else None,
-        "last_change": max(timestamps) if timestamps else None,
+        "last_change": current_last_change,
     }
+    _stats_cache_timestamp = current_last_change
+    
+    return _stats_cache
 
 
 @app.get("/entries/{entry_id}/history")
@@ -565,9 +578,16 @@ def get_entry_history(entry_id: str, limit: int = 50):
             changes = changelog.read_by_source(source_file)
             return {"entry_id": entry_id, "changes": changes[:limit], "total": len(changes)}
     
-    # Fallback: search by entry id in paths
+    # Fallback: search by exact entry id match in source filename or path
+    # Use exact matching to avoid false positives from partial ID matches
     all_changes = changelog.read_all()
-    changes = [c for c in all_changes if entry_id in c.get("source", "") or entry_id in c.get("path", "")]
+    changes = [
+        c for c in all_changes 
+        if c.get("source", "").endswith(f"/{entry_id}.yaml") 
+        or c.get("source", "") == f"{entry_id}.yaml"
+        or c.get("path", "").startswith(f"{entry_id}.")
+        or c.get("path", "") == entry_id
+    ]
     changes.sort(key=lambda c: c.get("timestamp", ""), reverse=True)
     
     return {"entry_id": entry_id, "changes": changes[:limit], "total": len(changes)}
