@@ -345,7 +345,7 @@ class TestVersionCache:
         """Should create cache directory if not exists."""
         with tempfile.TemporaryDirectory() as tmpdir:
             cache_dir = Path(tmpdir) / "cache"
-            cache = VersionCache(cache_dir)
+            VersionCache(cache_dir)
             
             assert cache_dir.exists()
 
