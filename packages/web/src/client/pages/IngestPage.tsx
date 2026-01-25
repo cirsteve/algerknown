@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { ragApi, ProposalData, checkRagConnection, EntryListItem } from '../lib/ragApi';
+import { ragApi, ProposalData, checkRagConnection } from '../lib/ragApi';
+import { api, IndexEntryRef } from '../lib/api';
 
 type IngestState = 'idle' | 'selecting' | 'ingesting' | 'reviewing' | 'applying';
 
@@ -8,10 +9,12 @@ export function IngestPage() {
   const location = useLocation();
   const [state, setState] = useState<IngestState>('idle');
   const [ragConnected, setRagConnected] = useState<boolean | null>(null);
-  const [entries, setEntries] = useState<EntryListItem[]>([]);
+  const [entries, setEntries] = useState<IndexEntryRef[]>([]);
   const [selectedEntry, setSelectedEntry] = useState<string | null>(null);
   const [proposals, setProposals] = useState<ProposalData[]>([]);
   const [approvedProposals, setApprovedProposals] = useState<Set<number>>(new Set());
+  const [editingProposal, setEditingProposal] = useState<number | null>(null);
+  const [editedProposals, setEditedProposals] = useState<Map<number, ProposalData>>(new Map());
   const [applyResults, setApplyResults] = useState<Array<{ proposal: ProposalData; success: boolean; error?: string }>>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -29,9 +32,10 @@ export function IngestPage() {
 
   const loadEntries = async () => {
     try {
-      const response = await ragApi.listEntries();
+      // Get entries from web backend (reads from disk, always up-to-date)
+      const allEntries = await api.getEntries();
       // Filter to only show entries (not summaries) for ingestion
-      setEntries(response.entries.filter(e => e.type === 'entry'));
+      setEntries(allEntries.filter(e => e.type === 'entry'));
     } catch (err) {
       console.error('Failed to load entries:', err);
     }
@@ -71,6 +75,42 @@ export function IngestPage() {
     });
   };
 
+  const getProposalData = (index: number): ProposalData => {
+    return editedProposals.get(index) ?? proposals[index];
+  };
+
+  const startEditing = (index: number) => {
+    // Initialize edited version from current state with deep clone to avoid mutating original
+    if (!editedProposals.has(index)) {
+      setEditedProposals(prev => new Map(prev).set(index, JSON.parse(JSON.stringify(proposals[index]))));
+    }
+    setEditingProposal(index);
+  };
+
+  const cancelEditing = () => {
+    // Remove any unsaved edits when canceling
+    if (editingProposal !== null) {
+      setEditedProposals(prev => {
+        const next = new Map(prev);
+        next.delete(editingProposal);
+        return next;
+      });
+    }
+    setEditingProposal(null);
+  };
+
+  const saveEditing = () => {
+    setEditingProposal(null);
+  };
+
+  const updateProposal = (index: number, updates: Partial<ProposalData>) => {
+    setEditedProposals(prev => {
+      // Deep clone to avoid mutating original proposal data
+      const current = prev.get(index) ?? JSON.parse(JSON.stringify(proposals[index]));
+      return new Map(prev).set(index, { ...current, ...updates });
+    });
+  };
+
   const handleApplyApproved = async () => {
     if (approvedProposals.size === 0) return;
 
@@ -81,7 +121,7 @@ export function IngestPage() {
     const results: typeof applyResults = [];
 
     for (const index of Array.from(approvedProposals).sort()) {
-      const proposal = proposals[index];
+      const proposal = getProposalData(index);
       try {
         const response = await ragApi.approve(proposal);
         results.push({
@@ -107,13 +147,74 @@ export function IngestPage() {
     setSelectedEntry(null);
     setProposals([]);
     setApprovedProposals(new Set());
+    setEditingProposal(null);
+    setEditedProposals(new Map());
     setApplyResults([]);
     setError(null);
     loadEntries(); // Reload entries to get updated last_ingested dates
   };
 
-  const renderProposal = (proposal: ProposalData, index: number) => {
+  const renderProposal = (_proposal: ProposalData, index: number) => {
     const isApproved = approvedProposals.has(index);
+    const isEditing = editingProposal === index;
+    const displayData = getProposalData(index);
+    const hasEdits = editedProposals.has(index);
+
+    const updateLearning = (learningIndex: number, field: 'insight' | 'context', value: string) => {
+      const current = getProposalData(index);
+      const learnings = [...(current.new_learnings || [])];
+      learnings[learningIndex] = { ...learnings[learningIndex], [field]: value };
+      updateProposal(index, { new_learnings: learnings });
+    };
+
+    const removeLearning = (learningIndex: number) => {
+      const current = getProposalData(index);
+      const learnings = [...(current.new_learnings || [])];
+      learnings.splice(learningIndex, 1);
+      updateProposal(index, { new_learnings: learnings });
+    };
+
+    const updateDecision = (decisionIndex: number, field: 'decision' | 'rationale', value: string) => {
+      const current = getProposalData(index);
+      const decisions = [...(current.new_decisions || [])];
+      decisions[decisionIndex] = { ...decisions[decisionIndex], [field]: value };
+      updateProposal(index, { new_decisions: decisions });
+    };
+
+    const removeDecision = (decisionIndex: number) => {
+      const current = getProposalData(index);
+      const decisions = [...(current.new_decisions || [])];
+      decisions.splice(decisionIndex, 1);
+      updateProposal(index, { new_decisions: decisions });
+    };
+
+    const updateQuestion = (questionIndex: number, value: string) => {
+      const current = getProposalData(index);
+      const questions = [...(current.new_open_questions || [])];
+      questions[questionIndex] = value;
+      updateProposal(index, { new_open_questions: questions });
+    };
+
+    const removeQuestion = (questionIndex: number) => {
+      const current = getProposalData(index);
+      const questions = [...(current.new_open_questions || [])];
+      questions.splice(questionIndex, 1);
+      updateProposal(index, { new_open_questions: questions });
+    };
+
+    const updateLink = (linkIndex: number, field: 'id' | 'relationship', value: string) => {
+      const current = getProposalData(index);
+      const links = [...(current.new_links || [])];
+      links[linkIndex] = { ...links[linkIndex], [field]: value };
+      updateProposal(index, { new_links: links });
+    };
+
+    const removeLink = (linkIndex: number) => {
+      const current = getProposalData(index);
+      const links = [...(current.new_links || [])];
+      links.splice(linkIndex, 1);
+      updateProposal(index, { new_links: links });
+    };
 
     return (
       <div
@@ -121,84 +222,212 @@ export function IngestPage() {
         className={`border rounded-lg p-4 transition-colors ${
           isApproved
             ? 'border-green-500 bg-green-900/20'
+            : isEditing
+            ? 'border-sky-500 bg-sky-900/20'
             : 'border-slate-600 bg-slate-800'
         }`}
       >
         <div className="flex items-start justify-between mb-3">
           <div>
             <Link
-              to={`/entries/${proposal.target_summary_id}`}
+              to={`/entries/${displayData.target_summary_id}`}
               className="font-medium text-sky-400 hover:text-sky-300"
             >
-              {proposal.target_summary_id}
+              {displayData.target_summary_id}
             </Link>
             <div className="text-xs text-slate-500 mt-1">
-              Match: {((proposal.match_score || 0) * 100).toFixed(0)}% ({proposal.match_reason})
+              Match: {((displayData.match_score || 0) * 100).toFixed(0)}% ({displayData.match_reason})
+              {hasEdits && <span className="ml-2 text-amber-400">(edited)</span>}
             </div>
           </div>
-          <button
-            onClick={() => toggleProposal(index)}
-            className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
-              isApproved
-                ? 'bg-green-600 hover:bg-green-500 text-white'
-                : 'bg-slate-700 hover:bg-slate-600 text-slate-300'
-            }`}
-          >
-            {isApproved ? '✓ Approved' : 'Approve'}
-          </button>
+          <div className="flex gap-2">
+            {isEditing ? (
+              <>
+                <button
+                  onClick={saveEditing}
+                  className="px-3 py-1 rounded text-sm font-medium bg-sky-600 hover:bg-sky-500 text-white"
+                >
+                  Done
+                </button>
+                <button
+                  onClick={cancelEditing}
+                  className="px-3 py-1 rounded text-sm font-medium bg-slate-700 hover:bg-slate-600 text-slate-300"
+                >
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={() => startEditing(index)}
+                  className="px-3 py-1 rounded text-sm font-medium bg-slate-700 hover:bg-slate-600 text-slate-300"
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={() => toggleProposal(index)}
+                  className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+                    isApproved
+                      ? 'bg-green-600 hover:bg-green-500 text-white'
+                      : 'bg-slate-700 hover:bg-slate-600 text-slate-300'
+                  }`}
+                >
+                  {isApproved ? '✓ Approved' : 'Approve'}
+                </button>
+              </>
+            )}
+          </div>
         </div>
 
-        {proposal.rationale && (
+        {displayData.rationale && (
           <p className="text-sm text-slate-400 mb-3 italic">
-            "{proposal.rationale}"
+            "{displayData.rationale}"
           </p>
         )}
 
-        {proposal.new_learnings && proposal.new_learnings.length > 0 && (
+        {displayData.new_learnings && displayData.new_learnings.length > 0 && (
           <div className="mb-3">
             <div className="text-xs font-medium text-slate-500 mb-1">New Learnings:</div>
-            {proposal.new_learnings.map((learning, i) => (
+            {displayData.new_learnings.map((learning, i) => (
               <div key={i} className="text-sm bg-slate-900/50 rounded p-2 mb-1">
-                <div className="text-slate-200">{learning.insight}</div>
-                {learning.context && (
-                  <div className="text-xs text-slate-500 mt-1">{learning.context}</div>
+                {isEditing ? (
+                  <div className="space-y-2">
+                    <div className="flex gap-2">
+                      <textarea
+                        value={learning.insight}
+                        onChange={e => updateLearning(i, 'insight', e.target.value)}
+                        className="flex-1 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-slate-200 text-sm"
+                        rows={2}
+                      />
+                      <button
+                        onClick={() => removeLearning(i)}
+                        className="text-red-400 hover:text-red-300 text-sm px-2"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <input
+                      type="text"
+                      value={learning.context || ''}
+                      onChange={e => updateLearning(i, 'context', e.target.value)}
+                      placeholder="Context (optional)"
+                      className="w-full bg-slate-800 border border-slate-600 rounded px-2 py-1 text-slate-400 text-xs"
+                    />
+                  </div>
+                ) : (
+                  <>
+                    <div className="text-slate-200">{learning.insight}</div>
+                    {learning.context && (
+                      <div className="text-xs text-slate-500 mt-1">{learning.context}</div>
+                    )}
+                  </>
                 )}
               </div>
             ))}
           </div>
         )}
 
-        {proposal.new_decisions && proposal.new_decisions.length > 0 && (
+        {displayData.new_decisions && displayData.new_decisions.length > 0 && (
           <div className="mb-3">
             <div className="text-xs font-medium text-slate-500 mb-1">New Decisions:</div>
-            {proposal.new_decisions.map((decision, i) => (
+            {displayData.new_decisions.map((decision, i) => (
               <div key={i} className="text-sm bg-slate-900/50 rounded p-2 mb-1">
-                <div className="text-slate-200">{decision.decision}</div>
-                {decision.rationale && (
-                  <div className="text-xs text-slate-500 mt-1">{decision.rationale}</div>
+                {isEditing ? (
+                  <div className="space-y-2">
+                    <div className="flex gap-2">
+                      <textarea
+                        value={decision.decision}
+                        onChange={e => updateDecision(i, 'decision', e.target.value)}
+                        className="flex-1 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-slate-200 text-sm"
+                        rows={2}
+                      />
+                      <button
+                        onClick={() => removeDecision(i)}
+                        className="text-red-400 hover:text-red-300 text-sm px-2"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <input
+                      type="text"
+                      value={decision.rationale || ''}
+                      onChange={e => updateDecision(i, 'rationale', e.target.value)}
+                      placeholder="Rationale (optional)"
+                      className="w-full bg-slate-800 border border-slate-600 rounded px-2 py-1 text-slate-400 text-xs"
+                    />
+                  </div>
+                ) : (
+                  <>
+                    <div className="text-slate-200">{decision.decision}</div>
+                    {decision.rationale && (
+                      <div className="text-xs text-slate-500 mt-1">{decision.rationale}</div>
+                    )}
+                  </>
                 )}
               </div>
             ))}
           </div>
         )}
 
-        {proposal.new_open_questions && proposal.new_open_questions.length > 0 && (
+        {displayData.new_open_questions && displayData.new_open_questions.length > 0 && (
           <div className="mb-3">
             <div className="text-xs font-medium text-slate-500 mb-1">New Questions:</div>
-            {proposal.new_open_questions.map((q, i) => (
+            {displayData.new_open_questions.map((q, i) => (
               <div key={i} className="text-sm text-slate-300 bg-slate-900/50 rounded p-2 mb-1">
-                {q}
+                {isEditing ? (
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={q}
+                      onChange={e => updateQuestion(i, e.target.value)}
+                      className="flex-1 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-slate-200 text-sm"
+                    />
+                    <button
+                      onClick={() => removeQuestion(i)}
+                      className="text-red-400 hover:text-red-300 text-sm px-2"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ) : (
+                  q
+                )}
               </div>
             ))}
           </div>
         )}
 
-        {proposal.new_links && proposal.new_links.length > 0 && (
+        {displayData.new_links && displayData.new_links.length > 0 && (
           <div>
             <div className="text-xs font-medium text-slate-500 mb-1">New Links:</div>
-            {proposal.new_links.map((link, i) => (
+            {displayData.new_links.map((link, i) => (
               <div key={i} className="text-sm text-slate-300">
-                → {link.id} ({link.relationship})
+                {isEditing ? (
+                  <div className="flex gap-2 mb-1">
+                    <input
+                      type="text"
+                      value={link.id}
+                      onChange={e => updateLink(i, 'id', e.target.value)}
+                      placeholder="Link ID"
+                      className="w-1/3 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-slate-200 text-sm"
+                    />
+                    <input
+                      type="text"
+                      value={link.relationship}
+                      onChange={e => updateLink(i, 'relationship', e.target.value)}
+                      placeholder="Relationship"
+                      className="flex-1 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-slate-200 text-sm"
+                    />
+                    <button
+                      onClick={() => removeLink(i)}
+                      className="text-red-400 hover:text-red-300 text-sm px-2"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ) : (
+                  <>→ {link.id} ({link.relationship})</>
+                )}
               </div>
             ))}
           </div>

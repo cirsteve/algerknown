@@ -25,6 +25,7 @@ from vectorstore import VectorStore
 from synthesizer import synthesize_answer
 from proposer import generate_all_proposals
 from writer import apply_update, preview_update, validate_proposal
+from diff_engine import Changelog, VersionCache, diff_and_log
 
 # Configure logging
 logging.basicConfig(
@@ -34,18 +35,25 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Configuration
-CONTENT_DIR = os.path.abspath(os.getenv("CONTENT_DIR", "../content-agn"))
+# ALGERKNOWN_KB_ROOT is the primary env var, CONTENT_DIR supported for backwards compatibility
+CONTENT_DIR = os.path.abspath(
+    os.getenv("ALGERKNOWN_KB_ROOT") or os.getenv("CONTENT_DIR") or "../content-agn"
+)
 CHROMA_DB_DIR = os.getenv("CHROMA_DB_DIR", "./chroma_db")
 
 # Global state
 vector_store: Optional[VectorStore] = None
 entries_cache: dict = {}
+changelog: Optional[Changelog] = None
+version_cache: Optional[VersionCache] = None
+_stats_cache: Optional[dict] = None
+_stats_cache_file_info: Optional[tuple[float, int]] = None  # (mtime, size)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan - initialize on startup."""
-    global vector_store, entries_cache
+    global vector_store, entries_cache, changelog, version_cache
     
     logger.info(f"Initializing RAG backend...")
     logger.info(f"Content directory: {CONTENT_DIR}")
@@ -53,6 +61,10 @@ async def lifespan(app: FastAPI):
     
     # Initialize vector store
     vector_store = VectorStore(CHROMA_DB_DIR)
+    
+    # Initialize changelog and version cache
+    changelog = Changelog(Path(CONTENT_DIR) / "changelog.jsonl")
+    version_cache = VersionCache(Path(CONTENT_DIR) / ".version_cache")
     
     # Load and index content
     content_path = Path(CONTENT_DIR)
@@ -246,7 +258,11 @@ def ingest(request: IngestRequest):
     
     # Security: ensure file is within content directory
     # Use commonpath to prevent prefix bypass (e.g., content-agn vs content-agn-backup)
-    abs_path = os.path.abspath(request.file_path)
+    # If path is relative, resolve it against CONTENT_DIR
+    if os.path.isabs(request.file_path):
+        abs_path = os.path.abspath(request.file_path)
+    else:
+        abs_path = os.path.abspath(os.path.join(CONTENT_DIR, request.file_path))
     
     try:
         common = os.path.commonpath([CONTENT_DIR, abs_path])
@@ -262,12 +278,12 @@ def ingest(request: IngestRequest):
             detail=f"File must be within content directory: {CONTENT_DIR}"
         )
     
-    if not os.path.exists(request.file_path):
+    if not os.path.exists(abs_path):
         raise HTTPException(status_code=404, detail="Entry file not found")
     
     # Load the entry
     try:
-        with open(request.file_path) as f:
+        with open(abs_path) as f:
             raw_entry = yaml_parser.load(f)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to parse YAML: {e}")
@@ -284,7 +300,7 @@ def ingest(request: IngestRequest):
             "topic": raw_entry.get("topic", ""),
             "tags": ",".join(raw_entry.get("tags", [])),
             "status": raw_entry.get("status", ""),
-            "file_path": request.file_path,
+            "file_path": abs_path,
         },
         "raw": raw_entry
     }
@@ -293,7 +309,7 @@ def ingest(request: IngestRequest):
     last_ingested = date.today().isoformat()
     raw_entry["last_ingested"] = last_ingested
     try:
-        with open(request.file_path, 'w') as f:
+        with open(abs_path, 'w') as f:
             yaml_parser.dump(raw_entry, f)
         logger.info(f"Updated last_ingested for entry: {entry['id']}")
         # Only update cache with last_ingested if file write succeeded
@@ -308,6 +324,14 @@ def ingest(request: IngestRequest):
     vector_store.index_documents([entry])
     entries_cache[entry["id"]] = entry
     logger.info(f"Indexed new entry: {entry['id']}")
+    
+    # Log changes to changelog
+    if changelog and version_cache:
+        try:
+            changes = diff_and_log(abs_path, raw_entry, changelog, version_cache)
+            logger.info(f"Logged {len(changes)} changes for {entry['id']}")
+        except Exception as e:
+            logger.warning(f"Failed to log changes: {e}")
     
     # Generate proposals
     proposals = generate_all_proposals(entry, vector_store, max_proposals=request.max_proposals)
@@ -351,12 +375,18 @@ def approve(request: ApproveRequest):
     if not result.get("success"):
         return ApproveResponse(success=False, error=result.get("error"))
     
-    # Re-index the updated summary
+    # Re-index the updated summary and log changes
     documents = load_content(CONTENT_DIR)
     updated = [d for d in documents if d["id"] == request.proposal.target_summary_id]
     if updated and vector_store:
         vector_store.index_documents(updated)
         entries_cache[updated[0]["id"]] = updated[0]
+        
+        # Log the diff for this summary update
+        if changelog and version_cache:
+            file_path = result.get("file", "")
+            if file_path:
+                diff_and_log(file_path, updated[0]["raw"], changelog, version_cache)
     
     return ApproveResponse(
         success=True,
@@ -447,6 +477,134 @@ def list_summaries():
         ],
         "total": len(summaries)
     }
+
+
+# ============ Changelog Endpoints ============
+
+@app.get("/changelog")
+def get_changelog(
+    limit: int = 50,
+    source: Optional[str] = None,
+    path: Optional[str] = None,
+    change_type: Optional[str] = None
+):
+    """
+    Get recent changes from the changelog.
+    
+    Supports filtering by source file, node path, and change type.
+    Multiple filters can be combined (AND logic).
+    """
+    if not changelog:
+        raise HTTPException(status_code=503, detail="Changelog not initialized")
+    
+    # Validate change_type if provided
+    if change_type and change_type not in ("added", "modified", "removed"):
+        raise HTTPException(status_code=400, detail="Invalid change_type. Must be: added, modified, removed")
+    
+    # TODO: For large changelogs, consider implementing pagination at the Changelog
+    # class level with indexed queries, or migrate to a database backend.
+    # Start with all changes and apply filters cumulatively
+    changes = changelog.read_all()
+    
+    if source:
+        changes = [c for c in changes if c.get("source") == source]
+    
+    if path:
+        changes = [c for c in changes if c.get("path", "").startswith(path)]
+    
+    if change_type:
+        changes = [c for c in changes if c.get("type") == change_type]
+    
+    # Sort by timestamp descending (most recent first)
+    changes = sorted(changes, key=lambda c: c.get("timestamp", ""), reverse=True)
+    total_matching = len(changes)
+    
+    return {
+        "changes": changes[:limit],
+        "total": total_matching
+    }
+
+
+@app.get("/changelog/sources")
+def get_changelog_sources():
+    """Get list of unique source files in the changelog."""
+    if not changelog:
+        raise HTTPException(status_code=503, detail="Changelog not initialized")
+    
+    all_changes = changelog.read_all()
+    sources = sorted(set(c.get("source", "") for c in all_changes if c.get("source")))
+    
+    return {"sources": sources}
+
+
+@app.get("/changelog/stats")
+def get_changelog_stats():
+    """Get changelog statistics."""
+    global _stats_cache, _stats_cache_file_info
+    
+    if not changelog:
+        raise HTTPException(status_code=503, detail="Changelog not initialized")
+    
+    # Use file mtime and size for efficient cache validation (no file reads needed)
+    try:
+        stat = changelog.path.stat()
+        current_file_info = (stat.st_mtime, stat.st_size)
+    except FileNotFoundError:
+        current_file_info = (0.0, 0)
+    
+    # Return cached stats if file hasn't changed
+    if _stats_cache and _stats_cache_file_info == current_file_info:
+        return _stats_cache
+    
+    # Cache miss - read and compute stats
+    all_changes = changelog.read_all()
+    
+    # Count by type
+    by_type = {"added": 0, "modified": 0, "removed": 0}
+    for c in all_changes:
+        change_type = c.get("type", "")
+        if change_type in by_type:
+            by_type[change_type] += 1
+    
+    # Get date range
+    timestamps = [c.get("timestamp", "") for c in all_changes if c.get("timestamp")]
+    
+    _stats_cache = {
+        "total_changes": len(all_changes),
+        "by_type": by_type,
+        "first_change": min(timestamps) if timestamps else None,
+        "last_change": max(timestamps) if timestamps else None,
+    }
+    _stats_cache_file_info = current_file_info
+    
+    return _stats_cache
+
+
+@app.get("/entries/{entry_id}/history")
+def get_entry_history(entry_id: str, limit: int = 50):
+    """Get change history for a specific entry."""
+    if not changelog:
+        raise HTTPException(status_code=503, detail="Changelog not initialized")
+    
+    # Find the entry's source file from cache (preferred - exact match)
+    if entry_id in entries_cache:
+        source_file = entries_cache[entry_id].get("metadata", {}).get("file_path", "")
+        if source_file:
+            changes = changelog.read_by_source(source_file)
+            return {"entry_id": entry_id, "changes": changes[:limit], "total": len(changes)}
+    
+    # Fallback: search by exact entry id match in source filename
+    # Only matches files named exactly "{entry_id}.yaml" to avoid false positives
+    # (e.g., "snark" won't match "zkSNARKs.yaml")
+    all_changes = changelog.read_all()
+    changes = [
+        c for c in all_changes 
+        if c.get("source", "").endswith(f"/{entry_id}.yaml") 
+        or c.get("source", "") == f"{entry_id}.yaml"
+    ]
+    changes.sort(key=lambda c: c.get("timestamp", ""), reverse=True)
+    
+    return {"entry_id": entry_id, "changes": changes[:limit], "total": len(changes)}
 
 
 # ============ Main ============

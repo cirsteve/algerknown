@@ -11,15 +11,32 @@ const INDEX_FILE = 'index.yaml';
 const SCHEMAS_DIR = 'schemas';
 
 /**
- * Walk up from the given directory to find index.yaml
- * Similar to how git finds .git/
+ * Get the knowledge base root directory.
+ * 
+ * Resolution order:
+ * 1. ALGERKNOWN_KB_ROOT environment variable (recommended for services)
+ * 2. Walk up from startDir to find index.yaml (for CLI usage)
  * 
  * @param startDir - Directory to start searching from (defaults to cwd)
  * @returns Path to the knowledge base root (directory containing index.yaml)
- * @throws Error if no index.yaml is found
+ * @throws Error if no root can be determined
  */
-export function findRoot(startDir: string = process.cwd()): string {
-  let current = path.resolve(startDir);
+export function findRoot(startDir?: string): string {
+  // Prefer explicit env var for services
+  const envRoot = process.env.ALGERKNOWN_KB_ROOT;
+  if (envRoot) {
+    const resolved = path.resolve(envRoot);
+    const indexPath = path.join(resolved, INDEX_FILE);
+    if (fs.existsSync(indexPath)) {
+      return resolved;
+    }
+    throw new Error(
+      `ALGERKNOWN_KB_ROOT is set to '${envRoot}' but no index.yaml found there.`
+    );
+  }
+
+  // Fall back to walking up directory tree (for CLI usage)
+  let current = path.resolve(startDir ?? process.cwd());
   const root = path.parse(current).root;
 
   while (current !== root) {
@@ -31,7 +48,7 @@ export function findRoot(startDir: string = process.cwd()): string {
   }
 
   throw new Error(
-    `Not inside an Algerknown knowledge base. Run 'agn init' to create one.`
+    `Not inside an Algerknown knowledge base. Set ALGERKNOWN_KB_ROOT env var or run 'agn init' to create one.`
   );
 }
 

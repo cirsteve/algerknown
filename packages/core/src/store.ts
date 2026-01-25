@@ -81,8 +81,8 @@ export function resolveEntryPath(id: string, root?: string): string | null {
     return null;
   }
   
-  // Resolve relative path from .algerknown directory
-  return path.resolve(path.join(getAlgerknownDir(kbRoot), indexEntry.path));
+  // Resolve relative path from root directory
+  return path.resolve(kbRoot, indexEntry.path);
 }
 
 /**
@@ -115,11 +115,10 @@ function getEntryFilePath(entry: AnyEntry, root: string): string {
 }
 
 /**
- * Get the relative path from .algerknown to the entry file
+ * Get the relative path from root to the entry file
  */
 function getRelativePath(entryPath: string, root: string): string {
-  const algerknownDir = getAlgerknownDir(root);
-  return path.relative(algerknownDir, entryPath);
+  return path.relative(root, entryPath);
 }
 
 /**

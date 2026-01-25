@@ -228,41 +228,42 @@ class TestEntriesEndpoint:
     
     def test_entries_includes_last_ingested(self):
         """Should include last_ingested in entries response."""
-        from api import app, entries_cache
+        from api import app
+        import api
         
-        # Add test entry to cache with last_ingested
-        entries_cache["test-with-date"] = {
-            "id": "test-with-date",
-            "content": "Test content",
-            "metadata": {
-                "type": "entry",
-                "topic": "Test",
-                "status": "active",
-                "file_path": "/test/path.yaml",
-                "last_ingested": "2026-01-24"
-            },
-            "raw": {
+        with TestClient(app) as client:
+            # Add test entries to cache AFTER lifespan starts
+            api.entries_cache["test-with-date"] = {
                 "id": "test-with-date",
-                "last_ingested": "2026-01-24"
+                "content": "Test content",
+                "metadata": {
+                    "type": "entry",
+                    "topic": "Test",
+                    "status": "active",
+                    "file_path": "/test/path.yaml",
+                    "last_ingested": "2024-01-15"
+                },
+                "raw": {
+                    "id": "test-with-date",
+                    "last_ingested": "2024-01-15"
+                }
             }
-        }
-        
-        entries_cache["test-without-date"] = {
-            "id": "test-without-date",
-            "content": "Test content",
-            "metadata": {
-                "type": "entry",
-                "topic": "Test",
-                "status": "active",
-                "file_path": "/test/path2.yaml"
-            },
-            "raw": {
-                "id": "test-without-date"
+            
+            api.entries_cache["test-without-date"] = {
+                "id": "test-without-date",
+                "content": "Test content",
+                "metadata": {
+                    "type": "entry",
+                    "topic": "Test",
+                    "status": "active",
+                    "file_path": "/test/path2.yaml"
+                },
+                "raw": {
+                    "id": "test-without-date"
+                }
             }
-        }
-        
-        try:
-            with TestClient(app) as client:
+            
+            try:
                 response = client.get("/entries")
                 
                 assert response.status_code == 200
@@ -271,13 +272,13 @@ class TestEntriesEndpoint:
                 entries_by_id = {e["id"]: e for e in data["entries"]}
                 
                 # Entry with last_ingested should have the date
-                assert entries_by_id["test-with-date"]["last_ingested"] == "2026-01-24"
+                assert entries_by_id["test-with-date"]["last_ingested"] == "2024-01-15"
                 
                 # Entry without last_ingested should have None
                 assert entries_by_id["test-without-date"]["last_ingested"] is None
-        finally:
-            entries_cache.pop("test-with-date", None)
-            entries_cache.pop("test-without-date", None)
+            finally:
+                api.entries_cache.pop("test-with-date", None)
+                api.entries_cache.pop("test-without-date", None)
 
 
 class TestApproveEndpoint:
@@ -332,3 +333,245 @@ class TestApproveEndpoint:
             data = response.json()
             assert data["success"] is False
             assert "error" in data
+
+
+class TestChangelogEndpoint:
+    """Tests for the /changelog endpoint."""
+    
+    def test_changelog_returns_changes(self):
+        """Should return changelog entries."""
+        from api import app
+        import api
+        from diff_engine import Changelog
+        from pathlib import Path
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            changelog_path = Path(tmpdir) / "changelog.jsonl"
+            
+            with TestClient(app) as client:
+                # Set changelog AFTER lifespan initializes
+                old_changelog = api.changelog
+                api.changelog = Changelog(changelog_path)
+                
+                # Add test changes
+                api.changelog.append([
+                    {"timestamp": "2024-01-15T12:00:00Z", "type": "added", "path": "test.field", "source": "test.yaml"},
+                    {"timestamp": "2024-01-15T13:00:00Z", "type": "modified", "path": "test.other", "source": "test.yaml"},
+                ])
+                
+                try:
+                    response = client.get("/changelog")
+                    
+                    assert response.status_code == 200
+                    data = response.json()
+                    assert "changes" in data
+                    assert "total" in data
+                    assert len(data["changes"]) == 2
+                    assert data["total"] == 2
+                finally:
+                    api.changelog = old_changelog
+    
+    def test_changelog_filter_by_type(self):
+        """Should filter changes by type."""
+        from api import app
+        import api
+        from diff_engine import Changelog
+        from pathlib import Path
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            changelog_path = Path(tmpdir) / "changelog.jsonl"
+            
+            with TestClient(app) as client:
+                old_changelog = api.changelog
+                api.changelog = Changelog(changelog_path)
+                
+                api.changelog.append([
+                    {"timestamp": "2024-01-15T12:00:00Z", "type": "added", "path": "a"},
+                    {"timestamp": "2024-01-15T12:00:00Z", "type": "modified", "path": "b"},
+                    {"timestamp": "2024-01-15T12:00:00Z", "type": "added", "path": "c"},
+                ])
+                
+                try:
+                    response = client.get("/changelog?change_type=added")
+                    
+                    assert response.status_code == 200
+                    data = response.json()
+                    assert len(data["changes"]) == 2
+                    assert all(c["type"] == "added" for c in data["changes"])
+                finally:
+                    api.changelog = old_changelog
+    
+    def test_changelog_invalid_change_type(self):
+        """Should reject invalid change_type parameter."""
+        from api import app
+        
+        with TestClient(app) as client:
+            response = client.get("/changelog?change_type=invalid")
+            
+            assert response.status_code == 400
+            assert "Invalid change_type" in response.json()["detail"]
+
+
+class TestChangelogSourcesEndpoint:
+    """Tests for the /changelog/sources endpoint."""
+    
+    def test_changelog_sources_returns_unique_sources(self):
+        """Should return unique source files."""
+        from api import app
+        import api
+        from diff_engine import Changelog
+        from pathlib import Path
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            changelog_path = Path(tmpdir) / "changelog.jsonl"
+            
+            with TestClient(app) as client:
+                old_changelog = api.changelog
+                api.changelog = Changelog(changelog_path)
+                
+                api.changelog.append([
+                    {"timestamp": "2024-01-15T12:00:00Z", "source": "a.yaml", "path": "x"},
+                    {"timestamp": "2024-01-15T12:00:00Z", "source": "b.yaml", "path": "y"},
+                    {"timestamp": "2024-01-15T12:00:00Z", "source": "a.yaml", "path": "z"},
+                ])
+                
+                try:
+                    response = client.get("/changelog/sources")
+                    
+                    assert response.status_code == 200
+                    data = response.json()
+                    assert "sources" in data
+                    assert sorted(data["sources"]) == ["a.yaml", "b.yaml"]
+                finally:
+                    api.changelog = old_changelog
+
+
+class TestChangelogStatsEndpoint:
+    """Tests for the /changelog/stats endpoint."""
+    
+    def test_changelog_stats_returns_statistics(self):
+        """Should return changelog statistics."""
+        from api import app
+        import api
+        from diff_engine import Changelog
+        from pathlib import Path
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            changelog_path = Path(tmpdir) / "changelog.jsonl"
+            
+            with TestClient(app) as client:
+                old_changelog = api.changelog
+                api.changelog = Changelog(changelog_path)
+                
+                # Reset stats cache
+                api._stats_cache = None
+                api._stats_cache_file_info = None
+                
+                api.changelog.append([
+                    {"timestamp": "2024-01-15T10:00:00Z", "type": "added", "path": "a"},
+                    {"timestamp": "2024-01-15T11:00:00Z", "type": "modified", "path": "b"},
+                    {"timestamp": "2024-01-15T12:00:00Z", "type": "added", "path": "c"},
+                ])
+                
+                try:
+                    response = client.get("/changelog/stats")
+                    
+                    assert response.status_code == 200
+                    data = response.json()
+                    assert data["total_changes"] == 3
+                    assert data["by_type"]["added"] == 2
+                    assert data["by_type"]["modified"] == 1
+                    assert data["by_type"]["removed"] == 0
+                    assert data["first_change"] == "2024-01-15T10:00:00Z"
+                    assert data["last_change"] == "2024-01-15T12:00:00Z"
+                finally:
+                    api.changelog = old_changelog
+
+
+class TestEntryHistoryEndpoint:
+    """Tests for the /entries/{entry_id}/history endpoint."""
+    
+    def test_entry_history_returns_changes(self):
+        """Should return history for a specific entry."""
+        from api import app
+        import api
+        from diff_engine import Changelog
+        from pathlib import Path
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            changelog_path = Path(tmpdir) / "changelog.jsonl"
+            
+            with TestClient(app) as client:
+                old_changelog = api.changelog
+                api.changelog = Changelog(changelog_path)
+                
+                # Add entry to cache with file_path
+                api.entries_cache["test-entry"] = {
+                    "id": "test-entry",
+                    "content": "Test",
+                    "metadata": {
+                        "type": "entry",
+                        "file_path": "entries/test-entry.yaml"
+                    }
+                }
+                
+                api.changelog.append([
+                    {"timestamp": "2024-01-15T12:00:00Z", "source": "entries/test-entry.yaml", "path": "field1", "type": "added"},
+                    {"timestamp": "2024-01-15T13:00:00Z", "source": "entries/test-entry.yaml", "path": "field2", "type": "modified"},
+                    {"timestamp": "2024-01-15T14:00:00Z", "source": "entries/other.yaml", "path": "field3", "type": "added"},
+                ])
+                
+                try:
+                    response = client.get("/entries/test-entry/history")
+                    
+                    assert response.status_code == 200
+                    data = response.json()
+                    assert data["entry_id"] == "test-entry"
+                    assert len(data["changes"]) == 2
+                    assert data["total"] == 2
+                    # All changes should be from test-entry.yaml
+                    assert all(c["source"] == "entries/test-entry.yaml" for c in data["changes"])
+                finally:
+                    api.changelog = old_changelog
+                    api.entries_cache.pop("test-entry", None)
+    
+    def test_entry_history_respects_limit(self):
+        """Should respect the limit parameter."""
+        from api import app
+        import api
+        from diff_engine import Changelog
+        from pathlib import Path
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            changelog_path = Path(tmpdir) / "changelog.jsonl"
+            
+            with TestClient(app) as client:
+                old_changelog = api.changelog
+                api.changelog = Changelog(changelog_path)
+                
+                api.entries_cache["test-entry"] = {
+                    "id": "test-entry",
+                    "content": "Test",
+                    "metadata": {
+                        "type": "entry",
+                        "file_path": "entries/test-entry.yaml"
+                    }
+                }
+                
+                # Add many changes
+                changes = [
+                    {"timestamp": f"2024-01-15T{10+i:02d}:00:00Z", "source": "entries/test-entry.yaml", "path": f"field{i}", "type": "added"}
+                    for i in range(10)
+                ]
+                api.changelog.append(changes)
+                
+                try:
+                    response = client.get("/entries/test-entry/history?limit=3")
+                    
+                    assert response.status_code == 200
+                    data = response.json()
+                    assert len(data["changes"]) == 3
+                    assert data["total"] == 10  # Total should be full count
+                finally:
+                    api.changelog = old_changelog
+                    api.entries_cache.pop("test-entry", None)

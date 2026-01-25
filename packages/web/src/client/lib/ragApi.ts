@@ -99,30 +99,6 @@ export interface HealthResponse {
   content_dir: string;
 }
 
-export interface EntryListItem {
-  id: string;
-  type: string;
-  topic: string;
-  status: string;
-  path: string;
-  last_ingested?: string;
-}
-
-export interface EntriesResponse {
-  entries: EntryListItem[];
-  total: number;
-}
-
-export interface SummaryListItem {
-  id: string;
-  topic: string;
-}
-
-export interface SummariesResponse {
-  summaries: SummaryListItem[];
-  total: number;
-}
-
 // API Functions
 
 async function ragRequest<T>(
@@ -202,21 +178,64 @@ export const ragApi = {
   reindex: () =>
     ragRequest<{ indexed: number }>('/reindex', { method: 'POST' }),
 
-  // List all entries
-  listEntries: () => ragRequest<EntriesResponse>('/entries'),
+  // Changelog endpoints
+  getChangelog: (options?: ChangelogQuery) => {
+    const params = new URLSearchParams();
+    if (options?.limit) params.set('limit', options.limit.toString());
+    if (options?.source) params.set('source', options.source);
+    if (options?.path) params.set('path', options.path);
+    if (options?.change_type) params.set('change_type', options.change_type);
+    const query = params.toString();
+    return ragRequest<ChangelogResponse>(`/changelog${query ? `?${query}` : ''}`);
+  },
 
-  // Get specific entry
-  getEntry: (id: string) =>
-    ragRequest<{
-      id: string;
-      content: string;
-      metadata: Record<string, string>;
-      raw: Record<string, unknown>;
-    }>(`/entries/${id}`),
+  getChangelogSources: () => ragRequest<{ sources: string[] }>('/changelog/sources'),
 
-  // List summaries
-  listSummaries: () => ragRequest<SummariesResponse>('/summaries'),
+  getChangelogStats: () => ragRequest<ChangelogStats>('/changelog/stats'),
+
+  getEntryHistory: (entryId: string, limit = 50) =>
+    ragRequest<EntryHistoryResponse>(`/entries/${entryId}/history?limit=${limit}`),
 };
+
+// Changelog types
+export interface ChangelogEntry {
+  timestamp: string;
+  source: string;
+  type: 'added' | 'modified' | 'removed';
+  path: string;
+  value?: unknown;
+  old?: unknown;
+  new?: unknown;
+}
+
+export interface ChangelogQuery {
+  limit?: number;
+  source?: string;
+  path?: string;
+  change_type?: 'added' | 'modified' | 'removed';
+}
+
+export interface ChangelogResponse {
+  changes: ChangelogEntry[];
+  total: number;
+}
+
+export interface ChangelogStats {
+  total_changes: number;
+  by_type: {
+    added: number;
+    modified: number;
+    removed: number;
+  };
+  first_change: string | null;
+  last_change: string | null;
+}
+
+export interface EntryHistoryResponse {
+  entry_id: string;
+  changes: ChangelogEntry[];
+  total: number;
+}
 
 // Connection status check
 export async function checkRagConnection(): Promise<{

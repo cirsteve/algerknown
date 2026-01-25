@@ -1,3 +1,4 @@
+import dotenv from 'dotenv';
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
@@ -9,6 +10,21 @@ import { configRouter } from './routes/config.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Load .env - try multiple locations for flexibility
+// 1. Monorepo root (when running from dist/server)
+// 2. packages/web (when running locally)
+const envPaths = [
+  path.resolve(__dirname, '../../../..', '.env'),  // from dist/server
+  path.resolve(__dirname, '../..', '.env'),        // from src/server  
+];
+for (const envPath of envPaths) {
+  const result = dotenv.config({ path: envPath });
+  if (!result.error) {
+    console.log(`Loaded .env from ${envPath}`);
+    break;
+  }
+}
 
 const app = express();
 const PORT = process.env.PORT || 2393;
