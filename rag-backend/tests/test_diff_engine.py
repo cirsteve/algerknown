@@ -245,7 +245,7 @@ class TestChangelog:
         """Should create changelog file if not exists."""
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "changelog.jsonl"
-            changelog = Changelog(path)
+            Changelog(path)
             
             assert path.exists()
 
