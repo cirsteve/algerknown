@@ -86,6 +86,14 @@ export function IngestPage() {
   };
 
   const cancelEditing = () => {
+    // Remove any unsaved edits when canceling
+    if (editingProposal !== null) {
+      setEditedProposals(prev => {
+        const next = new Map(prev);
+        next.delete(editingProposal);
+        return next;
+      });
+    }
     setEditingProposal(null);
   };
 
