@@ -16,28 +16,28 @@ export function HistoryTab({ entryId }: HistoryTabProps) {
   }, []);
 
   useEffect(() => {
-    if (ragConnected) {
-      loadHistory();
-    }
+    if (!ragConnected) return;
+
+    const loadHistory = async () => {
+      setLoading(true);
+      setError(null);
+
+      try {
+        const response = await ragApi.getEntryHistory(entryId);
+        setChanges(response.changes);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load history');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadHistory();
   }, [ragConnected, entryId]);
 
   const checkConnection = async () => {
     const result = await checkRagConnection();
     setRagConnected(result.connected);
-  };
-
-  const loadHistory = async () => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      const response = await ragApi.getEntryHistory(entryId);
-      setChanges(response.changes);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load history');
-    } finally {
-      setLoading(false);
-    }
   };
 
   const formatTimestamp = (timestamp: string) => {
