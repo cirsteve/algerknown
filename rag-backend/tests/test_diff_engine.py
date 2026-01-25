@@ -2,7 +2,6 @@
 Tests for the diff engine module.
 """
 
-import pytest
 import tempfile
 from pathlib import Path
 from datetime import datetime
