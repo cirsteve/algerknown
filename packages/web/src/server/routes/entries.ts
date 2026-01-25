@@ -3,12 +3,32 @@ import * as core from '@algerknown/core';
 
 const router = Router();
 
-// Default ZKB path from environment, or current working directory
-const DEFAULT_ZKB_PATH = process.env.ZKB_PATH || process.cwd();
+const RAG_BACKEND_URL = process.env.RAG_BACKEND_URL || 'http://localhost:8000';
 
-const getZkbPath = (req: Request): string => {
-  const zkbPath = req.headers['x-zkb-path'] as string;
-  return zkbPath || DEFAULT_ZKB_PATH;
+/**
+ * Get the knowledge base root path.
+ * Uses core.findRoot() which checks ALGERKNOWN_KB_ROOT env var first,
+ * then falls back to walking up from cwd.
+ */
+const getZkbPath = (_req: Request): string => {
+  return core.findRoot();
+};
+
+/**
+ * Notify the RAG backend to ingest a file after creation/update.
+ * This is fire-and-forget - we don't wait for indexing to complete.
+ */
+const notifyRagBackend = async (filePath: string): Promise<void> => {
+  try {
+    await fetch(`${RAG_BACKEND_URL}/ingest`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ file_path: filePath }),
+    });
+  } catch (error) {
+    // Log but don't fail the request if RAG backend is unavailable
+    console.warn(`Failed to notify RAG backend about ${filePath}:`, error);
+  }
 };
 
 // GET /api/entries - List all entries
@@ -17,12 +37,17 @@ router.get('/', async (req: Request, res: Response) => {
     const zkbPath = getZkbPath(req);
     const index = core.getIndex(zkbPath);
 
-    // Convert Record to array format for API response
-    const entriesList = Object.entries(index.entries).map(([id, entry]) => ({
-      id,
-      path: entry.path,
-      type: entry.type,
-    }));
+    // Convert Record to array format for API response, including last_ingested
+    const entriesList = Object.entries(index.entries).map(([id, indexEntry]) => {
+      // Read the full entry to get last_ingested (not part of typed schema)
+      const entry = core.readEntry(id, zkbPath) as Record<string, unknown> | null;
+      return {
+        id,
+        path: indexEntry.path,
+        type: indexEntry.type,
+        last_ingested: (entry?.last_ingested as string) || null,
+      };
+    });
 
     res.json(entriesList);
   } catch (error) {
@@ -65,6 +90,12 @@ router.post('/', async (req: Request, res: Response) => {
     // Write entry file - this also adds to index
     core.writeEntry(entryData, zkbPath);
 
+    // Notify RAG backend to index the new entry
+    const filePath = core.resolveEntryPath(entryData.id, zkbPath);
+    if (filePath) {
+      notifyRagBackend(filePath);
+    }
+
     res.status(201).json(entryData);
   } catch (error) {
     res.status(400).json({ error: (error as Error).message });
@@ -95,6 +126,12 @@ router.put('/:id', async (req: Request, res: Response) => {
 
     // Write updated entry
     core.writeEntry(updatedEntry, zkbPath);
+
+    // Notify RAG backend to re-index the updated entry
+    const filePath = core.resolveEntryPath(updatedEntry.id, zkbPath);
+    if (filePath) {
+      notifyRagBackend(filePath);
+    }
 
     res.json(updatedEntry);
   } catch (error) {

@@ -99,30 +99,6 @@ export interface HealthResponse {
   content_dir: string;
 }
 
-export interface EntryListItem {
-  id: string;
-  type: string;
-  topic: string;
-  status: string;
-  path: string;
-  last_ingested?: string;
-}
-
-export interface EntriesResponse {
-  entries: EntryListItem[];
-  total: number;
-}
-
-export interface SummaryListItem {
-  id: string;
-  topic: string;
-}
-
-export interface SummariesResponse {
-  summaries: SummaryListItem[];
-  total: number;
-}
-
 // API Functions
 
 async function ragRequest<T>(
@@ -201,21 +177,6 @@ export const ragApi = {
   // Re-index all content
   reindex: () =>
     ragRequest<{ indexed: number }>('/reindex', { method: 'POST' }),
-
-  // List all entries
-  listEntries: () => ragRequest<EntriesResponse>('/entries'),
-
-  // Get specific entry
-  getEntry: (id: string) =>
-    ragRequest<{
-      id: string;
-      content: string;
-      metadata: Record<string, string>;
-      raw: Record<string, unknown>;
-    }>(`/entries/${id}`),
-
-  // List summaries
-  listSummaries: () => ragRequest<SummariesResponse>('/summaries'),
 
   // Changelog endpoints
   getChangelog: (options?: ChangelogQuery) => {

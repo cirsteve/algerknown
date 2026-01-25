@@ -35,7 +35,10 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Configuration
-CONTENT_DIR = os.path.abspath(os.getenv("CONTENT_DIR", "../content-agn"))
+# ALGERKNOWN_KB_ROOT is the primary env var, CONTENT_DIR supported for backwards compatibility
+CONTENT_DIR = os.path.abspath(
+    os.getenv("ALGERKNOWN_KB_ROOT") or os.getenv("CONTENT_DIR") or "../content-agn"
+)
 CHROMA_DB_DIR = os.getenv("CHROMA_DB_DIR", "./chroma_db")
 
 # Global state
@@ -255,7 +258,11 @@ def ingest(request: IngestRequest):
     
     # Security: ensure file is within content directory
     # Use commonpath to prevent prefix bypass (e.g., content-agn vs content-agn-backup)
-    abs_path = os.path.abspath(request.file_path)
+    # If path is relative, resolve it against CONTENT_DIR
+    if os.path.isabs(request.file_path):
+        abs_path = os.path.abspath(request.file_path)
+    else:
+        abs_path = os.path.abspath(os.path.join(CONTENT_DIR, request.file_path))
     
     try:
         common = os.path.commonpath([CONTENT_DIR, abs_path])
@@ -271,12 +278,12 @@ def ingest(request: IngestRequest):
             detail=f"File must be within content directory: {CONTENT_DIR}"
         )
     
-    if not os.path.exists(request.file_path):
+    if not os.path.exists(abs_path):
         raise HTTPException(status_code=404, detail="Entry file not found")
     
     # Load the entry
     try:
-        with open(request.file_path) as f:
+        with open(abs_path) as f:
             raw_entry = yaml_parser.load(f)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to parse YAML: {e}")
@@ -293,7 +300,7 @@ def ingest(request: IngestRequest):
             "topic": raw_entry.get("topic", ""),
             "tags": ",".join(raw_entry.get("tags", [])),
             "status": raw_entry.get("status", ""),
-            "file_path": request.file_path,
+            "file_path": abs_path,
         },
         "raw": raw_entry
     }
@@ -302,7 +309,7 @@ def ingest(request: IngestRequest):
     last_ingested = date.today().isoformat()
     raw_entry["last_ingested"] = last_ingested
     try:
-        with open(request.file_path, 'w') as f:
+        with open(abs_path, 'w') as f:
             yaml_parser.dump(raw_entry, f)
         logger.info(f"Updated last_ingested for entry: {entry['id']}")
         # Only update cache with last_ingested if file write succeeded
@@ -321,7 +328,7 @@ def ingest(request: IngestRequest):
     # Log changes to changelog
     if changelog and version_cache:
         try:
-            changes = diff_and_log(request.file_path, raw_entry, changelog, version_cache)
+            changes = diff_and_log(abs_path, raw_entry, changelog, version_cache)
             logger.info(f"Logged {len(changes)} changes for {entry['id']}")
         except Exception as e:
             logger.warning(f"Failed to log changes: {e}")

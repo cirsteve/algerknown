@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { ragApi, ProposalData, checkRagConnection, EntryListItem } from '../lib/ragApi';
+import { ragApi, ProposalData, checkRagConnection } from '../lib/ragApi';
+import { api, IndexEntryRef } from '../lib/api';
 
 type IngestState = 'idle' | 'selecting' | 'ingesting' | 'reviewing' | 'applying';
 
@@ -8,7 +9,7 @@ export function IngestPage() {
   const location = useLocation();
   const [state, setState] = useState<IngestState>('idle');
   const [ragConnected, setRagConnected] = useState<boolean | null>(null);
-  const [entries, setEntries] = useState<EntryListItem[]>([]);
+  const [entries, setEntries] = useState<IndexEntryRef[]>([]);
   const [selectedEntry, setSelectedEntry] = useState<string | null>(null);
   const [proposals, setProposals] = useState<ProposalData[]>([]);
   const [approvedProposals, setApprovedProposals] = useState<Set<number>>(new Set());
@@ -31,9 +32,10 @@ export function IngestPage() {
 
   const loadEntries = async () => {
     try {
-      const response = await ragApi.listEntries();
+      // Get entries from web backend (reads from disk, always up-to-date)
+      const allEntries = await api.getEntries();
       // Filter to only show entries (not summaries) for ingestion
-      setEntries(response.entries.filter(e => e.type === 'entry'));
+      setEntries(allEntries.filter(e => e.type === 'entry'));
     } catch (err) {
       console.error('Failed to load entries:', err);
     }
@@ -80,7 +82,7 @@ export function IngestPage() {
   const startEditing = (index: number) => {
     // Initialize edited version from current state with deep clone to avoid mutating original
     if (!editedProposals.has(index)) {
-      setEditedProposals(prev => new Map(prev).set(index, structuredClone(proposals[index])));
+      setEditedProposals(prev => new Map(prev).set(index, JSON.parse(JSON.stringify(proposals[index]))));
     }
     setEditingProposal(index);
   };
@@ -104,7 +106,7 @@ export function IngestPage() {
   const updateProposal = (index: number, updates: Partial<ProposalData>) => {
     setEditedProposals(prev => {
       // Deep clone to avoid mutating original proposal data
-      const current = prev.get(index) ?? structuredClone(proposals[index]);
+      const current = prev.get(index) ?? JSON.parse(JSON.stringify(proposals[index]));
       return new Map(prev).set(index, { ...current, ...updates });
     });
   };

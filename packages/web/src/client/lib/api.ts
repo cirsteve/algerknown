@@ -55,6 +55,7 @@ export interface IndexEntryRef {
   id: string;
   path: string;
   type: 'summary' | 'entry';
+  last_ingested?: string | null;
 }
 
 export interface Link {
