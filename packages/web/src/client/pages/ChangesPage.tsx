@@ -21,43 +21,43 @@ export function ChangesPage() {
   }, []);
 
   useEffect(() => {
-    if (ragConnected) {
-      loadData();
-    }
-  }, [ragConnected, typeFilter, sourceFilter, limit]);
+    if (!ragConnected) return;
+
+    const loadData = async () => {
+      setLoading(true);
+      setError(null);
+
+      try {
+        // Load changes with filters
+        const changelogResponse = await ragApi.getChangelog({
+          limit,
+          source: sourceFilter || undefined,
+          change_type: typeFilter !== 'all' ? typeFilter : undefined,
+        });
+        setChanges(changelogResponse.changes);
+
+        // Load stats and sources (only on initial load)
+        if (!stats) {
+          const [statsResponse, sourcesResponse] = await Promise.all([
+            ragApi.getChangelogStats(),
+            ragApi.getChangelogSources(),
+          ]);
+          setStats(statsResponse);
+          setSources(sourcesResponse.sources);
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load changelog');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadData();
+  }, [ragConnected, typeFilter, sourceFilter, limit, stats]);
 
   const checkConnection = async () => {
     const result = await checkRagConnection();
     setRagConnected(result.connected);
-  };
-
-  const loadData = async () => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      // Load changes with filters
-      const changelogResponse = await ragApi.getChangelog({
-        limit,
-        source: sourceFilter || undefined,
-        change_type: typeFilter !== 'all' ? typeFilter : undefined,
-      });
-      setChanges(changelogResponse.changes);
-
-      // Load stats and sources (only on initial load)
-      if (!stats) {
-        const [statsResponse, sourcesResponse] = await Promise.all([
-          ragApi.getChangelogStats(),
-          ragApi.getChangelogSources(),
-        ]);
-        setStats(statsResponse);
-        setSources(sourcesResponse.sources);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load changelog');
-    } finally {
-      setLoading(false);
-    }
   };
 
   const formatTimestamp = (timestamp: string) => {
