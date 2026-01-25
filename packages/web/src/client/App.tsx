@@ -9,6 +9,7 @@ import { Search } from './pages/Search';
 import { GraphView } from './pages/GraphView';
 import { AskPage } from './pages/AskPage';
 import { IngestPage } from './pages/IngestPage';
+import { ChangesPage } from './pages/ChangesPage';
 
 export default function App() {
   return (
@@ -24,6 +25,7 @@ export default function App() {
         <Route path="/graph/:id" element={<GraphView />} />
         <Route path="/ask" element={<AskPage />} />
         <Route path="/ingest" element={<IngestPage />} />
+        <Route path="/changes" element={<ChangesPage />} />
       </Routes>
     </Layout>
   );

@@ -228,41 +228,42 @@ class TestEntriesEndpoint:
     
     def test_entries_includes_last_ingested(self):
         """Should include last_ingested in entries response."""
-        from api import app, entries_cache
+        from api import app
+        import api
         
-        # Add test entry to cache with last_ingested
-        entries_cache["test-with-date"] = {
-            "id": "test-with-date",
-            "content": "Test content",
-            "metadata": {
-                "type": "entry",
-                "topic": "Test",
-                "status": "active",
-                "file_path": "/test/path.yaml",
-                "last_ingested": "2026-01-24"
-            },
-            "raw": {
+        with TestClient(app) as client:
+            # Add test entries to cache AFTER lifespan starts
+            api.entries_cache["test-with-date"] = {
                 "id": "test-with-date",
-                "last_ingested": "2026-01-24"
+                "content": "Test content",
+                "metadata": {
+                    "type": "entry",
+                    "topic": "Test",
+                    "status": "active",
+                    "file_path": "/test/path.yaml",
+                    "last_ingested": "2026-01-24"
+                },
+                "raw": {
+                    "id": "test-with-date",
+                    "last_ingested": "2026-01-24"
+                }
             }
-        }
-        
-        entries_cache["test-without-date"] = {
-            "id": "test-without-date",
-            "content": "Test content",
-            "metadata": {
-                "type": "entry",
-                "topic": "Test",
-                "status": "active",
-                "file_path": "/test/path2.yaml"
-            },
-            "raw": {
-                "id": "test-without-date"
+            
+            api.entries_cache["test-without-date"] = {
+                "id": "test-without-date",
+                "content": "Test content",
+                "metadata": {
+                    "type": "entry",
+                    "topic": "Test",
+                    "status": "active",
+                    "file_path": "/test/path2.yaml"
+                },
+                "raw": {
+                    "id": "test-without-date"
+                }
             }
-        }
-        
-        try:
-            with TestClient(app) as client:
+            
+            try:
                 response = client.get("/entries")
                 
                 assert response.status_code == 200
@@ -275,9 +276,9 @@ class TestEntriesEndpoint:
                 
                 # Entry without last_ingested should have None
                 assert entries_by_id["test-without-date"]["last_ingested"] is None
-        finally:
-            entries_cache.pop("test-with-date", None)
-            entries_cache.pop("test-without-date", None)
+            finally:
+                api.entries_cache.pop("test-with-date", None)
+                api.entries_cache.pop("test-without-date", None)
 
 
 class TestApproveEndpoint:

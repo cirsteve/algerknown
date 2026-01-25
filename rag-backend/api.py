@@ -25,6 +25,7 @@ from vectorstore import VectorStore
 from synthesizer import synthesize_answer
 from proposer import generate_all_proposals
 from writer import apply_update, preview_update, validate_proposal
+from diff_engine import Changelog, VersionCache, diff_and_log
 
 # Configure logging
 logging.basicConfig(
@@ -40,12 +41,14 @@ CHROMA_DB_DIR = os.getenv("CHROMA_DB_DIR", "./chroma_db")
 # Global state
 vector_store: Optional[VectorStore] = None
 entries_cache: dict = {}
+changelog: Optional[Changelog] = None
+version_cache: Optional[VersionCache] = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan - initialize on startup."""
-    global vector_store, entries_cache
+    global vector_store, entries_cache, changelog, version_cache
     
     logger.info(f"Initializing RAG backend...")
     logger.info(f"Content directory: {CONTENT_DIR}")
@@ -53,6 +56,10 @@ async def lifespan(app: FastAPI):
     
     # Initialize vector store
     vector_store = VectorStore(CHROMA_DB_DIR)
+    
+    # Initialize changelog and version cache
+    changelog = Changelog(Path(CONTENT_DIR) / "changelog.jsonl")
+    version_cache = VersionCache(Path(CONTENT_DIR) / ".version_cache")
     
     # Load and index content
     content_path = Path(CONTENT_DIR)
@@ -309,6 +316,14 @@ def ingest(request: IngestRequest):
     entries_cache[entry["id"]] = entry
     logger.info(f"Indexed new entry: {entry['id']}")
     
+    # Log changes to changelog
+    if changelog and version_cache:
+        try:
+            changes = diff_and_log(request.file_path, raw_entry, changelog, version_cache)
+            logger.info(f"Logged {len(changes)} changes for {entry['id']}")
+        except Exception as e:
+            logger.warning(f"Failed to log changes: {e}")
+    
     # Generate proposals
     proposals = generate_all_proposals(entry, vector_store, max_proposals=request.max_proposals)
     
@@ -351,12 +366,18 @@ def approve(request: ApproveRequest):
     if not result.get("success"):
         return ApproveResponse(success=False, error=result.get("error"))
     
-    # Re-index the updated summary
+    # Re-index the updated summary and log changes
     documents = load_content(CONTENT_DIR)
     updated = [d for d in documents if d["id"] == request.proposal.target_summary_id]
     if updated and vector_store:
         vector_store.index_documents(updated)
         entries_cache[updated[0]["id"]] = updated[0]
+        
+        # Log the diff for this summary update
+        if changelog and version_cache:
+            file_path = result.get("file", "")
+            if file_path:
+                diff_and_log(file_path, updated[0], changelog, version_cache)
     
     return ApproveResponse(
         success=True,
@@ -447,6 +468,110 @@ def list_summaries():
         ],
         "total": len(summaries)
     }
+
+
+# ============ Changelog Endpoints ============
+
+class ChangelogQuery(BaseModel):
+    limit: int = Field(default=50, ge=1, le=500)
+    source: Optional[str] = Field(default=None, description="Filter by source file")
+    path: Optional[str] = Field(default=None, description="Filter by node path prefix")
+    change_type: Optional[str] = Field(default=None, description="Filter by type: added, modified, removed")
+
+
+@app.get("/changelog")
+def get_changelog(
+    limit: int = 50,
+    source: Optional[str] = None,
+    path: Optional[str] = None,
+    change_type: Optional[str] = None
+):
+    """
+    Get recent changes from the changelog.
+    
+    Supports filtering by source file, node path, and change type.
+    """
+    if not changelog:
+        raise HTTPException(status_code=503, detail="Changelog not initialized")
+    
+    # Apply filters
+    if source:
+        changes = changelog.read_by_source(source)
+    elif path:
+        changes = changelog.read_by_path(path)
+    elif change_type:
+        if change_type not in ("added", "modified", "removed"):
+            raise HTTPException(status_code=400, detail="Invalid change_type. Must be: added, modified, removed")
+        changes = changelog.read_by_type(change_type)
+    else:
+        changes = changelog.read_recent(limit)
+    
+    # Apply limit after filtering
+    changes = changes[:limit]
+    
+    return {
+        "changes": changes,
+        "total": len(changes)
+    }
+
+
+@app.get("/changelog/sources")
+def get_changelog_sources():
+    """Get list of unique source files in the changelog."""
+    if not changelog:
+        raise HTTPException(status_code=503, detail="Changelog not initialized")
+    
+    all_changes = changelog.read_all()
+    sources = sorted(set(c.get("source", "") for c in all_changes if c.get("source")))
+    
+    return {"sources": sources}
+
+
+@app.get("/changelog/stats")
+def get_changelog_stats():
+    """Get changelog statistics."""
+    if not changelog:
+        raise HTTPException(status_code=503, detail="Changelog not initialized")
+    
+    all_changes = changelog.read_all()
+    
+    # Count by type
+    by_type = {"added": 0, "modified": 0, "removed": 0}
+    for c in all_changes:
+        change_type = c.get("type", "")
+        if change_type in by_type:
+            by_type[change_type] += 1
+    
+    # Get date range
+    timestamps = [c.get("timestamp", "") for c in all_changes if c.get("timestamp")]
+    
+    return {
+        "total_changes": len(all_changes),
+        "by_type": by_type,
+        "first_change": min(timestamps) if timestamps else None,
+        "last_change": max(timestamps) if timestamps else None,
+    }
+
+
+@app.get("/entries/{entry_id}/history")
+def get_entry_history(entry_id: str, limit: int = 50):
+    """Get change history for a specific entry."""
+    if not changelog:
+        raise HTTPException(status_code=503, detail="Changelog not initialized")
+    
+    # Find the entry's source file
+    if entry_id in entries_cache:
+        source_file = entries_cache[entry_id].get("metadata", {}).get("file_path", "")
+        if source_file:
+            changes = changelog.read_by_source(source_file)[:limit]
+            return {"entry_id": entry_id, "changes": changes, "total": len(changes)}
+    
+    # Fallback: search by entry id in paths
+    all_changes = changelog.read_all()
+    changes = [c for c in all_changes if entry_id in c.get("source", "") or entry_id in c.get("path", "")]
+    changes.sort(key=lambda c: c.get("timestamp", ""), reverse=True)
+    
+    return {"entry_id": entry_id, "changes": changes[:limit], "total": len(changes[:limit])}
 
 
 # ============ Main ============

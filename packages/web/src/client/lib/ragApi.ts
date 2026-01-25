@@ -216,7 +216,65 @@ export const ragApi = {
 
   // List summaries
   listSummaries: () => ragRequest<SummariesResponse>('/summaries'),
+
+  // Changelog endpoints
+  getChangelog: (options?: ChangelogQuery) => {
+    const params = new URLSearchParams();
+    if (options?.limit) params.set('limit', options.limit.toString());
+    if (options?.source) params.set('source', options.source);
+    if (options?.path) params.set('path', options.path);
+    if (options?.change_type) params.set('change_type', options.change_type);
+    const query = params.toString();
+    return ragRequest<ChangelogResponse>(`/changelog${query ? `?${query}` : ''}`);
+  },
+
+  getChangelogSources: () => ragRequest<{ sources: string[] }>('/changelog/sources'),
+
+  getChangelogStats: () => ragRequest<ChangelogStats>('/changelog/stats'),
+
+  getEntryHistory: (entryId: string, limit = 50) =>
+    ragRequest<EntryHistoryResponse>(`/entries/${entryId}/history?limit=${limit}`),
 };
+
+// Changelog types
+export interface ChangelogEntry {
+  timestamp: string;
+  source: string;
+  type: 'added' | 'modified' | 'removed';
+  path: string;
+  value?: unknown;
+  old?: unknown;
+  new?: unknown;
+}
+
+export interface ChangelogQuery {
+  limit?: number;
+  source?: string;
+  path?: string;
+  change_type?: 'added' | 'modified' | 'removed';
+}
+
+export interface ChangelogResponse {
+  changes: ChangelogEntry[];
+  total: number;
+}
+
+export interface ChangelogStats {
+  total_changes: number;
+  by_type: {
+    added: number;
+    modified: number;
+    removed: number;
+  };
+  first_change: string | null;
+  last_change: string | null;
+}
+
+export interface EntryHistoryResponse {
+  entry_id: string;
+  changes: ChangelogEntry[];
+  total: number;
+}
 
 // Connection status check
 export async function checkRagConnection(): Promise<{

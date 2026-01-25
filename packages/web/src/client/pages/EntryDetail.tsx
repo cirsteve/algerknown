@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { api, Entry, Link as EntryLink } from '../lib/api';
+import { HistoryTab } from '../components/HistoryTab';
+
+type TabType = 'content' | 'history';
 
 export function EntryDetail() {
   const { id } = useParams<{ id: string }>();
@@ -11,6 +14,7 @@ export function EntryDetail() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deleting, setDeleting] = useState(false);
+  const [activeTab, setActiveTab] = useState<TabType>('content');
 
   useEffect(() => {
     async function loadData() {
@@ -159,8 +163,35 @@ export function EntryDetail() {
         </div>
       )}
 
-      {/* Content */}
-      <div className="bg-slate-800 rounded-lg p-6 space-y-4">
+      {/* Tabs */}
+      <div className="flex border-b border-slate-700">
+        <button
+          onClick={() => setActiveTab('content')}
+          className={`px-4 py-2 text-sm font-medium transition-colors ${
+            activeTab === 'content'
+              ? 'text-sky-400 border-b-2 border-sky-400'
+              : 'text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          Content
+        </button>
+        <button
+          onClick={() => setActiveTab('history')}
+          className={`px-4 py-2 text-sm font-medium transition-colors ${
+            activeTab === 'history'
+              ? 'text-sky-400 border-b-2 border-sky-400'
+              : 'text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          History
+        </button>
+      </div>
+
+      {/* Tab Content */}
+      {activeTab === 'content' ? (
+        <>
+          {/* Content */}
+          <div className="bg-slate-800 rounded-lg p-6 space-y-4">
         {displayFields.map(([key, value]) => (
           <div key={key}>
             <label className="text-sm text-slate-400 uppercase tracking-wide">
@@ -212,6 +243,10 @@ export function EntryDetail() {
             ))}
           </div>
         </div>
+      )}
+        </>
+      ) : (
+        <HistoryTab entryId={id!} />
       )}
     </div>
   );

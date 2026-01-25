@@ -29,6 +29,7 @@ export function Layout({ children }: LayoutProps) {
     { path: '/graph', label: 'Graph', icon: '🕸️', requiresRag: false },
     { path: '/ask', label: 'Ask', icon: '💬', requiresRag: true },
     { path: '/ingest', label: 'Ingest', icon: '📥', requiresRag: true },
+    { path: '/changes', label: 'Changes', icon: '📜', requiresRag: true },
   ];
 
   return (
