@@ -332,8 +332,8 @@ class Changelog:
         """
         all_changes = self.read_all()
         
-        start_str = start.isoformat() + "Z" if start else ""
-        end_str = end.isoformat() + "Z" if end else "9999"
+        start_str = start.replace(tzinfo=None).isoformat() + "Z" if start else ""
+        end_str = end.replace(tzinfo=None).isoformat() + "Z" if end else "9999"
         
         filtered = [
             c for c in all_changes
