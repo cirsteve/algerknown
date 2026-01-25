@@ -226,10 +226,10 @@ class TestComputeDiff:
 
     def test_timestamp_format(self):
         """Should include ISO timestamp in changes."""
-        timestamp = datetime(2026, 1, 24, 12, 0, 0)
+        timestamp = datetime(2024, 1, 15, 12, 0, 0)
         changes = compute_diff(None, {"id": "test"}, "test.yaml", timestamp)
         
-        assert changes[0]["timestamp"] == "2026-01-24T12:00:00Z"
+        assert changes[0]["timestamp"] == "2024-01-15T12:00:00Z"
 
     def test_source_file_included(self):
         """Should include source file in changes."""
@@ -256,7 +256,7 @@ class TestChangelog:
             changelog = Changelog(path)
             
             changes = [
-                {"timestamp": "2026-01-24T12:00:00Z", "type": "added", "path": "foo"}
+                {"timestamp": "2024-01-15T12:00:00Z", "type": "added", "path": "foo"}
             ]
             changelog.append(changes)
             
@@ -270,8 +270,8 @@ class TestChangelog:
             changelog = Changelog(path)
             
             changelog.append([
-                {"timestamp": "2026-01-24T12:00:00Z", "type": "added", "path": "a"},
-                {"timestamp": "2026-01-24T12:01:00Z", "type": "added", "path": "b"},
+                {"timestamp": "2024-01-15T12:00:00Z", "type": "added", "path": "a"},
+                {"timestamp": "2024-01-15T12:01:00Z", "type": "added", "path": "b"},
             ])
             
             all_changes = changelog.read_all()
@@ -284,8 +284,8 @@ class TestChangelog:
             changelog = Changelog(path)
             
             changelog.append([
-                {"timestamp": "2026-01-24T10:00:00Z", "type": "added", "path": "old"},
-                {"timestamp": "2026-01-24T12:00:00Z", "type": "added", "path": "new"},
+                {"timestamp": "2024-01-15T10:00:00Z", "type": "added", "path": "old"},
+                {"timestamp": "2024-01-15T12:00:00Z", "type": "added", "path": "new"},
             ])
             
             recent = changelog.read_recent(limit=1)
@@ -299,8 +299,8 @@ class TestChangelog:
             changelog = Changelog(path)
             
             changelog.append([
-                {"timestamp": "2026-01-24T12:00:00Z", "source": "a.yaml", "path": "x"},
-                {"timestamp": "2026-01-24T12:00:00Z", "source": "b.yaml", "path": "y"},
+                {"timestamp": "2024-01-15T12:00:00Z", "source": "a.yaml", "path": "x"},
+                {"timestamp": "2024-01-15T12:00:00Z", "source": "b.yaml", "path": "y"},
             ])
             
             filtered = changelog.read_by_source("a.yaml")
@@ -314,9 +314,9 @@ class TestChangelog:
             changelog = Changelog(path)
             
             changelog.append([
-                {"timestamp": "2026-01-24T12:00:00Z", "path": "foo.bar"},
-                {"timestamp": "2026-01-24T12:00:00Z", "path": "foo.baz"},
-                {"timestamp": "2026-01-24T12:00:00Z", "path": "other"},
+                {"timestamp": "2024-01-15T12:00:00Z", "path": "foo.bar"},
+                {"timestamp": "2024-01-15T12:00:00Z", "path": "foo.baz"},
+                {"timestamp": "2024-01-15T12:00:00Z", "path": "other"},
             ])
             
             filtered = changelog.read_by_path("foo")
@@ -329,9 +329,9 @@ class TestChangelog:
             changelog = Changelog(path)
             
             changelog.append([
-                {"timestamp": "2026-01-24T12:00:00Z", "type": "added", "path": "a"},
-                {"timestamp": "2026-01-24T12:00:00Z", "type": "modified", "path": "b"},
-                {"timestamp": "2026-01-24T12:00:00Z", "type": "added", "path": "c"},
+                {"timestamp": "2024-01-15T12:00:00Z", "type": "added", "path": "a"},
+                {"timestamp": "2024-01-15T12:00:00Z", "type": "modified", "path": "b"},
+                {"timestamp": "2024-01-15T12:00:00Z", "type": "added", "path": "c"},
             ])
             
             filtered = changelog.read_by_type("added")
