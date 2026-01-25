@@ -78,9 +78,9 @@ export function IngestPage() {
   };
 
   const startEditing = (index: number) => {
-    // Initialize edited version from current state
+    // Initialize edited version from current state with deep clone to avoid mutating original
     if (!editedProposals.has(index)) {
-      setEditedProposals(prev => new Map(prev).set(index, { ...proposals[index] }));
+      setEditedProposals(prev => new Map(prev).set(index, structuredClone(proposals[index])));
     }
     setEditingProposal(index);
   };
@@ -103,7 +103,8 @@ export function IngestPage() {
 
   const updateProposal = (index: number, updates: Partial<ProposalData>) => {
     setEditedProposals(prev => {
-      const current = prev.get(index) ?? { ...proposals[index] };
+      // Deep clone to avoid mutating original proposal data
+      const current = prev.get(index) ?? structuredClone(proposals[index]);
       return new Map(prev).set(index, { ...current, ...updates });
     });
   };
