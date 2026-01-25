@@ -105,7 +105,11 @@ def _parse_path(path: str) -> list[str | int]:
                 parts.append(current)
                 current = ""
             # Find closing bracket
-            j = path.index("]", i)
+            j = path.find("]", i)
+            if j == -1:
+                raise ValueError(
+                    f"Invalid path {path!r}: missing closing ']' for index starting at position {i}"
+                )
             index_str = path[i + 1 : j]
             parts.append(int(index_str))
             i = j
