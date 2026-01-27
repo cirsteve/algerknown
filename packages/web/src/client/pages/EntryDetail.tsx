@@ -60,7 +60,7 @@ export function EntryDetail() {
   }
 
   // Fields to hide from the generic display
-  const hiddenFields = ['id', 'type', 'links'];
+  const hiddenFields = ['id', 'type', 'links', 'topic', 'status', 'tags'];
   const displayFields = Object.entries(entry).filter(
     ([key]) => !hiddenFields.includes(key)
   );
@@ -167,21 +167,19 @@ export function EntryDetail() {
       <div className="flex border-b border-slate-700">
         <button
           onClick={() => setActiveTab('content')}
-          className={`px-4 py-2 text-sm font-medium transition-colors ${
-            activeTab === 'content'
+          className={`px-4 py-2 text-sm font-medium transition-colors ${activeTab === 'content'
               ? 'text-sky-400 border-b-2 border-sky-400'
               : 'text-slate-400 hover:text-slate-200'
-          }`}
+            }`}
         >
           Content
         </button>
         <button
           onClick={() => setActiveTab('history')}
-          className={`px-4 py-2 text-sm font-medium transition-colors ${
-            activeTab === 'history'
+          className={`px-4 py-2 text-sm font-medium transition-colors ${activeTab === 'history'
               ? 'text-sky-400 border-b-2 border-sky-400'
               : 'text-slate-400 hover:text-slate-200'
-          }`}
+            }`}
         >
           History
         </button>
@@ -192,58 +190,58 @@ export function EntryDetail() {
         <>
           {/* Content */}
           <div className="bg-slate-800 rounded-lg p-6 space-y-4">
-        {displayFields.map(([key, value]) => (
-          <div key={key}>
-            <label className="text-sm text-slate-400 uppercase tracking-wide">
-              {key.replace(/_/g, ' ')}
-            </label>
-            <div className="mt-1 text-slate-100">
-              {typeof value === 'string' ? (
-                <p className="whitespace-pre-wrap">{value}</p>
-              ) : Array.isArray(value) ? (
-                <ul className="list-disc list-inside space-y-1">
-                  {value.map((item, i) => (
-                    <li key={i}>
-                      {typeof item === 'object' ? JSON.stringify(item) : String(item)}
-                    </li>
-                  ))}
-                </ul>
-              ) : typeof value === 'object' && value !== null ? (
-                <pre className="bg-slate-900 p-3 rounded text-sm overflow-x-auto">
-                  {JSON.stringify(value, null, 2)}
-                </pre>
-              ) : (
-                <span>{String(value)}</span>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Links */}
-      {entry.links && entry.links.length > 0 && (
-        <div className="bg-slate-800 rounded-lg p-6">
-          <h2 className="text-lg font-semibold text-slate-200 mb-4">Links</h2>
-          <div className="space-y-3">
-            {entry.links.map((link: EntryLink, idx: number) => (
-              <div key={idx} className="flex items-center gap-3">
-                <span className="text-xs px-2 py-1 bg-slate-700 rounded text-slate-400">
-                  {link.relationship.replace(/_/g, ' ')}
-                </span>
-                <Link
-                  to={`/entries/${link.id}`}
-                  className="text-sky-400 hover:text-sky-300"
-                >
-                  {link.id}
-                </Link>
-                {link.notes && (
-                  <span className="text-sm text-slate-500">— {link.notes}</span>
-                )}
+            {displayFields.map(([key, value]) => (
+              <div key={key}>
+                <label className="text-sm text-slate-400 uppercase tracking-wide">
+                  {key.replace(/_/g, ' ')}
+                </label>
+                <div className="mt-1 text-slate-100">
+                  {typeof value === 'string' ? (
+                    <p className="whitespace-pre-wrap">{value}</p>
+                  ) : Array.isArray(value) ? (
+                    <ul className="list-disc list-inside space-y-1">
+                      {value.map((item, i) => (
+                        <li key={i}>
+                          {typeof item === 'object' ? JSON.stringify(item) : String(item)}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : typeof value === 'object' && value !== null ? (
+                    <pre className="bg-slate-900 p-3 rounded text-sm overflow-x-auto">
+                      {JSON.stringify(value, null, 2)}
+                    </pre>
+                  ) : (
+                    <span>{String(value)}</span>
+                  )}
+                </div>
               </div>
             ))}
           </div>
-        </div>
-      )}
+
+          {/* Links */}
+          {entry.links && entry.links.length > 0 && (
+            <div className="bg-slate-800 rounded-lg p-6">
+              <h2 className="text-lg font-semibold text-slate-200 mb-4">Links</h2>
+              <div className="space-y-3">
+                {entry.links.map((link: EntryLink, idx: number) => (
+                  <div key={idx} className="flex items-center gap-3">
+                    <span className="text-xs px-2 py-1 bg-slate-700 rounded text-slate-400">
+                      {link.relationship.replace(/_/g, ' ')}
+                    </span>
+                    <Link
+                      to={`/entries/${link.id}`}
+                      className="text-sky-400 hover:text-sky-300"
+                    >
+                      {link.id}
+                    </Link>
+                    {link.notes && (
+                      <span className="text-sm text-slate-500">— {link.notes}</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </>
       ) : (
         <HistoryTab entryId={id!} />
