@@ -1,5 +1,5 @@
 import { Routes, Route } from 'react-router-dom';
-import { Layout } from './components/Layout';
+import { MainLayout } from './components/templates/MainLayout';
 import { Dashboard } from './pages/Dashboard';
 import { EntryList } from './pages/EntryList';
 import { EntryDetail } from './pages/EntryDetail';
@@ -13,7 +13,7 @@ import { ChangesPage } from './pages/ChangesPage';
 
 export default function App() {
   return (
-    <Layout>
+    <MainLayout>
       <Routes>
         <Route path="/" element={<Dashboard />} />
         <Route path="/entries" element={<EntryList />} />
@@ -27,6 +27,6 @@ export default function App() {
         <Route path="/ingest" element={<IngestPage />} />
         <Route path="/changes" element={<ChangesPage />} />
       </Routes>
-    </Layout>
+    </MainLayout>
   );
 }
