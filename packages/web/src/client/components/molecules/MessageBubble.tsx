@@ -1,4 +1,4 @@
-import { ReactNode } from 'react';
+import { ReactNode, type KeyboardEvent } from 'react';
 import { Link } from 'react-router-dom';
 
 interface MessageBubbleProps {
@@ -103,7 +103,7 @@ export function ChatInput({
   disabled = false,
   className = '' 
 }: ChatInputProps) {
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       onSubmit();
