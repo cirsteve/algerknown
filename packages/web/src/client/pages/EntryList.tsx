@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { api, IndexEntryRef } from '../lib/api';
 import { EntryCard } from '../components/EntryCard';
@@ -29,6 +29,16 @@ export function EntryList() {
   const filteredEntries = selectedType
     ? entries.filter(e => e.type === selectedType)
     : entries;
+
+  const summaryEntries = useMemo(
+    () => filteredEntries.filter(e => e.type === 'summary'),
+    [filteredEntries]
+  );
+
+  const journalEntries = useMemo(
+    () => filteredEntries.filter(e => e.type === 'entry'),
+    [filteredEntries]
+  );
 
   if (loading) {
     return <div className="text-slate-400">Loading...</div>;
@@ -69,22 +79,22 @@ export function EntryList() {
         Showing {filteredEntries.length} of {entries.length} entries
       </div>
 
-      {filteredEntries.filter(e => e.type === 'summary').length > 0 && (
+      {summaryEntries.length > 0 && (
         <section className="space-y-4">
           <h2 className="text-xl font-semibold text-slate-200">Summaries</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredEntries.filter(e => e.type === 'summary').map(entry => (
+            {summaryEntries.map(entry => (
               <EntryCard key={entry.id} entry={entry} />
             ))}
           </div>
         </section>
       )}
 
-      {filteredEntries.filter(e => e.type === 'entry').length > 0 && (
+      {journalEntries.length > 0 && (
         <section className="space-y-4">
           <h2 className="text-xl font-semibold text-slate-200">Journal Entries</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredEntries.filter(e => e.type === 'entry').map(entry => (
+            {journalEntries.map(entry => (
               <EntryCard key={entry.id} entry={entry} />
             ))}
           </div>
