@@ -98,6 +98,7 @@ export function Sidebar({ navItems, className = '' }: SidebarProps) {
       {/* RAG Status Footer */}
       <div className="p-4 border-t border-slate-700 relative">
         <button
+          type="button"
           onClick={() => setSettingsOpen(!settingsOpen)}
           className="flex items-center gap-2 w-full px-3 py-1.5 rounded-lg text-sm hover:bg-slate-700 transition-colors"
         >
