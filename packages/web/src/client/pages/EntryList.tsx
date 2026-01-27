@@ -31,15 +31,17 @@ export function EntryList() {
     [entries, selectedType]
   );
 
-  const summaryEntries = useMemo(
-    () => filteredEntries.filter(e => e.type === 'summary'),
-    [filteredEntries]
-  );
+  const summaryEntries = useMemo(() => {
+    if (selectedType === 'summary') return filteredEntries;
+    if (selectedType === 'entry') return [];
+    return filteredEntries.filter(e => e.type === 'summary');
+  }, [filteredEntries, selectedType]);
 
-  const journalEntries = useMemo(
-    () => filteredEntries.filter(e => e.type === 'entry'),
-    [filteredEntries]
-  );
+  const journalEntries = useMemo(() => {
+    if (selectedType === 'entry') return filteredEntries;
+    if (selectedType === 'summary') return [];
+    return filteredEntries.filter(e => e.type === 'entry');
+  }, [filteredEntries, selectedType]);
 
   if (loading) {
     return <div className="text-slate-400">Loading...</div>;
