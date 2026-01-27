@@ -5,6 +5,7 @@
   "description": "A topic summary aggregating learnings, decisions, and artifacts",
   "type": "object",
   "required": ["id", "type", "topic", "status", "summary"],
+  "additionalProperties": false,
   "properties": {
     "id": {
       "type": "string",
@@ -71,6 +72,11 @@
       "items": {
         "$ref": "#/$defs/link"
       }
+    },
+    "last_ingested": {
+      "type": "string",
+      "format": "date",
+      "description": "Date this entry was last ingested into the RAG system (auto-populated)"
     }
   },
   "$defs": {

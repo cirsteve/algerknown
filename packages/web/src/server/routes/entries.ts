@@ -7,10 +7,14 @@ const RAG_BACKEND_URL = process.env.RAG_BACKEND_URL || 'http://localhost:8000';
 
 /**
  * Get the knowledge base root path.
- * Uses core.findRoot() which checks ALGERKNOWN_KB_ROOT env var first,
- * then falls back to walking up from cwd.
+ * First checks x-zkb-path header, then falls back to core.findRoot()
+ * which checks ALGERKNOWN_KB_ROOT env var and walks up from cwd.
  */
-const getZkbPath = (_req: Request): string => {
+const getZkbPath = (req: Request): string => {
+  const headerPath = req.headers['x-zkb-path'] as string;
+  if (headerPath) {
+    return headerPath;
+  }
   return core.findRoot();
 };
 
@@ -81,22 +85,26 @@ router.post('/', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'id and type are required' });
     }
 
+    // Strip last_ingested - it's auto-populated by the RAG system, not user-provided
+    const { last_ingested, ...entryWithoutIngested } = entryData as core.AnyEntry & { last_ingested?: string };
+    const cleanEntry = entryWithoutIngested as core.AnyEntry;
+
     // Validate entry
-    const validation = core.validate(entryData, zkbPath);
+    const validation = core.validate(cleanEntry, zkbPath);
     if (!validation.valid) {
       return res.status(400).json({ error: 'Validation failed', details: validation.errors });
     }
 
     // Write entry file - this also adds to index
-    core.writeEntry(entryData, zkbPath);
+    core.writeEntry(cleanEntry, zkbPath);
 
     // Notify RAG backend to index the new entry
-    const filePath = core.resolveEntryPath(entryData.id, zkbPath);
+    const filePath = core.resolveEntryPath(cleanEntry.id, zkbPath);
     if (filePath) {
       notifyRagBackend(filePath);
     }
 
-    res.status(201).json(entryData);
+    res.status(201).json(cleanEntry);
   } catch (error) {
     res.status(400).json({ error: (error as Error).message });
   }

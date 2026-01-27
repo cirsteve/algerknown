@@ -5,6 +5,7 @@
   "description": "A journal entry capturing work done at a specific point in time",
   "type": "object",
   "required": ["id", "type", "date", "topic", "status"],
+  "additionalProperties": false,
   "properties": {
     "id": {
       "type": "string",
@@ -68,6 +69,11 @@
       "items": {
         "$ref": "summary.schema.json#/$defs/link"
       }
+    },
+    "last_ingested": {
+      "type": "string",
+      "format": "date",
+      "description": "Date this entry was last ingested into the RAG system (auto-populated)"
     }
   },
   "$defs": {
