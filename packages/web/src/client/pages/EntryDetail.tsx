@@ -60,7 +60,7 @@ export function EntryDetail() {
   }
 
   // Fields to hide from the generic display
-  const hiddenFields = ['id', 'type', 'links', 'topic', 'status', 'tags'];
+  const hiddenFields = ['id', 'type', 'links', 'topic', 'status', 'tags', 'date', 'date_range', 'time_hours', 'last_ingested'];
   const displayFields = Object.entries(entry).filter(
     ([key]) => !hiddenFields.includes(key)
   );
@@ -108,13 +108,14 @@ export function EntryDetail() {
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <Link to="/entries" className="text-sky-400 hover:text-sky-300 text-sm">
+          <Link to="/entries" className="text-sky-400 hover:text-sky-300 text-base">
             ← Back to entries
           </Link>
           <h1 className="text-2xl font-bold text-slate-100 mt-2">
             {entry.topic || entry.id}
           </h1>
-          <div className="flex items-center gap-4 mt-2 text-sm text-slate-400">
+          {/* Date Display removed from here */}
+          <div className="flex items-center gap-4 mt-2 text-lg text-slate-400">
             <span className={`entry-type-badge ${entry.type === 'summary'
               ? 'bg-blue-500/20 text-blue-300'
               : 'bg-green-500/20 text-green-300'
@@ -122,12 +123,34 @@ export function EntryDetail() {
               {entry.type}
             </span>
             <span>{entry.id}</span>
-            <span className={`px-2 py-0.5 rounded text-xs ${entry.status === 'active' ? 'bg-green-500/20 text-green-300' :
+            <span className={`px-2 py-0.5 rounded text-base ${entry.status === 'active' ? 'bg-green-500/20 text-green-300' :
               entry.status === 'archived' ? 'bg-gray-500/20 text-gray-300' :
                 'bg-yellow-500/20 text-yellow-300'
               }`}>
               {entry.status}
             </span>
+            {/* Date Display */}
+            {(entry as any).date_range ? (
+              <span>
+                {(entry as any).date_range.start} - {(entry as any).date_range.end}
+              </span>
+            ) : (entry as any).date ? (
+              <span>
+                {(entry as any).date}
+              </span>
+            ) : null}
+            {/* Time Display */}
+            {(entry as any).time_hours ? (
+              <span className="text-slate-500 text-base">
+                • {(entry as any).time_hours}h
+              </span>
+            ) : null}
+            {/* Last Ingested Display */}
+            {(entry as any).last_ingested ? (
+              <span className="text-slate-500 text-base" title="Last Ingested">
+                • Ingested: {(entry as any).last_ingested}
+              </span>
+            ) : null}
           </div>
         </div>
         <div className="flex gap-2">
@@ -156,7 +179,7 @@ export function EntryDetail() {
       {entry.tags && entry.tags.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {entry.tags.map(tag => (
-            <span key={tag} className="text-xs px-2 py-1 bg-slate-700 rounded text-slate-300">
+            <span key={tag} className="text-sm px-2 py-1 bg-slate-700 rounded text-slate-300">
               #{tag}
             </span>
           ))}
@@ -167,18 +190,18 @@ export function EntryDetail() {
       <div className="flex border-b border-slate-700">
         <button
           onClick={() => setActiveTab('content')}
-          className={`px-4 py-2 text-sm font-medium transition-colors ${activeTab === 'content'
-              ? 'text-sky-400 border-b-2 border-sky-400'
-              : 'text-slate-400 hover:text-slate-200'
+          className={`px-4 py-2 text-base font-medium transition-colors ${activeTab === 'content'
+            ? 'text-sky-400 border-b-2 border-sky-400'
+            : 'text-slate-400 hover:text-slate-200'
             }`}
         >
           Content
         </button>
         <button
           onClick={() => setActiveTab('history')}
-          className={`px-4 py-2 text-sm font-medium transition-colors ${activeTab === 'history'
-              ? 'text-sky-400 border-b-2 border-sky-400'
-              : 'text-slate-400 hover:text-slate-200'
+          className={`px-4 py-2 text-base font-medium transition-colors ${activeTab === 'history'
+            ? 'text-sky-400 border-b-2 border-sky-400'
+            : 'text-slate-400 hover:text-slate-200'
             }`}
         >
           History
@@ -192,10 +215,10 @@ export function EntryDetail() {
           <div className="bg-slate-800 rounded-lg p-6 space-y-4">
             {displayFields.map(([key, value]) => (
               <div key={key}>
-                <label className="text-sm text-slate-400 uppercase tracking-wide">
+                <label className="text-base text-slate-400 uppercase tracking-wide">
                   {key.replace(/_/g, ' ')}
                 </label>
-                <div className="mt-1 text-slate-100">
+                <div className="mt-1 text-slate-100 text-lg">
                   {typeof value === 'string' ? (
                     <p className="whitespace-pre-wrap">{value}</p>
                   ) : Array.isArray(value) ? (
@@ -207,7 +230,7 @@ export function EntryDetail() {
                       ))}
                     </ul>
                   ) : typeof value === 'object' && value !== null ? (
-                    <pre className="bg-slate-900 p-3 rounded text-sm overflow-x-auto">
+                    <pre className="bg-slate-900 p-3 rounded text-base overflow-x-auto">
                       {JSON.stringify(value, null, 2)}
                     </pre>
                   ) : (
@@ -221,21 +244,21 @@ export function EntryDetail() {
           {/* Links */}
           {entry.links && entry.links.length > 0 && (
             <div className="bg-slate-800 rounded-lg p-6">
-              <h2 className="text-lg font-semibold text-slate-200 mb-4">Links</h2>
+              <h2 className="text-xl font-semibold text-slate-200 mb-4">Links</h2>
               <div className="space-y-3">
                 {entry.links.map((link: EntryLink, idx: number) => (
                   <div key={idx} className="flex items-center gap-3">
-                    <span className="text-xs px-2 py-1 bg-slate-700 rounded text-slate-400">
+                    <span className="text-sm px-2 py-1 bg-slate-700 rounded text-slate-400">
                       {link.relationship.replace(/_/g, ' ')}
                     </span>
                     <Link
                       to={`/entries/${link.id}`}
-                      className="text-sky-400 hover:text-sky-300"
+                      className="text-sky-400 hover:text-sky-300 text-lg" // Added text-lg
                     >
                       {link.id}
                     </Link>
                     {link.notes && (
-                      <span className="text-sm text-slate-500">— {link.notes}</span>
+                      <span className="text-base text-slate-500">— {link.notes}</span>
                     )}
                   </div>
                 ))}
