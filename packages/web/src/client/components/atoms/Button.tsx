@@ -40,14 +40,13 @@ export function Button({
   className = '',
   ...props 
 }: ButtonProps) {
-  const spinnerSize = size === 'lg' ? 'md' : 'sm';
   return (
     <button
       className={`${baseStyles} ${variantStyles[variant]} ${sizeStyles[size]} ${className}`}
       disabled={disabled || loading}
       {...props}
     >
-      {loading && <Spinner size={spinnerSize} />}
+      {loading && <Spinner size="sm" />}
       {children}
     </button>
   );
