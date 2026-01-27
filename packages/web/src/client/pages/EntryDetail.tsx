@@ -59,11 +59,7 @@ export function EntryDetail() {
     return <div className="text-slate-400">Entry not found</div>;
   }
 
-  // Fields to hide from the generic display
-  const hiddenFields = ['id', 'type', 'links', 'topic', 'status', 'tags', 'date', 'date_range', 'time_hours', 'last_ingested'];
-  const displayFields = Object.entries(entry).filter(
-    ([key]) => !hiddenFields.includes(key)
-  );
+  // Explicit field rendering - no generic loop
 
   return (
     <div className="space-y-6">
@@ -212,34 +208,217 @@ export function EntryDetail() {
       {activeTab === 'content' ? (
         <>
           {/* Content */}
-          <div className="bg-slate-800 rounded-lg p-6 space-y-4">
-            {displayFields.map(([key, value]) => (
-              <div key={key}>
-                <label className="text-base text-slate-400 uppercase tracking-wide">
-                  {key.replace(/_/g, ' ')}
-                </label>
-                <div className="mt-1 text-slate-100 text-lg">
-                  {typeof value === 'string' ? (
-                    <p className="whitespace-pre-wrap">{value}</p>
-                  ) : Array.isArray(value) ? (
-                    <ul className="list-disc list-inside space-y-1">
-                      {value.map((item, i) => (
-                        <li key={i}>
-                          {typeof item === 'object' ? JSON.stringify(item) : String(item)}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : typeof value === 'object' && value !== null ? (
-                    <pre className="bg-slate-900 p-3 rounded text-base overflow-x-auto">
-                      {JSON.stringify(value, null, 2)}
-                    </pre>
-                  ) : (
-                    <span>{String(value)}</span>
-                  )}
+          {/* Summary (for Summaries) */}
+          {entry.summary && (
+            <div className="bg-slate-800 rounded-lg p-6 space-y-4">
+              <h2 className="text-xl font-semibold text-slate-200">Summary</h2>
+              <p className="text-lg text-slate-100 whitespace-pre-wrap">{entry.summary}</p>
+            </div>
+          )}
+
+          {/* Context (for Entries) */}
+          {entry.context && (
+            <div className="bg-slate-800 rounded-lg p-6 space-y-4">
+              <h2 className="text-xl font-semibold text-slate-200">Context</h2>
+              <p className="text-lg text-slate-100 whitespace-pre-wrap">{entry.context}</p>
+            </div>
+          )}
+
+          {/* Approach */}
+          {(entry as any).approach && (
+            <div className="bg-slate-800 rounded-lg p-6 space-y-4">
+              <h2 className="text-xl font-semibold text-slate-200">Approach</h2>
+              <p className="text-lg text-slate-100 whitespace-pre-wrap">{(entry as any).approach}</p>
+            </div>
+          )}
+
+          {/* Outcome */}
+          {(entry as any).outcome && (
+            <div className="bg-slate-800 rounded-lg p-6 space-y-6">
+              <h2 className="text-xl font-semibold text-slate-200">Outcome</h2>
+
+              {/* Worked */}
+              {(entry as any).outcome.worked && (entry as any).outcome.worked.length > 0 && (
+                <div>
+                  <h3 className="text-lg font-medium text-green-400 mb-2">What Worked</h3>
+                  <ul className="list-disc list-inside space-y-1">
+                    {(entry as any).outcome.worked.map((item: string, idx: number) => (
+                      <li key={idx} className="text-lg text-slate-100">{item}</li>
+                    ))}
+                  </ul>
                 </div>
+              )}
+
+              {/* Failed */}
+              {(entry as any).outcome.failed && (entry as any).outcome.failed.length > 0 && (
+                <div>
+                  <h3 className="text-lg font-medium text-red-400 mb-2">What Failed</h3>
+                  <ul className="list-disc list-inside space-y-1">
+                    {(entry as any).outcome.failed.map((item: string, idx: number) => (
+                      <li key={idx} className="text-lg text-slate-100">{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Surprised */}
+              {(entry as any).outcome.surprised && (entry as any).outcome.surprised.length > 0 && (
+                <div>
+                  <h3 className="text-lg font-medium text-purple-400 mb-2">Surprises</h3>
+                  <ul className="list-disc list-inside space-y-1">
+                    {(entry as any).outcome.surprised.map((item: string, idx: number) => (
+                      <li key={idx} className="text-lg text-slate-100">{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Learnings */}
+          {(entry as any).learnings && (entry as any).learnings.length > 0 && (
+            <div className="bg-slate-800 rounded-lg p-6">
+              <h2 className="text-xl font-semibold text-indigo-200 mb-4">Learnings</h2>
+              <div className="space-y-4">
+                {(entry as any).learnings.map((learning: any, idx: number) => (
+                  <div key={idx} className="bg-slate-900/30 rounded-lg p-4 space-y-2 border border-slate-700/50">
+                    <p className="text-lg text-slate-100 font-medium">{learning.insight}</p>
+                    {learning.context && (
+                      <p className="text-base text-slate-400 italic">Context: {learning.context}</p>
+                    )}
+                    {learning.relevance && learning.relevance.length > 0 && (
+                      <div className="flex gap-2 items-center flex-wrap">
+                        <span className="text-xs uppercase tracking-wide text-slate-500">Relevance:</span>
+                        {learning.relevance.map((relId: string) => (
+                          <Link key={relId} to={`/entries/${relId}`} className="text-sm text-indigo-400 hover:text-indigo-300 hover:underline">
+                            {relId}
+                          </Link>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </div>
+          )}
+
+          {/* Decisions */}
+          {(entry as any).decisions && (entry as any).decisions.length > 0 && (
+            <div className="bg-slate-800 rounded-lg p-6">
+              <h2 className="text-xl font-semibold text-teal-200 mb-4">Decisions</h2>
+              <div className="space-y-6">
+                {(entry as any).decisions.map((decision: any, idx: number) => (
+                  <div key={idx} className="bg-slate-900/50 rounded-lg p-4 space-y-3 border border-slate-700">
+                    <div className="flex justify-between items-start gap-4">
+                      <h3 className="text-lg font-medium text-slate-100">{decision.decision}</h3>
+                      {decision.date && (
+                        <span className="text-sm font-mono text-slate-500 whitespace-nowrap">{decision.date}</span>
+                      )}
+                    </div>
+
+                    {decision.superseded_by && (
+                      <div className="bg-red-500/10 text-red-300 text-sm px-3 py-1.5 rounded inline-block">
+                        Superseded by: <Link to={`/entries/${decision.superseded_by}`} className="underline hover:text-red-200">{decision.superseded_by}</Link>
+                      </div>
+                    )}
+
+                    {decision.rationale && (
+                      <div>
+                        <div className="text-xs uppercase tracking-wider text-slate-500 mb-1">Rationale</div>
+                        <p className="text-base text-slate-300">{decision.rationale}</p>
+                      </div>
+                    )}
+
+                    {decision.trade_offs && (
+                      <div>
+                        <div className="text-xs uppercase tracking-wider text-slate-500 mb-1">Trade-offs</div>
+                        <p className="text-base text-slate-300">{decision.trade_offs}</p>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Open Questions */}
+          {(entry as any).open_questions && (entry as any).open_questions.length > 0 && (
+            <div className="bg-slate-800 rounded-lg p-6">
+              <h2 className="text-xl font-semibold text-amber-200 mb-4">Open Questions</h2>
+              <ul className="list-disc list-inside space-y-2">
+                {(entry as any).open_questions.map((question: string, idx: number) => (
+                  <li key={idx} className="text-lg text-slate-200">{question}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Resources */}
+          {(entry as any).resources && (entry as any).resources.length > 0 && (
+            <div className="bg-slate-800 rounded-lg p-6">
+              <h2 className="text-xl font-semibold text-slate-200 mb-4">Resources</h2>
+              <div className="space-y-3">
+                {(entry as any).resources.map((resource: any, idx: number) => (
+                  <div key={idx} className="flex flex-col gap-1">
+                    <a
+                      href={resource.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sky-400 hover:text-sky-300 text-lg hover:underline"
+                    >
+                      {resource.title || resource.url}
+                    </a>
+                    {resource.notes && (
+                      <span className="text-base text-slate-500">{resource.notes}</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Artifacts */}
+          {(entry as any).artifacts && (entry as any).artifacts.length > 0 && (
+            <div className="bg-slate-800 rounded-lg p-6">
+              <h2 className="text-xl font-semibold text-slate-200 mb-4">Artifacts</h2>
+              <div className="space-y-4">
+                {(entry as any).artifacts.map((artifact: any, idx: number) => (
+                  <div key={idx} className="flex flex-col gap-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-lg text-slate-100 font-mono break-all">{artifact.path}</span>
+                      {artifact.repo && (
+                        <span className="text-sm text-slate-400 bg-slate-700 px-2 py-0.5 rounded">{artifact.repo}</span>
+                      )}
+                    </div>
+                    {artifact.commit && (
+                      <div className="text-sm font-mono text-slate-500">
+                        Commit: {artifact.commit}
+                      </div>
+                    )}
+                    {artifact.notes && (
+                      <span className="text-base text-slate-400">{artifact.notes}</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Commits */}
+          {(entry as any).commits && (entry as any).commits.length > 0 && (
+            <div className="bg-slate-800 rounded-lg p-6">
+              <h2 className="text-xl font-semibold text-slate-200 mb-4">Commits</h2>
+              <ul className="list-disc list-inside space-y-1">
+                {(entry as any).commits.map((commit: string, idx: number) => (
+                  <li key={idx} className="text-lg font-mono text-slate-300">
+                    {commit}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Open Questions moved from here */}
 
           {/* Links */}
           {entry.links && entry.links.length > 0 && (
