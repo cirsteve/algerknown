@@ -79,8 +79,16 @@ export function Sidebar({ navItems, className = '' }: SidebarProps) {
                 to={item.path}
                 icon={item.icon}
                 label={item.label}
-                disabled={item.requiresRag && !ragConnected}
-                disabledReason={item.requiresRag ? 'RAG backend offline' : undefined}
+                disabled={item.requiresRag && ragConnected === false}
+                disabledReason={
+                  !item.requiresRag
+                    ? undefined
+                    : connectionStatus === 'offline'
+                      ? 'RAG backend offline'
+                      : connectionStatus === 'checking' || connectionStatus === 'unknown'
+                        ? 'Checking RAG backend...'
+                        : undefined
+                }
               />
             </li>
           ))}
