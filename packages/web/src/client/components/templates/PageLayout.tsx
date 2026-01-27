@@ -35,12 +35,16 @@ export function PageLayout({
   className = '',
 }: PageLayoutProps) {
   if (loading) {
-    return <LoadingState message={loadingMessage} />;
+    return (
+      <div className={`space-y-6 ${className}`}>
+        <LoadingState message={loadingMessage} />
+      </div>
+    );
   }
 
   if (error) {
     return (
-      <div className="space-y-6">
+      <div className={`space-y-6 ${className}`}>
         <PageHeader 
           title={title}
           subtitle={subtitle}
