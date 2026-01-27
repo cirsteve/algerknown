@@ -41,9 +41,12 @@ export function PageLayout({
   if (error) {
     return (
       <div className="space-y-6">
-        {backLink && (
-          <PageHeader title={title} backLink={backLink} />
-        )}
+        <PageHeader 
+          title={title}
+          subtitle={subtitle}
+          backLink={backLink}
+          actions={actions}
+        />
         <AlertBox variant="error">{error}</AlertBox>
       </div>
     );
