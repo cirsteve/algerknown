@@ -93,7 +93,12 @@ export function EntryHeader({
         
         <div className="flex gap-2">
           {onEdit && (
-            <LinkButton to={`/entries/${id}/edit`} variant="secondary" size="sm">
+            <LinkButton
+              to={`/entries/${id}/edit`}
+              variant="secondary"
+              size="sm"
+              onClick={onEdit}
+            >
               Edit
             </LinkButton>
           )}
