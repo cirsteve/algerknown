@@ -1,22 +1,10 @@
 import { Router, Request, Response } from 'express';
 import * as core from '@algerknown/core';
+import { getZkbPath } from '../utils/zkb-path.js';
 
 const router = Router();
 
 const RAG_BACKEND_URL = process.env.RAG_BACKEND_URL || 'http://localhost:8000';
-
-/**
- * Get the knowledge base root path.
- * First checks x-zkb-path header, then falls back to core.findRoot()
- * which checks ALGERKNOWN_KB_ROOT env var and walks up from cwd.
- */
-const getZkbPath = (req: Request): string => {
-  const headerPath = req.headers['x-zkb-path'] as string;
-  if (headerPath) {
-    return headerPath;
-  }
-  return core.findRoot();
-};
 
 /**
  * Notify the RAG backend to ingest a file after creation/update.
