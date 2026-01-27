@@ -5,6 +5,7 @@
   "description": "A journal entry capturing work done at a specific point in time",
   "type": "object",
   "required": ["id", "type", "date", "topic", "status"],
+  "additionalProperties": false,
   "properties": {
     "id": {
       "type": "string",

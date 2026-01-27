@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { api, IndexEntryRef } from '../lib/api';
 import { EntryCard } from '../components/EntryCard';
@@ -26,9 +26,22 @@ export function EntryList() {
     loadData();
   }, []);
 
-  const filteredEntries = selectedType
-    ? entries.filter(e => e.type === selectedType)
-    : entries;
+  const filteredEntries = useMemo(
+    () => selectedType ? entries.filter(e => e.type === selectedType) : entries,
+    [entries, selectedType]
+  );
+
+  const summaryEntries = useMemo(() => {
+    if (selectedType === 'summary') return filteredEntries;
+    if (selectedType === 'entry') return [];
+    return filteredEntries.filter(e => e.type === 'summary');
+  }, [filteredEntries, selectedType]);
+
+  const journalEntries = useMemo(() => {
+    if (selectedType === 'entry') return filteredEntries;
+    if (selectedType === 'summary') return [];
+    return filteredEntries.filter(e => e.type === 'entry');
+  }, [filteredEntries, selectedType]);
 
   if (loading) {
     return <div className="text-slate-400">Loading...</div>;
@@ -69,11 +82,27 @@ export function EntryList() {
         Showing {filteredEntries.length} of {entries.length} entries
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredEntries.map(entry => (
-          <EntryCard key={entry.id} entry={entry} />
-        ))}
-      </div>
+      {summaryEntries.length > 0 && (
+        <section className="space-y-4">
+          <h2 className="text-xl font-semibold text-slate-200">Summaries</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {summaryEntries.map(entry => (
+              <EntryCard key={entry.id} entry={entry} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {journalEntries.length > 0 && (
+        <section className="space-y-4">
+          <h2 className="text-xl font-semibold text-slate-200">Journal Entries</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {journalEntries.map(entry => (
+              <EntryCard key={entry.id} entry={entry} />
+            ))}
+          </div>
+        </section>
+      )}
 
       {filteredEntries.length === 0 && (
         <div className="text-center text-slate-400 py-8">

@@ -2,20 +2,18 @@ import { Router, Request, Response } from 'express';
 import * as core from '@algerknown/core';
 import * as path from 'path';
 import * as fs from 'fs';
+import { getZkbPath } from '../utils/zkb-path.js';
 
 const router = Router();
 
-// Default ZKB path from environment, or current working directory
-const DEFAULT_ZKB_PATH = process.env.ZKB_PATH || process.cwd();
-
-const getZkbPath = (req: Request): string => {
-  const zkbPath = req.headers['x-zkb-path'] as string;
-  return zkbPath || DEFAULT_ZKB_PATH;
-};
-
-// GET /api/config/zkb-path - Get the default ZKB path
-router.get('/zkb-path', (_req: Request, res: Response) => {
-  res.json({ path: DEFAULT_ZKB_PATH });
+// GET /api/config/zkb-path - Get the resolved ZKB path for this request
+router.get('/zkb-path', (req: Request, res: Response) => {
+  try {
+    const zkbPath = getZkbPath(req);
+    res.json({ path: zkbPath });
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
 });
 
 // GET /api/config - Get knowledge base configuration

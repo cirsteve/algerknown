@@ -101,6 +101,7 @@ export interface Summary {
   open_questions?: string[];
   resources?: Resource[];
   links?: Link[];
+  last_ingested?: string; // Date this entry was last ingested into the RAG system (auto-populated)
 }
 
 // ============== Entry (Journal) ==============
@@ -119,6 +120,7 @@ export interface Entry {
   commits?: string[];
   resources?: Resource[];
   links?: Link[];
+  last_ingested?: string; // Date this entry was last ingested into the RAG system (auto-populated)
 }
 
 // ============== Union Type ==============

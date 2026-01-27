@@ -79,126 +79,311 @@ links:
 
 ---
 
-## Entry Schema
+## Schemas
 
-```yaml
-# yaml-language-server: $schema=../.algerknown/schemas/entry.schema.json
-id: "YYYY-MM-DD-short-slug"      # Required: lowercase, hyphens only
-type: "entry"                     # Required: literal "entry"
-date: "YYYY-MM-DD"               # Required: ISO date
-topic: "Human-Readable Title"     # Required: what was worked on
-status: "active"                  # Required: active|archived|reference|blocked|planned
+> **Source of truth:** These schemas are copied from `packages/core/schemas/` in the algerknown repo.
+> Canonical URLs:
+> - https://raw.githubusercontent.com/cirsteve/algerknown/refs/heads/main/packages/core/schemas/entry.schema.json
+> - https://raw.githubusercontent.com/cirsteve/algerknown/refs/heads/main/packages/core/schemas/summary.schema.json
+>
+> If you update the schemas, update this doc.
 
-tags:                             # Optional: for categorization
-  - tag-one
-  - tag-two
+### Entry Schema
 
-time_hours: 2.5                   # Optional: approximate time spent
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://algerknown.dev/schemas/entry.schema.json",
+  "title": "Algerknown Entry",
+  "description": "A journal entry capturing work done at a specific point in time",
+  "type": "object",
+  "required": ["id", "type", "date", "topic", "status"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier, typically YYYY-MM-DD-slug",
+      "pattern": "^[a-z0-9-]+$"
+    },
+    "type": {
+      "type": "string",
+      "const": "entry"
+    },
+    "date": {
+      "type": "string",
+      "format": "date",
+      "description": "Date of the entry (YYYY-MM-DD)"
+    },
+    "topic": {
+      "type": "string",
+      "description": "Human-readable topic name"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["active", "archived", "reference", "blocked", "planned"]
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "uniqueItems": true
+    },
+    "time_hours": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Approximate hours spent"
+    },
+    "context": {
+      "type": "string",
+      "description": "What problem was being solved, what was already known"
+    },
+    "approach": {
+      "type": "string",
+      "description": "What was tried, methodology used"
+    },
+    "outcome": {
+      "type": "object",
+      "properties": {
+        "worked": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "What succeeded"
+        },
+        "failed": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "What didn't work"
+        },
+        "surprised": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Unexpected findings"
+        }
+      }
+    },
+    "commits": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Related git commit hashes"
+    },
+    "resources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["url"],
+        "properties": {
+          "url": { "type": "string", "format": "uri" },
+          "title": { "type": "string" },
+          "notes": { "type": "string" }
+        }
+      }
+    },
+    "links": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "relationship"],
+        "properties": {
+          "id": { "type": "string", "description": "ID of the linked entry" },
+          "relationship": {
+            "type": "string",
+            "enum": [
+              "evolved_into", "evolved_from",
+              "informs", "informed_by",
+              "part_of", "contains",
+              "blocked_by", "blocks",
+              "supersedes", "superseded_by",
+              "references", "referenced_by",
+              "depends_on", "dependency_of",
+              "enables", "enabled_by"
+            ]
+          },
+          "notes": { "type": "string" }
+        }
+      }
+    },
+    "last_ingested": {
+      "type": "string",
+      "format": "date",
+      "description": "Date this entry was last ingested into the RAG system (auto-populated)"
+    }
+  }
+}
+```
 
-context: |                        # Optional: what problem, what was known
-  Describe the starting point.
-  What problem was being solved?
-  What was already understood?
+### Summary Schema
 
-approach: |                       # Optional: what was tried
-  Describe the methodology.
-  What approaches were attempted?
-  What tools or techniques were used?
-
-outcome:                          # Optional: what happened
-  worked:                         # Things that succeeded
-    - "First successful outcome"
-    - "Second successful outcome"
-  failed:                         # Things that didn't work
-    - "Approach X failed because Y"
-  surprised:                      # Unexpected discoveries
-    - "Didn't expect Z to happen"
-
-commits:                          # Optional: related git commits
-  - "abc123"
-  - "def456"
-
-resources:                        # Optional: external references
-  - url: "https://example.com/docs"
-    title: "Relevant Documentation"
-    notes: "Section 3 was most helpful"
-
-links:                            # Optional: relationships to other entries
-  - id: "other-entry-id"
-    relationship: "part_of"       # See relationship types below
-    notes: "Why this link matters"
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://algerknown.dev/schemas/summary.schema.json",
+  "title": "Algerknown Summary",
+  "description": "A topic summary aggregating learnings, decisions, and artifacts",
+  "type": "object",
+  "required": ["id", "type", "topic", "status", "summary"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier for this summary",
+      "pattern": "^[a-z0-9-]+$"
+    },
+    "type": {
+      "type": "string",
+      "const": "summary"
+    },
+    "topic": {
+      "type": "string",
+      "description": "Human-readable topic name"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["active", "archived", "reference", "blocked", "planned"]
+    },
+    "summary": {
+      "type": "string",
+      "description": "Brief description of the topic"
+    },
+    "date_range": {
+      "type": "object",
+      "required": ["start"],
+      "properties": {
+        "start": {
+          "type": "string",
+          "pattern": "^\\d{4}(-\\d{2})?(-\\d{2})?$",
+          "description": "Start date (YYYY, YYYY-MM, or YYYY-MM-DD)"
+        },
+        "end": {
+          "type": "string",
+          "pattern": "^\\d{4}(-\\d{2})?(-\\d{2})?$",
+          "description": "End date (YYYY, YYYY-MM, or YYYY-MM-DD)"
+        }
+      }
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "uniqueItems": true
+    },
+    "learnings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["insight"],
+        "properties": {
+          "insight": { "type": "string", "description": "The key learning or insight" },
+          "context": { "type": "string", "description": "How this was discovered" },
+          "relevance": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "IDs of related entries"
+          }
+        }
+      }
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["decision"],
+        "properties": {
+          "decision": { "type": "string", "description": "What was decided" },
+          "rationale": { "type": "string", "description": "Why this decision was made" },
+          "trade_offs": { "type": "string", "description": "What was sacrificed or risked" },
+          "date": { "type": "string", "format": "date" },
+          "superseded_by": { "type": "string", "description": "ID of decision that replaced this one" }
+        }
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path"],
+        "properties": {
+          "repo": { "type": "string", "description": "Repository URL or name" },
+          "path": { "type": "string", "description": "Path within the repo" },
+          "notes": { "type": "string" },
+          "commit": { "type": "string", "description": "Specific commit hash" }
+        }
+      }
+    },
+    "open_questions": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "resources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["url"],
+        "properties": {
+          "url": { "type": "string", "format": "uri" },
+          "title": { "type": "string" },
+          "notes": { "type": "string" }
+        }
+      }
+    },
+    "links": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "relationship"],
+        "properties": {
+          "id": { "type": "string", "description": "ID of the linked entry" },
+          "relationship": {
+            "type": "string",
+            "enum": [
+              "evolved_into", "evolved_from",
+              "informs", "informed_by",
+              "part_of", "contains",
+              "blocked_by", "blocks",
+              "supersedes", "superseded_by",
+              "references", "referenced_by",
+              "depends_on", "dependency_of",
+              "enables", "enabled_by"
+            ]
+          },
+          "notes": { "type": "string" }
+        }
+      }
+    },
+    "last_ingested": {
+      "type": "string",
+      "format": "date",
+      "description": "Date this entry was last ingested into the RAG system (auto-populated)"
+    }
+  }
+}
 ```
 
 ---
 
-## Summary Schema
+## Field Constraints
 
-```yaml
-# yaml-language-server: $schema=../.algerknown/schemas/summary.schema.json
-id: "topic-slug"                  # Required: lowercase, hyphens only
-type: "summary"                   # Required: literal "summary"
-topic: "Human-Readable Topic"     # Required: topic name
-status: "active"                  # Required: active|archived|reference|blocked|planned
-summary: |                        # Required: brief description
-  One paragraph overview of this topic.
-  What is it? Why does it matter?
-
-date_range:                       # Optional: when work occurred
-  start: "YYYY-MM"                # Can be YYYY, YYYY-MM, or YYYY-MM-DD
-  end: "YYYY-MM"
-
-tags:
-  - relevant-tag
-
-learnings:                        # Key insights discovered
-  - insight: "The main thing learned"
-    context: "How/when this was discovered"
-    relevance:                    # IDs of related entries
-      - "related-entry-id"
-
-decisions:                        # Important choices made
-  - decision: "What was decided"
-    rationale: "Why this choice was made"
-    trade_offs: "What was sacrificed"
-    date: "YYYY-MM-DD"
-    superseded_by: null           # ID if this decision was replaced
-
-artifacts:                        # Code/files produced
-  - repo: "github.com/user/repo"
-    path: "src/feature/file.ts"
-    notes: "Main implementation"
-    commit: "abc123"
-
-open_questions:                   # Unresolved questions
-  - "What happens when X?"
-  - "Should we consider Y?"
-
-resources:
-  - url: "https://example.com"
-    title: "Resource Title"
-    notes: "Why this is useful"
-
-links:
-  - id: "other-summary-id"
-    relationship: "depends_on"
-```
+> **No extra top-level fields allowed.** Both schemas have `"additionalProperties": false`, which means validation will reject any fields not explicitly defined in the schema.
+> 
+> If you have general observations, notes, or context that doesn't fit a specific field:
+> - **Entries:** Put it in `context`
+> - **Summaries:** Put it in `summary`
+>
+> Do not invent fields like `notes`, `observations`, `details`, `thoughts`, etc.
 
 ---
 
 ## Relationship Types
 
-Use these exact values for the `relationship` field:
+Use these exact values for the `relationship` field. Relationships are bidirectional pairs—use whichever direction makes sense from the current entry's perspective:
 
-| Relationship | Use when... |
-|-------------|-------------|
-| `evolved_into` | This work led to or became something else |
-| `informs` | This provides knowledge useful for another entry |
-| `part_of` | This is a component of a larger topic |
-| `blocked_by` | Progress depends on another entry being resolved |
-| `supersedes` | This replaced a previous approach or decision |
-| `references` | General reference to related content |
-| `depends_on` | This requires understanding/using another concept |
-| `enables` | This makes something else possible |
+| Relationship | Inverse | Use when... |
+|-------------|---------|-------------|
+| `evolved_into` | `evolved_from` | This work led to or became something else |
+| `informs` | `informed_by` | This provides knowledge useful for another entry |
+| `part_of` | `contains` | This is a component of a larger topic |
+| `blocked_by` | `blocks` | Progress depends on another entry being resolved |
+| `supersedes` | `superseded_by` | This replaced a previous approach or decision |
+| `references` | `referenced_by` | General reference to related content |
+| `depends_on` | `dependency_of` | This requires understanding/using another concept |
+| `enables` | `enabled_by` | This makes something else possible |
 
 ---
 
@@ -232,7 +417,7 @@ For **Entries**, look for:
 - What was tried? (→ `approach`)
 - What worked? What failed? What was surprising? (→ `outcome`)
 - How long did it take? (→ `time_hours`)
-- Any commits or code references? (→ `commits`, `artifacts`)
+- Any commits or code references? (→ `commits`)
 - Any links/docs referenced? (→ `resources`)
 - Was something frustrating or harder than expected? (→ add `friction` tag)
 
@@ -240,22 +425,26 @@ For **Summaries**, look for:
 - What topic does this cover?
 - What are the key insights? (→ `learnings`)
 - What decisions were made and why? (→ `decisions`)
-- What code/artifacts were produced? (→ `artifacts`)
+- What code/artifacts were produced? (→ `artifacts`, note: `path` is required)
 - What's still unknown? (→ `open_questions`)
 
 ### Step 3: Generate Valid YAML
 
+- **Use ONLY fields defined in the schemas above—no extra top-level fields**
 - IDs must be lowercase alphanumeric with hyphens only: `^[a-z0-9-]+$`
 - Entry IDs should be date-prefixed: `2026-01-14-topic-slug`
 - Use `|` for multi-line strings
 - Ensure all required fields are present
 - Use exact enum values (don't invent new statuses or relationships)
+- For `date_range`, `start` is required if you include the field
+- For `date_range.start/end` format is `YYYY`, `YYYY-MM`, or `YYYY-MM-DD`
+- For `artifacts`, `path` is required; `repo` is optional
 
 ### Step 4: Suggest Links
 
 Look for connections to potentially existing entries:
 - Is this part of a larger project? → `part_of`
-- Does this build on previous work? → `evolved_into` (from the previous)
+- Does this build on previous work? → `evolved_from` (on this entry) or `evolved_into` (on the previous)
 - Does this require understanding something else? → `depends_on`
 
 ---
@@ -319,11 +508,16 @@ When asked to create entries, output:
 ## Validation Rules
 
 Ensure your output passes these checks:
+
+- [ ] **No extra top-level fields**—schemas have `additionalProperties: false`, validation will fail for undefined fields
 - [ ] `id` matches `^[a-z0-9-]+$`
 - [ ] `type` is exactly `"entry"` or `"summary"`
 - [ ] `status` is one of: `active`, `archived`, `reference`, `blocked`, `planned`
-- [ ] `relationship` values are from the allowed list
+- [ ] `relationship` values are from the 16-value enum (see Relationship Types)
 - [ ] `date` format is `YYYY-MM-DD`
+- [ ] `date_range.start` is present if `date_range` is used
 - [ ] `date_range.start/end` format is `YYYY`, `YYYY-MM`, or `YYYY-MM-DD`
+- [ ] `artifacts[].path` is present for each artifact
 - [ ] URLs in `resources` are valid URIs
-- [ ] All required fields are present
+- [ ] All required fields are present per schema
+- [ ] General observations go in `context` (entries) or `summary` (summaries), not in invented fields
