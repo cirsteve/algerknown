@@ -113,6 +113,12 @@ npm run lint --workspace=@algerknown/core
 - Use SWR for data fetching and caching
 - Keep components small and focused
 - Use TailwindCSS utility classes for styling
+- Follow atomic design principles:
+  - **Atoms**: Basic building blocks (buttons, inputs, labels)
+  - **Molecules**: Simple combinations of atoms (form fields, search bars)
+  - **Organisms**: Complex UI sections (headers, forms, card lists)
+  - **Templates**: Page-level layouts
+  - **Pages**: Specific instances of templates with real content
 
 ### Python
 
