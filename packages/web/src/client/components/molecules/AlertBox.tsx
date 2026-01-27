@@ -7,7 +7,7 @@ interface AlertBoxProps {
   variant?: AlertVariant;
   title?: string;
   className?: string;
-  dismissable?: boolean;
+  dismissible?: boolean;
   onDismiss?: () => void;
 }
 
@@ -38,7 +38,7 @@ export function AlertBox({
   variant = 'info', 
   title,
   className = '',
-  dismissable = false,
+  dismissible = false,
   onDismiss,
 }: AlertBoxProps) {
   const styles = variantStyles[variant];
@@ -52,7 +52,7 @@ export function AlertBox({
           )}
           <div className="text-sm">{children}</div>
         </div>
-        {dismissable && onDismiss && (
+        {dismissible && onDismiss && (
           <button
             onClick={onDismiss}
             className="ml-4 opacity-70 hover:opacity-100 transition-opacity"
