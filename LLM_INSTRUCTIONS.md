@@ -14,6 +14,7 @@ Create an entry when:
 - Code was written or debugged
 - A focused learning session occurred
 - Something was tried (whether it worked or not)
+- A conceptual connection or insight was noticed (use `spark` tag)
 
 ### 2. Summary (Topic Summary)
 Use for: **Aggregated knowledge over time** — synthesizing learnings across multiple sessions.
@@ -23,6 +24,58 @@ Create or update a summary when:
 - Key decisions were made that should be documented
 - Insights emerged that apply broadly
 - A topic has matured enough to consolidate
+
+---
+
+## Tag Conventions
+
+Tags serve two purposes: categorization and semantic meaning. Some tags have special significance:
+
+### Semantic Tags
+
+| Tag | Use when... |
+|-----|-------------|
+| `spark` | A conceptual connection or insight—not a work session, just an idea worth capturing. Lightweight entries that may seed future work. |
+| `friction` | Something was harder than it should be. Captures pain points that may indicate build opportunities. |
+| `decision` | A significant choice was made. Useful for filtering entries that shaped direction. |
+| `conceptual` | Theoretical or architectural thinking rather than implementation. |
+| `debugging` | Time spent diagnosing issues. |
+| `learning` | Focused study or research session. |
+
+### Domain Tags
+
+Use lowercase, hyphenated tags for technologies, projects, and domains:
+- `zk`, `semaphore`, `noir`, `circom`
+- `veranon`, `algerknown`, `rank-one-labs`
+- `rust`, `typescript`, `solidity`
+
+### Example: Spark Entry
+
+A `spark` is just an entry with minimal fields—no `time_hours`, `approach`, or `commits` needed:
+
+```yaml
+id: "2026-01-27-mac-vs-zk-trust-models"
+type: "entry"
+date: "2026-01-27"
+topic: "Algebraic MACs and ZK circuits as trust model approaches"
+status: "active"
+tags:
+  - spark
+  - zk
+  - anonymous-credentials
+
+context: |
+  Reading Cloudflare's anonymous credentials work alongside Noir circuit implementations.
+
+outcome:
+  surprised:
+    - "Both solve 'prove membership without revealing identity' but MACs need issuer online, ZK doesn't"
+    - "ZK approach trades computation for trust assumptions"
+
+links:
+  - id: "cloudflare-anon-credentials-analysis"
+    relationship: "informs"
+```
 
 ---
 
@@ -167,6 +220,7 @@ When given a conversation or work session, follow this process:
 
 ### Step 1: Identify Entry Type
 - **Single session with specific work?** → Create an Entry
+- **Conceptual insight or connection noticed?** → Create an Entry with `spark` tag
 - **Accumulated knowledge on a topic?** → Create or update a Summary
 - **Both?** → Create an Entry AND update the related Summary
 
@@ -180,6 +234,7 @@ For **Entries**, look for:
 - How long did it take? (→ `time_hours`)
 - Any commits or code references? (→ `commits`, `artifacts`)
 - Any links/docs referenced? (→ `resources`)
+- Was something frustrating or harder than expected? (→ add `friction` tag)
 
 For **Summaries**, look for:
 - What topic does this cover?
