@@ -26,9 +26,10 @@ export function EntryList() {
     loadData();
   }, []);
 
-  const filteredEntries = selectedType
-    ? entries.filter(e => e.type === selectedType)
-    : entries;
+  const filteredEntries = useMemo(
+    () => selectedType ? entries.filter(e => e.type === selectedType) : entries,
+    [entries, selectedType]
+  );
 
   const summaryEntries = useMemo(
     () => filteredEntries.filter(e => e.type === 'summary'),
