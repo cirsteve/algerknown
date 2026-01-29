@@ -7,8 +7,8 @@ const router = Router();
 const RAG_BACKEND_URL = process.env.RAG_BACKEND_URL || 'http://localhost:8000';
 
 /**
- * Notify the RAG backend to ingest a file after creation/update.
- * This is fire-and-forget - we don't wait for indexing to complete.
+ * Notify the RAG backend to ingest or index a file after creation/update.
+ * This is fire-and-forget - we don't wait for the backend processing to complete.
  */
 const notifyRagBackend = async (filePath: string, mode: 'ingest' | 'index' = 'ingest'): Promise<void> => {
   try {
