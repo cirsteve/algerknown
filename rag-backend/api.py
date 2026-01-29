@@ -218,6 +218,85 @@ def search(request: SearchRequest):
 
 # ============ Ingest Mode ============
 
+def load_entry_document(file_path: str, content_dir: str) -> tuple[str, dict, dict]:
+    """
+    Load and validate an entry document from a file path.
+    
+    This helper function consolidates the common logic used by both /ingest and /index endpoints:
+    - Path resolution (absolute/relative)
+    - Security validation (commonpath check)
+    - YAML file loading
+    - Document structure building
+    
+    Args:
+        file_path: Path to the entry file (absolute or relative to content_dir)
+        content_dir: Root content directory path
+    
+    Returns:
+        Tuple of (abs_path, raw_entry, document)
+        - abs_path: Absolute path to the entry file
+        - raw_entry: Raw YAML data as loaded from file
+        - document: Structured document dict with id, content, metadata, and raw fields
+    
+    Raises:
+        HTTPException: On validation errors, missing files, or YAML parse failures
+    """
+    from ruamel.yaml import YAML
+    yaml_parser = YAML()
+    yaml_parser.preserve_quotes = True
+    
+    # Security: ensure file is within content directory
+    # Use commonpath to prevent prefix bypass (e.g., content-agn vs content-agn-backup)
+    # If path is relative, resolve it against content_dir
+    if os.path.isabs(file_path):
+        abs_path = os.path.abspath(file_path)
+    else:
+        abs_path = os.path.abspath(os.path.join(content_dir, file_path))
+    
+    try:
+        common = os.path.commonpath([content_dir, abs_path])
+        if common != content_dir:
+            raise HTTPException(
+                status_code=400,
+                detail=f"File must be within content directory: {content_dir}"
+            )
+    except ValueError:
+        # commonpath raises ValueError if paths are on different drives (Windows)
+        raise HTTPException(
+            status_code=400,
+            detail=f"File must be within content directory: {content_dir}"
+        )
+    
+    if not os.path.exists(abs_path):
+        raise HTTPException(status_code=404, detail="Entry file not found")
+    
+    # Load the entry
+    try:
+        with open(abs_path) as f:
+            raw_entry = yaml_parser.load(f)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to parse YAML: {e}")
+    
+    if not raw_entry or "id" not in raw_entry:
+        raise HTTPException(status_code=400, detail="Invalid entry: missing 'id' field")
+    
+    # Build document
+    document = {
+        "id": raw_entry["id"],
+        "content": flatten_document(raw_entry),
+        "metadata": {
+            "type": raw_entry.get("type", "entry"),
+            "topic": raw_entry.get("topic", ""),
+            "tags": ",".join(raw_entry.get("tags", [])),
+            "status": raw_entry.get("status", ""),
+            "file_path": abs_path,
+        },
+        "raw": raw_entry
+    }
+    
+    return abs_path, raw_entry, document
+
+
 class IngestRequest(BaseModel):
     file_path: str = Field(..., description="Path to new entry YAML file")
     max_proposals: Optional[int] = Field(default=None, ge=1, le=20, description="Maximum proposals to generate (default: MAX_PROPOSALS env var or 5)")
@@ -251,61 +330,15 @@ def ingest(request: IngestRequest):
     if not vector_store:
         raise HTTPException(status_code=503, detail="Vector store not initialized")
     
+    # Load and validate the entry using shared helper
+    abs_path, raw_entry, entry = load_entry_document(request.file_path, CONTENT_DIR)
+    
+    # Update last_ingested date in the entry file
     from ruamel.yaml import YAML
     yaml_parser = YAML()
     yaml_parser.preserve_quotes = True
     yaml_parser.indent(mapping=2, sequence=4, offset=2)
     
-    # Security: ensure file is within content directory
-    # Use commonpath to prevent prefix bypass (e.g., content-agn vs content-agn-backup)
-    # If path is relative, resolve it against CONTENT_DIR
-    if os.path.isabs(request.file_path):
-        abs_path = os.path.abspath(request.file_path)
-    else:
-        abs_path = os.path.abspath(os.path.join(CONTENT_DIR, request.file_path))
-    
-    try:
-        common = os.path.commonpath([CONTENT_DIR, abs_path])
-        if common != CONTENT_DIR:
-            raise HTTPException(
-                status_code=400,
-                detail=f"File must be within content directory: {CONTENT_DIR}"
-            )
-    except ValueError:
-        # commonpath raises ValueError if paths are on different drives (Windows)
-        raise HTTPException(
-            status_code=400,
-            detail=f"File must be within content directory: {CONTENT_DIR}"
-        )
-    
-    if not os.path.exists(abs_path):
-        raise HTTPException(status_code=404, detail="Entry file not found")
-    
-    # Load the entry
-    try:
-        with open(abs_path) as f:
-            raw_entry = yaml_parser.load(f)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to parse YAML: {e}")
-    
-    if not raw_entry or "id" not in raw_entry:
-        raise HTTPException(status_code=400, detail="Invalid entry: missing 'id' field")
-    
-    # Build document
-    entry = {
-        "id": raw_entry["id"],
-        "content": flatten_document(raw_entry),
-        "metadata": {
-            "type": raw_entry.get("type", "entry"),
-            "topic": raw_entry.get("topic", ""),
-            "tags": ",".join(raw_entry.get("tags", [])),
-            "status": raw_entry.get("status", ""),
-            "file_path": abs_path,
-        },
-        "raw": raw_entry
-    }
-    
-    # Update last_ingested date in the entry file
     last_ingested = date.today().isoformat()
     raw_entry["last_ingested"] = last_ingested
     try:
@@ -353,55 +386,8 @@ def index_document(request: IngestRequest):
     if not vector_store:
         raise HTTPException(status_code=503, detail="Vector store not initialized")
     
-    from ruamel.yaml import YAML
-    yaml_parser = YAML()
-    yaml_parser.preserve_quotes = True
-    
-    # Security: ensure file is within content directory
-    if os.path.isabs(request.file_path):
-        abs_path = os.path.abspath(request.file_path)
-    else:
-        abs_path = os.path.abspath(os.path.join(CONTENT_DIR, request.file_path))
-    
-    try:
-        common = os.path.commonpath([CONTENT_DIR, abs_path])
-        if common != CONTENT_DIR:
-            raise HTTPException(
-                status_code=400,
-                detail=f"File must be within content directory: {CONTENT_DIR}"
-            )
-    except ValueError:
-        raise HTTPException(
-            status_code=400,
-            detail=f"File must be within content directory: {CONTENT_DIR}"
-        )
-    
-    if not os.path.exists(abs_path):
-        raise HTTPException(status_code=404, detail="Entry file not found")
-    
-    # Load the entry
-    try:
-        with open(abs_path) as f:
-            raw_entry = yaml_parser.load(f)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to parse YAML: {e}")
-    
-    if not raw_entry or "id" not in raw_entry:
-        raise HTTPException(status_code=400, detail="Invalid entry: missing 'id' field")
-    
-    # Build document
-    entry = {
-        "id": raw_entry["id"],
-        "content": flatten_document(raw_entry),
-        "metadata": {
-            "type": raw_entry.get("type", "entry"),
-            "topic": raw_entry.get("topic", ""),
-            "tags": ",".join(raw_entry.get("tags", [])),
-            "status": raw_entry.get("status", ""),
-            "file_path": abs_path,
-        },
-        "raw": raw_entry
-    }
+    # Load and validate the entry using shared helper
+    abs_path, raw_entry, entry = load_entry_document(request.file_path, CONTENT_DIR)
     
     # Index the entry
     vector_store.index_documents([entry])
