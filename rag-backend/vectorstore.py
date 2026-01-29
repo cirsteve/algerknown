@@ -16,9 +16,17 @@ logger = logging.getLogger(__name__)
 def get_embedding_function():
     """
     Get the embedding function based on configuration and available API keys.
+    Set USE_MOCK_EMBEDDINGS=true for testing (no network calls).
     Set USE_LOCAL_EMBEDDINGS=true to force local sentence-transformers.
     Otherwise prefers OpenAI, falls back to local if key is missing/invalid.
     """
+    # Check if mock embeddings are requested (for testing)
+    use_mock = os.getenv("USE_MOCK_EMBEDDINGS", "").lower() in ("true", "1", "yes")
+    
+    if use_mock:
+        logger.info("Using mock embeddings (USE_MOCK_EMBEDDINGS=true)")
+        return MockEmbeddingFunction()
+    
     # Check if local embeddings are explicitly requested
     use_local = os.getenv("USE_LOCAL_EMBEDDINGS", "").lower() in ("true", "1", "yes")
     
@@ -72,15 +80,20 @@ class MockEmbeddingFunction:
     
     def _embed(self, input: list[str]) -> list[list[float]]:
         """Generate deterministic mock embeddings."""
+        import hashlib
+        
         # Return 384-dimensional vectors (same as all-MiniLM-L6-v2)
-        # Use hash of text to make embeddings deterministic but unique
+        # Use sha256 of text to make embeddings deterministic across runs/platforms
         embeddings = []
         for text in input:
-            # Create a simple deterministic embedding based on text hash
-            hash_val = hash(text)
+            # Create a deterministic seed from text
+            sha = hashlib.sha256(text.encode("utf-8")).digest()
+            # Convert first 8 bytes to an integer for seeding logic
+            seed_val = int.from_bytes(sha[:8], "big")
+            
             # Generate 384 values between -1 and 1
             embedding = [
-                ((hash_val * (i + 1)) % 1000) / 500.0 - 1.0
+                ((seed_val * (i + 1)) % 10000) / 5000.0 - 1.0
                 for i in range(384)
             ]
             embeddings.append(embedding)

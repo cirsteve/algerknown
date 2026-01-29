@@ -10,6 +10,7 @@ import tempfile
 # Mock environment variables before importing api
 os.environ["CONTENT_DIR"] = "/tmp/test-content"
 os.environ["CHROMA_DB_DIR"] = "/tmp/test-chroma"
+os.environ["USE_MOCK_EMBEDDINGS"] = "true"  # Use mock embeddings for tests (no network calls)
 
 
 class TestHealthEndpoint:
@@ -31,15 +32,22 @@ class TestHealthEndpoint:
 class TestQueryEndpoint:
     """Tests for the /query endpoint."""
     
-    @patch("api.vector_store")
+    @patch("api.VectorStore")
     @patch("api.synthesize_answer")
-    def test_query_success(self, mock_synthesize, mock_store):
+    def test_query_success(self, mock_synthesize, MockVectorStore):
         """Should return synthesized answer."""
         from api import app
+        from unittest.mock import MagicMock
         
+        # Create mock instance that will be returned by VectorStore()
+        mock_store = MagicMock()
         mock_store.query.return_value = [
             {"id": "doc-1", "content": "Test content", "metadata": {}, "distance": 0.1}
         ]
+        mock_store.count.return_value = 1
+        mock_store.index_documents.return_value = 0
+        MockVectorStore.return_value = mock_store
+        
         mock_synthesize.return_value = {
             "answer": "Test answer",
             "sources": ["doc-1"],
@@ -137,6 +145,206 @@ class TestReindexEndpoint:
             assert "indexed" in data
 
 
+class TestIndexEndpoint:
+    """Tests for the /index endpoint."""
+    
+    def test_index_invalid_path(self):
+        """Should reject paths outside content directory."""
+        from api import app
+        
+        with TestClient(app) as client:
+            response = client.post("/index", json={
+                "file_path": "/etc/passwd"
+            })
+            
+            assert response.status_code == 400
+            assert "content directory" in response.json()["detail"]
+    
+    def test_index_file_not_found(self):
+        """Should return 404 for missing file."""
+        from api import app
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Set CONTENT_DIR to tmpdir so path validation passes
+            import api
+            old_content_dir = api.CONTENT_DIR
+            api.CONTENT_DIR = tmpdir
+            
+            try:
+                with TestClient(app) as client:
+                    response = client.post("/index", json={
+                        "file_path": f"{tmpdir}/nonexistent.yaml"
+                    })
+                    
+                    assert response.status_code == 404
+            finally:
+                api.CONTENT_DIR = old_content_dir
+    
+    @patch("api.VectorStore")
+    def test_index_does_not_update_last_ingested(self, MockVectorStore):
+        """Should NOT update last_ingested field in entry file after indexing."""
+        from api import app
+        from ruamel.yaml import YAML
+        from unittest.mock import MagicMock
+        
+        yaml = YAML()
+        yaml.preserve_quotes = True
+        
+        # Create mock instance that will be returned by VectorStore()
+        mock_store = MagicMock()
+        mock_store.index_documents.return_value = 1
+        mock_store.count.return_value = 0
+        MockVectorStore.return_value = mock_store
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create test entry file
+            entries_dir = os.path.join(tmpdir, "entries")
+            os.makedirs(entries_dir)
+            entry_file = os.path.join(entries_dir, "test-entry.yaml")
+            
+            with open(entry_file, "w") as f:
+                yaml.dump({
+                    "id": "test-entry",
+                    "type": "entry",
+                    "topic": "Test Topic",
+                    "content": "Test content"
+                }, f)
+            
+            import api
+            old_content_dir = api.CONTENT_DIR
+            api.CONTENT_DIR = tmpdir
+            api.entries_cache.clear()
+            
+            try:
+                with TestClient(app) as client:
+                    response = client.post("/index", json={
+                        "file_path": entry_file
+                    })
+                    
+                    assert response.status_code == 200
+                    
+                    # Verify last_ingested was NOT written to file
+                    with open(entry_file) as f:
+                        indexed_entry = yaml.load(f)
+                    
+                    assert "last_ingested" not in indexed_entry
+            finally:
+                api.CONTENT_DIR = old_content_dir
+    
+    @patch("api.generate_all_proposals")
+    @patch("api.VectorStore")
+    def test_index_does_not_generate_proposals(self, MockVectorStore, mock_proposals):
+        """Should NOT generate proposals when indexing."""
+        from api import app
+        from ruamel.yaml import YAML
+        from unittest.mock import MagicMock
+        
+        yaml = YAML()
+        yaml.preserve_quotes = True
+        
+        # Create mock instance that will be returned by VectorStore()
+        mock_store = MagicMock()
+        mock_store.index_documents.return_value = 1
+        mock_store.count.return_value = 0
+        MockVectorStore.return_value = mock_store
+        
+        mock_proposals.return_value = [{"target_summary_id": "test"}]
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create test entry file
+            entries_dir = os.path.join(tmpdir, "entries")
+            os.makedirs(entries_dir)
+            entry_file = os.path.join(entries_dir, "test-entry.yaml")
+            
+            with open(entry_file, "w") as f:
+                yaml.dump({
+                    "id": "test-entry",
+                    "type": "entry",
+                    "topic": "Test Topic",
+                    "content": "Test content"
+                }, f)
+            
+            import api
+            old_content_dir = api.CONTENT_DIR
+            api.CONTENT_DIR = tmpdir
+            api.entries_cache.clear()
+            
+            try:
+                with TestClient(app) as client:
+                    response = client.post("/index", json={
+                        "file_path": entry_file
+                    })
+                    
+                    assert response.status_code == 200
+                    data = response.json()
+                    
+                    # Response should only have status and id, no proposals
+                    assert "status" in data
+                    assert "id" in data
+                    assert "proposals" not in data
+                    assert data["status"] == "indexed"
+                    assert data["id"] == "test-entry"
+                    
+                    # generate_all_proposals should NOT have been called
+                    mock_proposals.assert_not_called()
+            finally:
+                api.CONTENT_DIR = old_content_dir
+    
+    def test_index_indexes_document(self):
+        """Should index the document in the vector store."""
+        from api import app
+        from ruamel.yaml import YAML
+        
+        yaml = YAML()
+        yaml.preserve_quotes = True
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create test entry file
+            entries_dir = os.path.join(tmpdir, "entries")
+            os.makedirs(entries_dir)
+            entry_file = os.path.join(entries_dir, "test-entry.yaml")
+            
+            with open(entry_file, "w") as f:
+                yaml.dump({
+                    "id": "test-entry",
+                    "type": "entry",
+                    "topic": "Test Topic",
+                    "content": "Test content",
+                    "tags": ["test", "example"]
+                }, f)
+            
+            import api
+            old_content_dir = api.CONTENT_DIR
+            api.CONTENT_DIR = tmpdir
+            
+            # Remove test-entry from cache if it exists
+            api.entries_cache.pop("test-entry", None)
+            
+            try:
+                with TestClient(app) as client:
+                    response = client.post("/index", json={
+                        "file_path": entry_file
+                    })
+                    
+                    assert response.status_code == 200
+                    data = response.json()
+                    
+                    # Verify response
+                    assert data["status"] == "indexed"
+                    assert data["id"] == "test-entry"
+                    
+                    # Verify it was added to cache (confirms indexing occurred)
+                    assert "test-entry" in api.entries_cache
+                    cached_entry = api.entries_cache["test-entry"]
+                    assert cached_entry["id"] == "test-entry"
+                    assert cached_entry["metadata"]["type"] == "entry"
+                    assert cached_entry["metadata"]["topic"] == "Test Topic"
+                    assert cached_entry["metadata"]["tags"] == "test,example"
+            finally:
+                api.CONTENT_DIR = old_content_dir
+                api.entries_cache.pop("test-entry", None)
+
+
 class TestIngestEndpoint:
     """Tests for the /ingest endpoint."""
     
@@ -173,18 +381,24 @@ class TestIngestEndpoint:
                 api.CONTENT_DIR = old_content_dir
     
     @patch("api.generate_all_proposals")
-    @patch("api.vector_store")
-    def test_ingest_updates_last_ingested(self, mock_store, mock_proposals):
+    @patch("api.VectorStore")
+    def test_ingest_updates_last_ingested(self, MockVectorStore, mock_proposals):
         """Should update last_ingested field in entry file after ingestion."""
         from api import app
         from datetime import date
         from ruamel.yaml import YAML
+        from unittest.mock import MagicMock
         
         yaml = YAML()
         yaml.preserve_quotes = True
         
         mock_proposals.return_value = []
-        mock_store.index_documents = lambda x: None
+        
+        # Create mock instance that will be returned by VectorStore()
+        mock_store = MagicMock()
+        mock_store.index_documents.return_value = 1
+        mock_store.count.return_value = 0
+        MockVectorStore.return_value = mock_store
         
         with tempfile.TemporaryDirectory() as tmpdir:
             # Create test entry file
@@ -286,10 +500,17 @@ class TestApproveEndpoint:
     
     @patch("api.apply_update")
     @patch("api.load_content")
-    @patch("api.vector_store")
-    def test_approve_success(self, mock_store, mock_load, mock_apply):
+    @patch("api.VectorStore")
+    def test_approve_success(self, MockVectorStore, mock_load, mock_apply):
         """Should apply approved proposal."""
         from api import app
+        from unittest.mock import MagicMock
+        
+        # Create mock instance that will be returned by VectorStore()
+        mock_store = MagicMock()
+        mock_store.index_documents.return_value = 1
+        mock_store.count.return_value = 0
+        MockVectorStore.return_value = mock_store
         
         mock_apply.return_value = {
             "success": True,
