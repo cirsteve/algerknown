@@ -399,7 +399,7 @@ def index_document(request: IndexRequest):
     # Index the entry
     vector_store.index_documents([entry])
     entries_cache[entry["id"]] = entry
-    logger.info(f"Indexed entry (metadata only): {entry['id']}")
+    logger.info(f"Indexed entry (no proposals/last_ingested update): {entry['id']}")
     
     return {"status": "indexed", "id": entry["id"]}
 
