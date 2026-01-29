@@ -342,8 +342,12 @@ def ingest(request: IngestRequest):
     )
 
 
+class IndexRequest(BaseModel):
+    file_path: str = Field(..., description="Path to the entry YAML file to index")
+
+
 @app.post("/index")
-def index_document(request: IngestRequest):
+def index_document(request: IndexRequest):
     """
     Index an entry without generating proposals or updating last_ingested.
     
