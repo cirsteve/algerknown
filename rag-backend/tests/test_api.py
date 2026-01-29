@@ -32,15 +32,22 @@ class TestHealthEndpoint:
 class TestQueryEndpoint:
     """Tests for the /query endpoint."""
     
-    @patch("api.vector_store")
+    @patch("api.VectorStore")
     @patch("api.synthesize_answer")
-    def test_query_success(self, mock_synthesize, mock_store):
+    def test_query_success(self, mock_synthesize, MockVectorStore):
         """Should return synthesized answer."""
         from api import app
+        from unittest.mock import MagicMock
         
+        # Create mock instance that will be returned by VectorStore()
+        mock_store = MagicMock()
         mock_store.query.return_value = [
             {"id": "doc-1", "content": "Test content", "metadata": {}, "distance": 0.1}
         ]
+        mock_store.count.return_value = 1
+        mock_store.index_documents.return_value = 0
+        MockVectorStore.return_value = mock_store
+        
         mock_synthesize.return_value = {
             "answer": "Test answer",
             "sources": ["doc-1"],
@@ -173,16 +180,21 @@ class TestIndexEndpoint:
             finally:
                 api.CONTENT_DIR = old_content_dir
     
-    @patch("api.vector_store")
-    def test_index_does_not_update_last_ingested(self, mock_store):
+    @patch("api.VectorStore")
+    def test_index_does_not_update_last_ingested(self, MockVectorStore):
         """Should NOT update last_ingested field in entry file after indexing."""
         from api import app
         from ruamel.yaml import YAML
+        from unittest.mock import MagicMock
         
         yaml = YAML()
         yaml.preserve_quotes = True
         
-        mock_store.index_documents = lambda x: None
+        # Create mock instance that will be returned by VectorStore()
+        mock_store = MagicMock()
+        mock_store.index_documents.return_value = 1
+        mock_store.count.return_value = 0
+        MockVectorStore.return_value = mock_store
         
         with tempfile.TemporaryDirectory() as tmpdir:
             # Create test entry file
@@ -220,16 +232,22 @@ class TestIndexEndpoint:
                 api.CONTENT_DIR = old_content_dir
     
     @patch("api.generate_all_proposals")
-    @patch("api.vector_store")
-    def test_index_does_not_generate_proposals(self, mock_store, mock_proposals):
+    @patch("api.VectorStore")
+    def test_index_does_not_generate_proposals(self, MockVectorStore, mock_proposals):
         """Should NOT generate proposals when indexing."""
         from api import app
         from ruamel.yaml import YAML
+        from unittest.mock import MagicMock
         
         yaml = YAML()
         yaml.preserve_quotes = True
         
-        mock_store.index_documents = lambda x: None
+        # Create mock instance that will be returned by VectorStore()
+        mock_store = MagicMock()
+        mock_store.index_documents.return_value = 1
+        mock_store.count.return_value = 0
+        MockVectorStore.return_value = mock_store
+        
         mock_proposals.return_value = [{"target_summary_id": "test"}]
         
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -363,18 +381,24 @@ class TestIngestEndpoint:
                 api.CONTENT_DIR = old_content_dir
     
     @patch("api.generate_all_proposals")
-    @patch("api.vector_store")
-    def test_ingest_updates_last_ingested(self, mock_store, mock_proposals):
+    @patch("api.VectorStore")
+    def test_ingest_updates_last_ingested(self, MockVectorStore, mock_proposals):
         """Should update last_ingested field in entry file after ingestion."""
         from api import app
         from datetime import date
         from ruamel.yaml import YAML
+        from unittest.mock import MagicMock
         
         yaml = YAML()
         yaml.preserve_quotes = True
         
         mock_proposals.return_value = []
-        mock_store.index_documents = lambda x: None
+        
+        # Create mock instance that will be returned by VectorStore()
+        mock_store = MagicMock()
+        mock_store.index_documents.return_value = 1
+        mock_store.count.return_value = 0
+        MockVectorStore.return_value = mock_store
         
         with tempfile.TemporaryDirectory() as tmpdir:
             # Create test entry file
@@ -476,10 +500,17 @@ class TestApproveEndpoint:
     
     @patch("api.apply_update")
     @patch("api.load_content")
-    @patch("api.vector_store")
-    def test_approve_success(self, mock_store, mock_load, mock_apply):
+    @patch("api.VectorStore")
+    def test_approve_success(self, MockVectorStore, mock_load, mock_apply):
         """Should apply approved proposal."""
         from api import app
+        from unittest.mock import MagicMock
+        
+        # Create mock instance that will be returned by VectorStore()
+        mock_store = MagicMock()
+        mock_store.index_documents.return_value = 1
+        mock_store.count.return_value = 0
+        MockVectorStore.return_value = mock_store
         
         mock_apply.return_value = {
             "success": True,
