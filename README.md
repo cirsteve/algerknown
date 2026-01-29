@@ -109,7 +109,9 @@ Opens at http://localhost:2393 with:
 The RAG (Retrieval-Augmented Generation) backend provides AI-powered features:
 
 - **Query Mode**: Ask questions in natural language, get synthesized answers with citations
+- **Search Mode**: Direct vector search without LLM synthesis
 - **Ingest Mode**: When adding new entries, automatically identify related summaries and propose updates
+
 
 ### Setup
 
@@ -144,7 +146,8 @@ python api.py
 |----------|--------|-------------|
 | `/query` | POST | Query knowledge base, get synthesized answer |
 | `/search` | POST | Vector search without LLM synthesis |
-| `/ingest` | POST | Ingest new entry, get update proposals |
+| `/index` | POST | Index entry (make searchable) without proposals/last_ingested update |
+| `/ingest` | POST | Ingest new entry, get update proposals (updates last_ingested) |
 | `/approve` | POST | Apply approved proposal to YAML |
 | `/reindex` | POST | Re-index all content |
 | `/health` | GET | Health check and status |
