@@ -394,7 +394,7 @@ def index_document(request: IndexRequest):
         raise HTTPException(status_code=503, detail="Vector store not initialized")
     
     # Load and validate the entry using shared helper
-    abs_path, raw_entry, entry = load_entry_document(request.file_path, CONTENT_DIR)
+    _abs_path, _raw_entry, entry = load_entry_document(request.file_path, CONTENT_DIR)
     
     # Index the entry
     vector_store.index_documents([entry])
