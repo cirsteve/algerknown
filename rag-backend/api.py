@@ -342,6 +342,75 @@ def ingest(request: IngestRequest):
     )
 
 
+@app.post("/index")
+def index_document(request: IngestRequest):
+    """
+    Index an entry without generating proposals or updating last_ingested.
+    
+    Used for initial creation of entries where we want them searchable
+    but don't want to trigger the full ingestion workflow yet.
+    """
+    if not vector_store:
+        raise HTTPException(status_code=503, detail="Vector store not initialized")
+    
+    from ruamel.yaml import YAML
+    yaml_parser = YAML()
+    yaml_parser.preserve_quotes = True
+    
+    # Security: ensure file is within content directory
+    if os.path.isabs(request.file_path):
+        abs_path = os.path.abspath(request.file_path)
+    else:
+        abs_path = os.path.abspath(os.path.join(CONTENT_DIR, request.file_path))
+    
+    try:
+        common = os.path.commonpath([CONTENT_DIR, abs_path])
+        if common != CONTENT_DIR:
+            raise HTTPException(
+                status_code=400,
+                detail=f"File must be within content directory: {CONTENT_DIR}"
+            )
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File must be within content directory: {CONTENT_DIR}"
+        )
+    
+    if not os.path.exists(abs_path):
+        raise HTTPException(status_code=404, detail="Entry file not found")
+    
+    # Load the entry
+    try:
+        with open(abs_path) as f:
+            raw_entry = yaml_parser.load(f)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to parse YAML: {e}")
+    
+    if not raw_entry or "id" not in raw_entry:
+        raise HTTPException(status_code=400, detail="Invalid entry: missing 'id' field")
+    
+    # Build document
+    entry = {
+        "id": raw_entry["id"],
+        "content": flatten_document(raw_entry),
+        "metadata": {
+            "type": raw_entry.get("type", "entry"),
+            "topic": raw_entry.get("topic", ""),
+            "tags": ",".join(raw_entry.get("tags", [])),
+            "status": raw_entry.get("status", ""),
+            "file_path": abs_path,
+        },
+        "raw": raw_entry
+    }
+    
+    # Index the entry
+    vector_store.index_documents([entry])
+    entries_cache[entry["id"]] = entry
+    logger.info(f"Indexed entry (metadata only): {entry['id']}")
+    
+    return {"status": "indexed", "id": entry["id"]}
+
+
 # ============ Approve Updates ============
 
 class ApproveRequest(BaseModel):

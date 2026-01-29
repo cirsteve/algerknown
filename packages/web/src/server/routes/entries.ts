@@ -10,16 +10,17 @@ const RAG_BACKEND_URL = process.env.RAG_BACKEND_URL || 'http://localhost:8000';
  * Notify the RAG backend to ingest a file after creation/update.
  * This is fire-and-forget - we don't wait for indexing to complete.
  */
-const notifyRagBackend = async (filePath: string): Promise<void> => {
+const notifyRagBackend = async (filePath: string, mode: 'ingest' | 'index' = 'ingest'): Promise<void> => {
   try {
-    await fetch(`${RAG_BACKEND_URL}/ingest`, {
+    const endpoint = mode === 'index' ? '/index' : '/ingest';
+    await fetch(`${RAG_BACKEND_URL}${endpoint}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ file_path: filePath }),
     });
   } catch (error) {
     // Log but don't fail the request if RAG backend is unavailable
-    console.warn(`Failed to notify RAG backend about ${filePath}:`, error);
+    console.warn(`Failed to notify RAG backend (${mode}) about ${filePath}:`, error);
   }
 };
 
@@ -89,7 +90,7 @@ router.post('/', async (req: Request, res: Response) => {
     // Notify RAG backend to index the new entry
     const filePath = core.resolveEntryPath(cleanEntry.id, zkbPath);
     if (filePath) {
-      notifyRagBackend(filePath);
+      notifyRagBackend(filePath, 'index');
     }
 
     res.status(201).json(cleanEntry);
