@@ -280,6 +280,20 @@ def load_entry_document(file_path: str, content_dir: str) -> tuple[str, dict, di
     if not raw_entry or "id" not in raw_entry:
         raise HTTPException(status_code=400, detail="Invalid entry: missing 'id' field")
     
+    # Normalize tags
+    tags_list = raw_entry.get("tags")
+    if tags_list is None:
+        tags_list = []
+    elif not isinstance(tags_list, list):
+         # Handle case where tags might be a single string or other type
+        if isinstance(tags_list, str):
+            tags_list = [t.strip() for t in tags_list.split(",")]
+        else:
+            tags_list = [str(tags_list)]
+    
+    # Ensure all elements are strings
+    tags_str = ",".join(str(t) for t in tags_list if t)
+
     # Build document
     document = {
         "id": raw_entry["id"],
@@ -287,7 +301,7 @@ def load_entry_document(file_path: str, content_dir: str) -> tuple[str, dict, di
         "metadata": {
             "type": raw_entry.get("type", "entry"),
             "topic": raw_entry.get("topic", ""),
-            "tags": ",".join(raw_entry.get("tags", [])),
+            "tags": tags_str,
             "status": raw_entry.get("status", ""),
             "file_path": abs_path,
         },
