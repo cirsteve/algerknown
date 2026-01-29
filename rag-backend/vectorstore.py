@@ -16,9 +16,17 @@ logger = logging.getLogger(__name__)
 def get_embedding_function():
     """
     Get the embedding function based on configuration and available API keys.
+    Set USE_MOCK_EMBEDDINGS=true for testing (no network calls).
     Set USE_LOCAL_EMBEDDINGS=true to force local sentence-transformers.
     Otherwise prefers OpenAI, falls back to local if key is missing/invalid.
     """
+    # Check if mock embeddings are requested (for testing)
+    use_mock = os.getenv("USE_MOCK_EMBEDDINGS", "").lower() in ("true", "1", "yes")
+    
+    if use_mock:
+        logger.info("Using mock embeddings (USE_MOCK_EMBEDDINGS=true)")
+        return MockEmbeddingFunction()
+    
     # Check if local embeddings are explicitly requested
     use_local = os.getenv("USE_LOCAL_EMBEDDINGS", "").lower() in ("true", "1", "yes")
     
