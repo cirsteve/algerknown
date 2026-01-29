@@ -297,8 +297,11 @@ def load_entry_document(file_path: str, content_dir: str) -> tuple[str, dict, di
     return abs_path, raw_entry, document
 
 
-class IngestRequest(BaseModel):
-    file_path: str = Field(..., description="Path to new entry YAML file")
+class FilePathRequest(BaseModel):
+    file_path: str = Field(..., description="Path to entry YAML file")
+
+
+class IngestRequest(FilePathRequest):
     max_proposals: Optional[int] = Field(default=None, ge=1, le=20, description="Maximum proposals to generate (default: MAX_PROPOSALS env var or 5)")
 
 
@@ -376,7 +379,7 @@ def ingest(request: IngestRequest):
 
 
 @app.post("/index")
-def index_document(request: IngestRequest):
+def index_document(request: FilePathRequest):
     """
     Index an entry without generating proposals or updating last_ingested.
     
