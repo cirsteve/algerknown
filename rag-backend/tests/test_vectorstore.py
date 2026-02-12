@@ -195,6 +195,30 @@ class TestGetSummaries:
         
         assert summaries == []
 
+    def test_get_summaries_reconstructs_chunked_summary(self, vector_store):
+        """Should reconstruct full content for chunked summaries."""
+        long_summary = "START " + ("A" * 3500) + "\n\n" + ("B" * 3500) + " END"
+        vector_store.index_documents([
+            {
+                "id": "summary-long",
+                "content": long_summary,
+                "metadata": {
+                    "type": "summary",
+                    "topic": "Long Summary",
+                    "tags": "summary,test",
+                    "status": "reference"
+                }
+            }
+        ])
+
+        summaries = vector_store.get_summaries()
+
+        assert len(summaries) == 1
+        assert summaries[0]["id"] == "summary-long"
+        assert summaries[0]["content"] == long_summary
+        assert summaries[0]["content"].startswith("START")
+        assert summaries[0]["content"].endswith("END")
+
 
 class TestGetById:
     """Tests for get_by_id method."""
@@ -234,6 +258,30 @@ class TestGetAll:
         all_docs = vector_store.get_all()
         
         assert all_docs == []
+
+    def test_get_all_reconstructs_chunked_documents(self, vector_store):
+        """Should reconstruct chunked content when returning all documents."""
+        long_entry = "HEAD " + ("X" * 3500) + "\n\n" + ("Y" * 3500) + " TAIL"
+        vector_store.index_documents([
+            {
+                "id": "entry-long",
+                "content": long_entry,
+                "metadata": {
+                    "type": "entry",
+                    "topic": "Long Entry",
+                    "tags": "entry,test",
+                    "status": "active"
+                }
+            }
+        ])
+
+        all_docs = vector_store.get_all()
+
+        assert len(all_docs) == 1
+        assert all_docs[0]["id"] == "entry-long"
+        assert all_docs[0]["content"] == long_entry
+        assert all_docs[0]["content"].startswith("HEAD")
+        assert all_docs[0]["content"].endswith("TAIL")
 
 
 class TestDelete:
