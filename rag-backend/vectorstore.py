@@ -121,27 +121,95 @@ class VectorStore:
         )
         logger.info(f"Initialized ChromaDB at {persist_dir}")
         
+    @staticmethod
+    def _chunk_text(text: str, max_chars: int = 6000) -> list[str]:
+        """
+        Split text into chunks that stay under the embedding model's token limit.
+        
+        Uses ~6000 characters per chunk (≈1500 tokens) to stay well within the
+        8192-token limit of text-embedding-3-small. Splits on paragraph boundaries
+        first, then falls back to sentence boundaries.
+        """
+        if len(text) <= max_chars:
+            return [text]
+        
+        chunks = []
+        paragraphs = text.split("\n\n")
+        current_chunk = ""
+        
+        for para in paragraphs:
+            # If a single paragraph exceeds max_chars, split it further
+            if len(para) > max_chars:
+                # Flush current chunk first
+                if current_chunk.strip():
+                    chunks.append(current_chunk.strip())
+                    current_chunk = ""
+                # Split long paragraph by sentences (period + space)
+                sentences = para.replace(". ", ".\n").split("\n")
+                for sentence in sentences:
+                    if len(current_chunk) + len(sentence) + 1 > max_chars:
+                        if current_chunk.strip():
+                            chunks.append(current_chunk.strip())
+                        current_chunk = sentence
+                    else:
+                        current_chunk += (" " if current_chunk else "") + sentence
+            elif len(current_chunk) + len(para) + 2 > max_chars:
+                if current_chunk.strip():
+                    chunks.append(current_chunk.strip())
+                current_chunk = para
+            else:
+                current_chunk += ("\n\n" if current_chunk else "") + para
+        
+        if current_chunk.strip():
+            chunks.append(current_chunk.strip())
+        
+        return chunks if chunks else [text]
+
     def index_documents(self, documents: list[dict]) -> int:
         """
         Index documents into the vector store.
-        Uses upsert to handle updates.
+        Uses upsert to handle updates. Documents exceeding the embedding
+        model's token limit are automatically chunked.
         
         Args:
             documents: List of document dicts with id, content, metadata
             
         Returns:
-            Number of documents indexed
+            Number of document chunks indexed
         """
         if not documents:
             return 0
-            
-        self.collection.upsert(
-            ids=[d["id"] for d in documents],
-            documents=[d["content"] for d in documents],
-            metadatas=[d["metadata"] for d in documents]
-        )
-        logger.info(f"Indexed {len(documents)} documents")
-        return len(documents)
+        
+        ids = []
+        contents = []
+        metadatas = []
+        
+        for d in documents:
+            chunks = self._chunk_text(d["content"])
+            if len(chunks) == 1:
+                ids.append(d["id"])
+                contents.append(d["content"])
+                metadatas.append(d["metadata"])
+            else:
+                logger.info(f"Splitting document '{d['id']}' into {len(chunks)} chunks")
+                for i, chunk in enumerate(chunks):
+                    chunk_meta = {**d["metadata"], "chunk_index": i, "parent_id": d["id"]}
+                    ids.append(f"{d['id']}_chunk_{i}")
+                    contents.append(chunk)
+                    metadatas.append(chunk_meta)
+        
+        # Upsert in batches to avoid oversized requests
+        batch_size = 100
+        for start in range(0, len(ids), batch_size):
+            end = start + batch_size
+            self.collection.upsert(
+                ids=ids[start:end],
+                documents=contents[start:end],
+                metadatas=metadatas[start:end],
+            )
+        
+        logger.info(f"Indexed {len(documents)} documents ({len(ids)} chunks)")
+        return len(ids)
         
     def query(
         self, 
@@ -160,9 +228,10 @@ class VectorStore:
         Returns:
             List of matching documents with scores
         """
+        # Request extra results to account for deduplication of chunks
         kwargs = {
             "query_texts": [query_text],
-            "n_results": n_results,
+            "n_results": min(n_results * 3, self.collection.count()),
             "include": ["documents", "metadatas", "distances"]
         }
         if where:
@@ -173,16 +242,26 @@ class VectorStore:
         # Handle empty results
         if not results["ids"] or not results["ids"][0]:
             return []
+        
+        # Deduplicate chunks: keep best-scoring chunk per parent document
+        seen_parents = {}
+        for i in range(len(results["ids"][0])):
+            metadata = results["metadatas"][0][i]
+            doc_id = metadata.get("parent_id", results["ids"][0][i])
             
-        return [
-            {
-                "id": results["ids"][0][i],
-                "content": results["documents"][0][i],
-                "metadata": results["metadatas"][0][i],
-                "distance": results["distances"][0][i]
-            }
-            for i in range(len(results["ids"][0]))
-        ]
+            if doc_id not in seen_parents:
+                seen_parents[doc_id] = {
+                    "id": doc_id,
+                    "content": results["documents"][0][i],
+                    "metadata": {k: v for k, v in metadata.items()
+                                 if k not in ("chunk_index", "parent_id")},
+                    "distance": results["distances"][0][i]
+                }
+            
+            if len(seen_parents) >= n_results:
+                break
+            
+        return list(seen_parents.values())
         
     def get_summaries(self) -> list[dict]:
         """
@@ -198,15 +277,19 @@ class VectorStore:
         
         if not results["ids"]:
             return []
-            
-        return [
-            {
-                "id": results["ids"][i],
-                "content": results["documents"][i],
-                "metadata": results["metadatas"][i]
-            }
-            for i in range(len(results["ids"]))
-        ]
+        
+        seen = {}
+        for i in range(len(results["ids"])):
+            meta = results["metadatas"][i]
+            doc_id = meta.get("parent_id", results["ids"][i])
+            if doc_id not in seen:
+                seen[doc_id] = {
+                    "id": doc_id,
+                    "content": results["documents"][i],
+                    "metadata": {k: v for k, v in meta.items()
+                                 if k not in ("chunk_index", "parent_id")}
+                }
+        return list(seen.values())
         
     def get_by_id(self, doc_id: str) -> Optional[dict]:
         """
@@ -245,15 +328,19 @@ class VectorStore:
         
         if not results["ids"]:
             return []
-            
-        return [
-            {
-                "id": results["ids"][i],
-                "content": results["documents"][i],
-                "metadata": results["metadatas"][i]
-            }
-            for i in range(len(results["ids"]))
-        ]
+        
+        seen = {}
+        for i in range(len(results["ids"])):
+            meta = results["metadatas"][i]
+            doc_id = meta.get("parent_id", results["ids"][i])
+            if doc_id not in seen:
+                seen[doc_id] = {
+                    "id": doc_id,
+                    "content": results["documents"][i],
+                    "metadata": {k: v for k, v in meta.items()
+                                 if k not in ("chunk_index", "parent_id")}
+                }
+        return list(seen.values())
         
     def count(self) -> int:
         """Get the number of documents in the store."""
