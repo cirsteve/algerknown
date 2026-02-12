@@ -165,6 +165,40 @@ class VectorStore:
         
         return chunks if chunks else [text]
 
+    @staticmethod
+    def _reconstruct_documents(results: dict) -> list[dict]:
+        """
+        Reconstruct full documents from get() results that may contain chunks.
+
+        Groups chunked rows by parent ID, sorts by chunk index, and joins
+        chunk content to return one full document per parent.
+        """
+        grouped = {}
+
+        for i in range(len(results["ids"])):
+            meta = results["metadatas"][i]
+            doc_id = meta.get("parent_id", results["ids"][i])
+            chunk_index = meta.get("chunk_index", 0)
+
+            if doc_id not in grouped:
+                grouped[doc_id] = []
+
+            grouped[doc_id].append((chunk_index, results["documents"][i], meta))
+
+        reconstructed = []
+        for doc_id, chunks in grouped.items():
+            chunks.sort(key=lambda c: c[0])
+            base_meta = {k: v for k, v in chunks[0][2].items()
+                         if k not in ("chunk_index", "parent_id")}
+
+            reconstructed.append({
+                "id": doc_id,
+                "content": "\n\n".join(chunk[1] for chunk in chunks),
+                "metadata": base_meta,
+            })
+
+        return reconstructed
+
     def index_documents(self, documents: list[dict]) -> int:
         """
         Index documents into the vector store.
@@ -277,19 +311,8 @@ class VectorStore:
         
         if not results["ids"]:
             return []
-        
-        seen = {}
-        for i in range(len(results["ids"])):
-            meta = results["metadatas"][i]
-            doc_id = meta.get("parent_id", results["ids"][i])
-            if doc_id not in seen:
-                seen[doc_id] = {
-                    "id": doc_id,
-                    "content": results["documents"][i],
-                    "metadata": {k: v for k, v in meta.items()
-                                 if k not in ("chunk_index", "parent_id")}
-                }
-        return list(seen.values())
+
+        return self._reconstruct_documents(results)
         
     def get_by_id(self, doc_id: str) -> Optional[dict]:
         """
@@ -328,19 +351,8 @@ class VectorStore:
         
         if not results["ids"]:
             return []
-        
-        seen = {}
-        for i in range(len(results["ids"])):
-            meta = results["metadatas"][i]
-            doc_id = meta.get("parent_id", results["ids"][i])
-            if doc_id not in seen:
-                seen[doc_id] = {
-                    "id": doc_id,
-                    "content": results["documents"][i],
-                    "metadata": {k: v for k, v in meta.items()
-                                 if k not in ("chunk_index", "parent_id")}
-                }
-        return list(seen.values())
+
+        return self._reconstruct_documents(results)
         
     def count(self) -> int:
         """Get the number of documents in the store."""
