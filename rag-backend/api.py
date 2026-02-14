@@ -689,6 +689,6 @@ if __name__ == "__main__":
     import uvicorn
     
     host = os.getenv("RAG_HOST", os.getenv("HOST", "0.0.0.0"))
-    port = int(os.getenv("RAG_PORT", os.getenv("PORT", "8000")))
+    port = int(os.getenv("RAG_PORT", os.getenv("PORT", "4735")))
     
     uvicorn.run("api:app", host=host, port=port, reload=True)

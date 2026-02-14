@@ -128,7 +128,7 @@ export function Sidebar({ navItems, className = '' }: SidebarProps) {
                   type="text"
                   value={apiUrl}
                   onChange={(e) => setApiUrl(e.target.value)}
-                  placeholder="http://localhost:8000"
+                  placeholder="http://localhost:4735"
                   inputSize="sm"
                 />
               </div>

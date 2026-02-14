@@ -20,7 +20,7 @@ cd rag-backend
 docker-compose up --build
 ```
 
-The server will be available at http://localhost:8000.
+The server will be available at http://localhost:4735.
 
 <details>
 <summary>Alternative: Local Python setup (for development)</summary>
@@ -38,7 +38,7 @@ pip install -r requirements.txt
 # Run the server (uses .env from project root)
 python api.py
 # Or with auto-reload:
-uvicorn api:app --reload --port 8000
+uvicorn api:app --reload --port 4735
 ```
 
 </details>
@@ -54,7 +54,7 @@ Environment variables (set in root `.env`):
 | `CONTENT_DIR` | Path to content directory | `../content-agn` |
 | `CHROMA_DB_DIR` | Path for ChromaDB persistence | `./chroma_db` |
 | `RAG_HOST` | Server host | `0.0.0.0` |
-| `RAG_PORT` | Server port | `8000` |
+| `RAG_PORT` | Server port | `4735` |
 
 ## API Endpoints
 
@@ -62,7 +62,7 @@ Environment variables (set in root `.env`):
 
 ```bash
 # Query with synthesis
-curl -X POST http://localhost:8000/query \
+curl -X POST http://localhost:4735/query \
   -H "Content-Type: application/json" \
   -d '{"query": "What do I know about nullifiers?", "n_results": 5}'
 ```
@@ -71,7 +71,7 @@ curl -X POST http://localhost:8000/query \
 
 ```bash
 # Search without synthesis
-curl -X POST http://localhost:8000/search \
+curl -X POST http://localhost:4735/search \
   -H "Content-Type: application/json" \
   -d '{"query": "nullifiers", "n_results": 10}'
 ```
@@ -80,12 +80,12 @@ curl -X POST http://localhost:8000/search \
 
 ```bash
 # Ingest new entry and get proposals
-curl -X POST http://localhost:8000/ingest \
+curl -X POST http://localhost:4735/ingest \
   -H "Content-Type: application/json" \
   -d '{"file_path": "../content-agn/entries/2026-01-20-new-entry.yaml"}'
 
 # Approve a proposal
-curl -X POST http://localhost:8000/approve \
+curl -X POST http://localhost:4735/approve \
   -H "Content-Type: application/json" \
   -d '{"proposal": {"target_summary_id": "...", "source_entry_id": "...", ...}}'
 ```
@@ -94,26 +94,26 @@ curl -X POST http://localhost:8000/approve \
 
 ```bash
 # Health check
-curl http://localhost:8000/health
+curl http://localhost:4735/health
 
 # List all entries
-curl http://localhost:8000/entries
+curl http://localhost:4735/entries
 
 # Get specific entry
-curl http://localhost:8000/entries/{entry_id}
+curl http://localhost:4735/entries/{entry_id}
 
 # List summaries
-curl http://localhost:8000/summaries
+curl http://localhost:4735/summaries
 
 # Re-index all content
-curl -X POST http://localhost:8000/reindex
+curl -X POST http://localhost:4735/reindex
 ```
 
 ## API Documentation
 
 Once running, visit:
-- Swagger UI: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc
+- Swagger UI: http://localhost:4735/docs
+- ReDoc: http://localhost:4735/redoc
 
 ## Embedding Options
 

@@ -17,11 +17,11 @@ COPY *.py .
 RUN mkdir -p /app/chroma_db
 
 # Expose port
-EXPOSE 8000
+EXPOSE 4735
 
 # Health check (using Python since curl is not in slim image)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:4735/health')" || exit 1
 
 # Run the server
-CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "4735"]

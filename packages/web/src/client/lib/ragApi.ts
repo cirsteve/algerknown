@@ -6,7 +6,7 @@
  */
 
 // RAG backend URL (configurable via environment or localStorage)
-const RAG_API_URL = import.meta.env.VITE_RAG_API_URL || 'http://localhost:8000';
+const RAG_API_URL = import.meta.env.VITE_RAG_API_URL || 'http://localhost:4735';
 
 export function getRagApiUrl(): string {
   return localStorage.getItem('ragApiUrl') || RAG_API_URL;
