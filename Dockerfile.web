@@ -1,0 +1,20 @@
+FROM node:lts-slim AS build
+WORKDIR /app
+COPY package*.json ./
+COPY packages/core/package*.json ./packages/core/
+COPY packages/web/package*.json ./packages/web/
+RUN npm ci
+COPY packages/core ./packages/core
+COPY packages/web ./packages/web
+RUN npm run build --workspace=@algerknown/web
+
+FROM node:lts-slim
+WORKDIR /app
+COPY --from=build /app/package*.json ./
+COPY --from=build /app/packages/core/package*.json ./packages/core/
+COPY --from=build /app/packages/web/package*.json ./packages/web/
+RUN npm ci --omit=dev
+COPY --from=build /app/packages/core/dist ./packages/core/dist
+COPY --from=build /app/packages/web/dist ./packages/web/dist
+EXPOSE 2393
+CMD ["node", "packages/web/dist/server/index.js"]
