@@ -47,7 +47,7 @@ app.use('/api/config', configRouter);
 // Proxy RAG backend requests
 const RAG_BACKEND_URL = process.env.RAG_BACKEND_URL || 'http://localhost:4735';
 app.all('/rag/*', async (req, res) => {
-  const ragPath = req.params[0];
+  const ragPath = req.url.replace(/^\/rag\//, '');
   try {
     const response = await fetch(`${RAG_BACKEND_URL}/${ragPath}`, {
       method: req.method,
