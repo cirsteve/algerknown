@@ -15,7 +15,7 @@ export function MainLayout({ children }: MainLayoutProps) {
   const navItems = [
     { path: '/', label: 'Dashboard', icon: '📊', requiresRag: false },
     { path: '/entries', label: 'Entries', icon: '📝', requiresRag: false },
-    { path: '/summaries/new', label: 'New Summary', icon: '📋', requiresRag: true },
+    { path: '/summaries/new', label: 'New Summary', icon: '📋', requiresRag: false },
     { path: '/search', label: 'Search', icon: '🔍', requiresRag: false },
     { path: '/graph', label: 'Graph', icon: '🕸️', requiresRag: false },
     { path: '/ask', label: 'Ask', icon: '💬', requiresRag: true },

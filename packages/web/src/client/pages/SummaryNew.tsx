@@ -25,14 +25,17 @@ export function SummaryNew() {
     text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 
   const id = slugify(topic);
+  const isValidId = /^[a-z0-9-]+$/.test(id) && id.length > 0;
   const tags = tagsInput
     .split(',')
     .map(t => t.trim())
     .filter(Boolean);
 
+  const canSubmit = topic.trim() !== '' && summary.trim() !== '' && isValidId;
+
   const handleAnalyze = async () => {
-    if (!topic.trim() || !summary.trim()) {
-      setError('Topic and summary are required');
+    if (!canSubmit) {
+      setError('Topic and summary are required, and topic must produce a valid ID (letters, numbers, hyphens)');
       return;
     }
 
@@ -93,7 +96,6 @@ export function SummaryNew() {
         tags: tags.length > 0 ? tags : undefined,
         summary,
         links: links.length > 0 ? links : undefined,
-        date: new Date().toISOString().split('T')[0],
       };
 
       await api.createEntry(entry);
@@ -107,8 +109,8 @@ export function SummaryNew() {
   };
 
   const handleSaveWithoutAnalysis = async () => {
-    if (!topic.trim() || !summary.trim()) {
-      setError('Topic and summary are required');
+    if (!canSubmit) {
+      setError('Topic and summary are required, and topic must produce a valid ID (letters, numbers, hyphens)');
       return;
     }
 
@@ -123,7 +125,6 @@ export function SummaryNew() {
         status,
         tags: tags.length > 0 ? tags : undefined,
         summary,
-        date: new Date().toISOString().split('T')[0],
       };
 
       await api.createEntry(entry);
@@ -164,7 +165,9 @@ export function SummaryNew() {
               disabled={step === 'review'}
             />
             {topic && (
-              <p className="text-xs text-slate-500 mt-1">ID: {id}</p>
+              <p className={`text-xs mt-1 ${isValidId ? 'text-slate-500' : 'text-red-400'}`}>
+                {isValidId ? `ID: ${id}` : 'Topic must contain at least one letter or number'}
+              </p>
             )}
           </div>
 
@@ -219,14 +222,14 @@ export function SummaryNew() {
             <div className="flex gap-3 pt-2">
               <button
                 onClick={handleAnalyze}
-                disabled={!topic.trim() || !summary.trim() || loading}
+                disabled={!canSubmit || loading}
                 className="bg-sky-500 hover:bg-sky-400 disabled:bg-slate-600 disabled:cursor-not-allowed px-6 py-2 rounded-lg font-medium transition-colors"
               >
                 Find Related Entries
               </button>
               <button
                 onClick={handleSaveWithoutAnalysis}
-                disabled={!topic.trim() || !summary.trim() || loading}
+                disabled={!canSubmit || loading}
                 className="bg-slate-700 hover:bg-slate-600 disabled:bg-slate-600 disabled:cursor-not-allowed px-6 py-2 rounded-lg text-slate-300 transition-colors"
               >
                 Save Without Analysis
