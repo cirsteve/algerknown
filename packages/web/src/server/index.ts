@@ -44,6 +44,23 @@ app.use('/api/links', linksRouter);
 app.use('/api/search', searchRouter);
 app.use('/api/config', configRouter);
 
+// Proxy RAG backend requests
+const RAG_BACKEND_URL = process.env.RAG_BACKEND_URL || 'http://localhost:4735';
+app.all('/rag/*', async (req, res) => {
+  const ragPath = req.url.replace(/^\/rag\//, '');
+  try {
+    const response = await fetch(`${RAG_BACKEND_URL}/${ragPath}`, {
+      method: req.method,
+      headers: { 'Content-Type': 'application/json' },
+      ...(req.method !== 'GET' && req.method !== 'HEAD' ? { body: JSON.stringify(req.body) } : {}),
+    });
+    const data = await response.text();
+    res.status(response.status).type('json').send(data);
+  } catch {
+    res.status(502).json({ error: 'RAG backend unavailable' });
+  }
+});
+
 // Serve static files from the client build
 const clientDistPath = path.join(__dirname, '../client');
 app.use(express.static(clientDistPath));
