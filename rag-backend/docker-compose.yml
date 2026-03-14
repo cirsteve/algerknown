@@ -4,7 +4,7 @@ services:
   rag-backend:
     build: .
     ports:
-      - "8000:8000"
+      - "4735:4735"
     volumes:
       # Mount content directory (read-write for ingest updates)
       - ../content-agn:/app/content-agn
@@ -17,7 +17,7 @@ services:
       - .env
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:4735/health"]
       interval: 30s
       timeout: 10s
       retries: 3

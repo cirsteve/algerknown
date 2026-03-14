@@ -4,7 +4,7 @@ import { getZkbPath } from '../utils/zkb-path.js';
 
 const router = Router();
 
-const RAG_BACKEND_URL = process.env.RAG_BACKEND_URL || 'http://localhost:8000';
+const RAG_BACKEND_URL = process.env.RAG_BACKEND_URL || 'http://localhost:4735';
 
 /**
  * Notify the RAG backend to ingest or index a file after creation/update.
