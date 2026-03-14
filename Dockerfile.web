@@ -6,7 +6,9 @@ COPY packages/web/package*.json ./packages/web/
 RUN npm ci
 COPY packages/core ./packages/core
 COPY packages/web ./packages/web
-RUN npm run build --workspace=@algerknown/web
+ARG VITE_RAG_API_URL=http://localhost:8000
+ENV VITE_RAG_API_URL=$VITE_RAG_API_URL
+RUN npm run build --workspace=@algerknown/core && npm run build --workspace=@algerknown/web
 
 FROM node:lts-slim
 WORKDIR /app
