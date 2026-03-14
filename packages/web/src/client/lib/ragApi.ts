@@ -5,15 +5,15 @@
  * Handles query, search, ingest, and approval operations.
  */
 
-// RAG backend URL (configurable via environment or localStorage)
-const RAG_API_URL = import.meta.env.VITE_RAG_API_URL || 'http://localhost:4735';
+// RAG backend URL - proxied through the web server via /rag prefix
+const RAG_API_URL = '/rag';
 
 export function getRagApiUrl(): string {
-  return localStorage.getItem('ragApiUrl') || RAG_API_URL;
+  return RAG_API_URL;
 }
 
-export function setRagApiUrl(url: string): void {
-  localStorage.setItem('ragApiUrl', url);
+export function setRagApiUrl(_url: string): void {
+  // No-op: RAG requests are now proxied through the web server
 }
 
 // Types
