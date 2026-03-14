@@ -6,7 +6,7 @@ COPY packages/web/package*.json ./packages/web/
 RUN npm ci
 COPY packages/core ./packages/core
 COPY packages/web ./packages/web
-ARG VITE_RAG_API_URL=http://localhost:8000
+ARG VITE_RAG_API_URL=http://localhost:4735
 ENV VITE_RAG_API_URL=$VITE_RAG_API_URL
 RUN npm run build --workspace=@algerknown/core && npm run build --workspace=@algerknown/web
 
