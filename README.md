@@ -125,7 +125,7 @@ cd rag-backend
 docker-compose up --build
 ```
 
-The RAG backend runs on http://localhost:8000. The web UI will automatically connect to it.
+The RAG backend runs on http://localhost:4735. The web UI will automatically connect to it.
 
 <details>
 <summary>Alternative: Local Python setup (for development)</summary>

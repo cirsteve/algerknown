@@ -16,6 +16,38 @@ os.environ["CHROMA_DB_DIR"] = "/tmp/test-chroma"
 os.environ["USE_MOCK_EMBEDDINGS"] = "true"
 
 
+class TestCreateLLMClient:
+    """Tests for the create_llm_client factory."""
+
+    def test_anthropic_provider(self):
+        from api import create_llm_client
+        from jig.llm import AnthropicClient
+
+        client = create_llm_client("anthropic", "claude-sonnet-4-20250514")
+        assert isinstance(client, AnthropicClient)
+
+    def test_dispatch_provider(self, monkeypatch):
+        from api import create_llm_client
+        from jig.llm import DispatchClient
+
+        monkeypatch.setenv("DISPATCH_URL", "http://localhost:8900")
+        client = create_llm_client("dispatch", "llama-70b")
+        assert isinstance(client, DispatchClient)
+
+    def test_dispatch_requires_url(self, monkeypatch):
+        from api import create_llm_client
+
+        monkeypatch.delenv("DISPATCH_URL", raising=False)
+        with pytest.raises(ValueError, match="DISPATCH_URL must be set"):
+            create_llm_client("dispatch", "llama-70b")
+
+    def test_unknown_provider_raises(self):
+        from api import create_llm_client
+
+        with pytest.raises(ValueError, match="Unknown LLM provider"):
+            create_llm_client("openai", "gpt-4o")
+
+
 class TestHealthEndpoint:
     """Tests for the health check endpoint."""
 

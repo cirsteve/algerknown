@@ -22,6 +22,7 @@ load_dotenv("../.env")  # Root .env
 load_dotenv()  # Local .env (overrides)
 
 from jig import run_pipeline, map_pipeline
+from jig.core.types import LLMClient
 from jig.llm import AnthropicClient
 from jig.tracing import StdoutTracer
 
@@ -56,6 +57,40 @@ _stats_cache: Optional[dict] = None
 _stats_cache_file_info: Optional[tuple[float, int]] = None  # (mtime, size)
 
 
+def create_llm_client(provider: str, model: str) -> LLMClient:
+    """Create an LLM client based on provider and model.
+
+    Supports:
+      - "anthropic": Cloud Anthropic API
+      - "dispatch": Local models via smithers dispatch
+    """
+    provider = provider.strip().lower()
+    if provider == "anthropic":
+        return AnthropicClient(model=model)
+    elif provider == "dispatch":
+        dispatch_url = (os.getenv("DISPATCH_URL") or "").strip()
+        if not dispatch_url:
+            raise ValueError(
+                "DISPATCH_URL must be set when LLM provider is 'dispatch'. "
+                "Example: http://localhost:8900"
+            )
+        try:
+            timeout = int(os.getenv("DISPATCH_TIMEOUT", "300"))
+        except ValueError:
+            logger.warning("Invalid DISPATCH_TIMEOUT, defaulting to 300s")
+            timeout = 300
+
+        from jig.llm import DispatchClient
+        return DispatchClient(
+            model=model,
+            dispatch_url=dispatch_url,
+            requester="algerknown",
+            timeout_seconds=timeout,
+        )
+    else:
+        raise ValueError(f"Unknown LLM provider: {provider}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan - initialize on startup."""
@@ -68,8 +103,17 @@ async def lifespan(app: FastAPI):
     # Initialize vector store
     vector_store = VectorStore(CHROMA_DB_DIR)
 
-    # Initialize LLM client, tracer, and job store
-    app.state.llm_client = AnthropicClient(model="claude-sonnet-4-20250514")
+    # Initialize LLM clients (configurable per operation), tracer, and job store
+    query_provider = os.getenv("LLM_QUERY_PROVIDER", "anthropic")
+    query_model = os.getenv("LLM_QUERY_MODEL", "claude-sonnet-4-20250514")
+    ingest_provider = os.getenv("LLM_INGEST_PROVIDER", "anthropic")
+    ingest_model = os.getenv("LLM_INGEST_MODEL", "claude-sonnet-4-20250514")
+
+    app.state.query_llm = create_llm_client(query_provider, query_model)
+    app.state.ingest_llm = create_llm_client(ingest_provider, ingest_model)
+    logger.info(f"Query LLM: {query_provider}/{query_model}")
+    logger.info(f"Ingest LLM: {ingest_provider}/{ingest_model}")
+
     app.state.tracer = StdoutTracer()
     app.state.job_store = JobStore()
 
@@ -162,7 +206,7 @@ async def run_query_job(job_id: str, query_text: str, n_results: int):
         pipeline_result = await run_pipeline(
             pipeline,
             input={"query": query_text, "n_results": n_results},
-            context={"vector_store": vector_store, "llm": app.state.llm_client},
+            context={"vector_store": vector_store, "llm": app.state.query_llm},
         )
         result = pipeline_result.output
 
@@ -453,7 +497,7 @@ async def run_ingest_job(job_id: str, file_path: str, max_proposals: int | None)
         map_result = await map_pipeline(
             proposal_pipeline,
             items=[{"entry": entry, "summary": s} for s in related],
-            context={"llm": app.state.llm_client},
+            context={"llm": app.state.ingest_llm},
         )
         proposals = [
             r.output for r in map_result.results
