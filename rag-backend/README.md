@@ -49,8 +49,15 @@ Environment variables (set in root `.env`):
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `OPENAI_API_KEY` | OpenAI API key for embeddings | Required |
-| `ANTHROPIC_API_KEY` | Anthropic API key for synthesis | Required |
+| `OPENAI_API_KEY` | OpenAI API key for embeddings | Required (unless `USE_LOCAL_EMBEDDINGS=true`) |
+| `ANTHROPIC_API_KEY` | Anthropic API key for synthesis | Required (when using anthropic provider) |
+| `USE_LOCAL_EMBEDDINGS` | Use local sentence-transformers instead of OpenAI | `false` |
+| `LLM_QUERY_PROVIDER` | LLM provider for queries: `anthropic` or `dispatch` | `anthropic` |
+| `LLM_QUERY_MODEL` | Model name for query synthesis | `claude-sonnet-4-20250514` |
+| `LLM_INGEST_PROVIDER` | LLM provider for ingest/proposals: `anthropic` or `dispatch` | `anthropic` |
+| `LLM_INGEST_MODEL` | Model name for proposal generation | `claude-sonnet-4-20250514` |
+| `DISPATCH_URL` | Smithers dispatch server URL | Required when using `dispatch` provider |
+| `DISPATCH_TIMEOUT` | Dispatch job timeout in seconds | `300` |
 | `CONTENT_DIR` | Path to content directory | `../content-agn` |
 | `CHROMA_DB_DIR` | Path for ChromaDB persistence | `./chroma_db` |
 | `RAG_HOST` | Server host | `0.0.0.0` |
@@ -58,33 +65,39 @@ Environment variables (set in root `.env`):
 
 ## API Endpoints
 
-### Query Mode
+### Query Mode (async)
 
 ```bash
-# Query with synthesis
+# Submit a query job (returns 202 with job_id)
 curl -X POST http://localhost:4735/query \
   -H "Content-Type: application/json" \
   -d '{"query": "What do I know about nullifiers?", "n_results": 5}'
+
+# Poll for results
+curl http://localhost:4735/jobs/{job_id}
 ```
 
 ### Search Mode
 
 ```bash
-# Search without synthesis
+# Search without synthesis (synchronous)
 curl -X POST http://localhost:4735/search \
   -H "Content-Type: application/json" \
   -d '{"query": "nullifiers", "n_results": 10}'
 ```
 
-### Ingest Mode
+### Ingest Mode (async)
 
 ```bash
-# Ingest new entry and get proposals
+# Submit an ingest job (returns 202 with job_id)
 curl -X POST http://localhost:4735/ingest \
   -H "Content-Type: application/json" \
   -d '{"file_path": "../content-agn/entries/2026-01-20-new-entry.yaml"}'
 
-# Approve a proposal
+# Poll for proposals
+curl http://localhost:4735/jobs/{job_id}
+
+# Approve a proposal (synchronous)
 curl -X POST http://localhost:4735/approve \
   -H "Content-Type: application/json" \
   -d '{"proposal": {"target_summary_id": "...", "source_entry_id": "...", ...}}'
