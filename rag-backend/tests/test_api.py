@@ -30,8 +30,19 @@ class TestCreateLLMClient:
         from api import create_llm_client
         from jig.llm import DispatchClient
 
-        client = create_llm_client("dispatch", "llama-70b")
-        assert isinstance(client, DispatchClient)
+        os.environ["DISPATCH_URL"] = "http://localhost:8900"
+        try:
+            client = create_llm_client("dispatch", "llama-70b")
+            assert isinstance(client, DispatchClient)
+        finally:
+            os.environ.pop("DISPATCH_URL", None)
+
+    def test_dispatch_requires_url(self):
+        from api import create_llm_client
+
+        os.environ.pop("DISPATCH_URL", None)
+        with pytest.raises(ValueError, match="DISPATCH_URL must be set"):
+            create_llm_client("dispatch", "llama-70b")
 
     def test_unknown_provider_raises(self):
         from api import create_llm_client

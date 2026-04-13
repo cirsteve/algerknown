@@ -67,12 +67,24 @@ def create_llm_client(provider: str, model: str) -> LLMClient:
     if provider == "anthropic":
         return AnthropicClient(model=model)
     elif provider == "dispatch":
+        dispatch_url = (os.getenv("DISPATCH_URL") or "").strip()
+        if not dispatch_url:
+            raise ValueError(
+                "DISPATCH_URL must be set when LLM provider is 'dispatch'. "
+                "Example: http://localhost:8900"
+            )
+        try:
+            timeout = int(os.getenv("DISPATCH_TIMEOUT", "300"))
+        except ValueError:
+            logger.warning("Invalid DISPATCH_TIMEOUT, defaulting to 300s")
+            timeout = 300
+
         from jig.llm import DispatchClient
         return DispatchClient(
             model=model,
-            dispatch_url=os.getenv("DISPATCH_URL", "http://willie:8900"),
+            dispatch_url=dispatch_url,
             requester="algerknown",
-            timeout_seconds=int(os.getenv("DISPATCH_TIMEOUT", "300")),
+            timeout_seconds=timeout,
         )
     else:
         raise ValueError(f"Unknown LLM provider: {provider}")
