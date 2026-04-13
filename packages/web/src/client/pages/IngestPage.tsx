@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { ragApi, ProposalData, checkRagConnection } from '../lib/ragApi';
+import { ragApi, ProposalData, checkRagConnection, type IngestResult } from '../lib/ragApi';
 import { api, IndexEntryRef } from '../lib/api';
+import { useJob } from '../hooks/useJob';
 
 type IngestState = 'idle' | 'selecting' | 'ingesting' | 'reviewing' | 'applying';
 
@@ -18,6 +19,9 @@ export function IngestPage() {
   const [applyResults, setApplyResults] = useState<Array<{ proposal: ProposalData; success: boolean; error?: string }>>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [currentJobId, setCurrentJobId] = useState<string | null>(null);
+
+  const { isComplete, isFailed, result, progress, progressDetail, job, error: jobError } = useJob<IngestResult>(currentJobId);
 
   // Refetch entries every time page is loaded/navigated to
   useEffect(() => {
@@ -25,16 +29,37 @@ export function IngestPage() {
     loadEntries();
   }, [location.key]);
 
+  // Handle ingest job completion
+  useEffect(() => {
+    if (isComplete && result) {
+      setProposals(result.proposals as ProposalData[]);
+      setState('reviewing');
+      setCurrentJobId(null);
+    }
+    if (isFailed && job) {
+      setError(job.error || 'Ingest failed');
+      setState('selecting');
+      setCurrentJobId(null);
+    }
+  }, [isComplete, isFailed]);
+
+  // Handle polling/network errors (job expired, backend down)
+  useEffect(() => {
+    if (jobError && currentJobId) {
+      setError(jobError.message || 'Lost connection to job');
+      setState('selecting');
+      setCurrentJobId(null);
+    }
+  }, [jobError]);
+
   const checkConnection = async () => {
-    const result = await checkRagConnection();
-    setRagConnected(result.connected);
+    const connResult = await checkRagConnection();
+    setRagConnected(connResult.connected);
   };
 
   const loadEntries = async () => {
     try {
-      // Get entries from web backend (reads from disk, always up-to-date)
       const allEntries = await api.getEntries();
-      // Filter to only show entries (not summaries) for ingestion
       setEntries(allEntries.filter(e => e.type === 'entry'));
     } catch (err) {
       console.error('Failed to load entries:', err);
@@ -45,7 +70,6 @@ export function IngestPage() {
     if (!selectedEntry) return;
 
     setState('ingesting');
-    setLoading(true);
     setError(null);
 
     try {
@@ -53,13 +77,10 @@ export function IngestPage() {
       if (!entry) throw new Error('Entry not found');
 
       const response = await ragApi.ingest(entry.path);
-      setProposals(response.proposals);
-      setState('reviewing');
+      setCurrentJobId(response.job_id);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ingest failed');
       setState('selecting');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -80,7 +101,6 @@ export function IngestPage() {
   };
 
   const startEditing = (index: number) => {
-    // Initialize edited version from current state with deep clone to avoid mutating original
     if (!editedProposals.has(index)) {
       setEditedProposals(prev => new Map(prev).set(index, JSON.parse(JSON.stringify(proposals[index]))));
     }
@@ -88,7 +108,6 @@ export function IngestPage() {
   };
 
   const cancelEditing = () => {
-    // Remove any unsaved edits when canceling
     if (editingProposal !== null) {
       setEditedProposals(prev => {
         const next = new Map(prev);
@@ -105,7 +124,6 @@ export function IngestPage() {
 
   const updateProposal = (index: number, updates: Partial<ProposalData>) => {
     setEditedProposals(prev => {
-      // Deep clone to avoid mutating original proposal data
       const current = prev.get(index) ?? JSON.parse(JSON.stringify(proposals[index]));
       return new Map(prev).set(index, { ...current, ...updates });
     });
@@ -151,7 +169,8 @@ export function IngestPage() {
     setEditedProposals(new Map());
     setApplyResults([]);
     setError(null);
-    loadEntries(); // Reload entries to get updated last_ingested dates
+    setCurrentJobId(null);
+    loadEntries();
   };
 
   const renderProposal = (_proposal: ProposalData, index: number) => {
@@ -479,7 +498,7 @@ export function IngestPage() {
           <h2 className="text-lg font-medium text-slate-100 mb-4">
             1. Select an entry to ingest
           </h2>
-          
+
           <select
             value={selectedEntry || ''}
             onChange={(e) => setSelectedEntry(e.target.value || null)}
@@ -495,23 +514,35 @@ export function IngestPage() {
 
           <button
             onClick={() => { setState('selecting'); handleIngest(); }}
-            disabled={!selectedEntry || !ragConnected || loading}
+            disabled={!selectedEntry || !ragConnected}
             className="bg-sky-500 hover:bg-sky-400 disabled:bg-slate-600 disabled:cursor-not-allowed px-6 py-3 rounded-lg font-medium transition-colors"
           >
-            {loading ? 'Processing...' : 'Ingest Entry'}
+            Ingest Entry
           </button>
         </div>
       )}
 
-      {/* Step: Ingesting */}
+      {/* Step: Ingesting (async job in progress) */}
       {state === 'ingesting' && (
-        <div className="bg-slate-800 rounded-lg p-6 text-center">
-          <div className="flex items-center justify-center gap-2 mb-4">
-            <div className="w-3 h-3 bg-sky-500 rounded-full animate-pulse" />
-            <div className="w-3 h-3 bg-sky-500 rounded-full animate-pulse delay-75" />
-            <div className="w-3 h-3 bg-sky-500 rounded-full animate-pulse delay-150" />
+        <div className="bg-slate-800 rounded-lg p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 bg-sky-500 rounded-full animate-pulse" />
+              <div className="w-3 h-3 bg-sky-500 rounded-full animate-pulse delay-75" />
+              <div className="w-3 h-3 bg-sky-500 rounded-full animate-pulse delay-150" />
+            </div>
+            <span className="text-slate-300">
+              {progress || 'Starting...'}
+            </span>
           </div>
-          <p className="text-slate-300">Analyzing entry and generating proposals...</p>
+          {progressDetail && progressDetail.total_steps > 0 && (
+            <div className="w-full bg-slate-700 rounded-full h-2">
+              <div
+                className="bg-sky-500 h-2 rounded-full transition-all duration-500"
+                style={{ width: `${(progressDetail.current_step / progressDetail.total_steps) * 100}%` }}
+              />
+            </div>
+          )}
         </div>
       )}
 
@@ -579,27 +610,27 @@ export function IngestPage() {
           </div>
 
           <div className="space-y-2">
-            {applyResults.map((result, index) => (
+            {applyResults.map((applyResult, index) => (
               <div
                 key={index}
                 className={`flex items-center justify-between p-4 rounded-lg ${
-                  result.success
+                  applyResult.success
                     ? 'bg-green-900/30 border border-green-700'
                     : 'bg-red-900/30 border border-red-700'
                 }`}
               >
                 <div>
                   <span className="font-medium">
-                    {result.proposal.target_summary_id}
+                    {applyResult.proposal.target_summary_id}
                   </span>
-                  {result.error && (
+                  {applyResult.error && (
                     <span className="text-sm text-red-400 ml-2">
-                      {result.error}
+                      {applyResult.error}
                     </span>
                   )}
                 </div>
-                <span className={result.success ? 'text-green-400' : 'text-red-400'}>
-                  {result.success ? '✓ Applied' : '✗ Failed'}
+                <span className={applyResult.success ? 'text-green-400' : 'text-red-400'}>
+                  {applyResult.success ? '✓ Applied' : '✗ Failed'}
                 </span>
               </div>
             ))}

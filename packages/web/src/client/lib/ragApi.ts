@@ -18,12 +18,17 @@ export function setRagApiUrl(_url: string): void {
 
 // Types
 
+export interface JobSubmitResponse {
+  job_id: string;
+  status: string;
+}
+
 export interface QueryRequest {
   query: string;
   n_results?: number;
 }
 
-export interface QueryResponse {
+export interface QueryResult {
   answer: string;
   sources: string[];
   model?: string;
@@ -77,7 +82,7 @@ export interface ProposalData {
   match_reason?: string;
 }
 
-export interface IngestResponse {
+export interface IngestResult {
   entry_id: string;
   proposals: ProposalData[];
 }
@@ -133,9 +138,9 @@ export const ragApi = {
   // Health check
   health: () => ragRequest<HealthResponse>('/health'),
 
-  // Query mode - get synthesized answer
+  // Query mode - submit async query job
   query: (query: string, n_results = 5) =>
-    ragRequest<QueryResponse>('/query', {
+    ragRequest<JobSubmitResponse>('/query', {
       method: 'POST',
       body: JSON.stringify({ query, n_results }),
     }),
@@ -147,9 +152,9 @@ export const ragApi = {
       body: JSON.stringify({ query, n_results, type_filter }),
     }),
 
-  // Ingest mode - add new entry and get proposals
+  // Ingest mode - submit async ingest job
   ingest: (file_path: string, max_proposals?: number) =>
-    ragRequest<IngestResponse>('/ingest', {
+    ragRequest<JobSubmitResponse>('/ingest', {
       method: 'POST',
       body: JSON.stringify({ file_path, max_proposals }),
     }),
@@ -173,6 +178,10 @@ export const ragApi = {
       method: 'POST',
       body: JSON.stringify({ proposal }),
     }),
+
+  // Job status polling
+  getJob: <T = unknown>(jobId: string) =>
+    ragRequest<import('../hooks/useJob').JobResponse<T>>(`/jobs/${jobId}`),
 
   // Re-index all content
   reindex: () =>

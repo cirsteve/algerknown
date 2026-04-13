@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from typing import Optional
 from contextlib import asynccontextmanager
 from datetime import date
+import asyncio
 import os
 import logging
 from pathlib import Path
@@ -30,6 +31,7 @@ from proposer import identify_related_summaries
 from pipelines import build_query_pipeline, build_proposal_pipeline
 from writer import apply_update, preview_update, validate_proposal
 from diff_engine import Changelog, VersionCache, diff_and_log
+from jobs import JobStore, JobStatus
 
 # Configure logging
 logging.basicConfig(
@@ -66,9 +68,10 @@ async def lifespan(app: FastAPI):
     # Initialize vector store
     vector_store = VectorStore(CHROMA_DB_DIR)
 
-    # Initialize LLM client and tracer
+    # Initialize LLM client, tracer, and job store
     app.state.llm_client = AnthropicClient(model="claude-sonnet-4-20250514")
     app.state.tracer = StdoutTracer()
+    app.state.job_store = JobStore()
 
     # Initialize changelog and version cache
     changelog = Changelog(Path(CONTENT_DIR) / "changelog.jsonl")
@@ -125,38 +128,71 @@ class QueryRequest(BaseModel):
     n_results: int = Field(default=5, ge=1, le=20, description="Number of results to retrieve")
 
 
-class QueryResponse(BaseModel):
-    answer: str
-    sources: list[str]
-    model: Optional[str] = None
-    error: Optional[str] = None
+class JobSubmitResponse(BaseModel):
+    job_id: str
+    status: str
 
 
-@app.post("/query", response_model=QueryResponse)
+@app.post("/query", response_model=JobSubmitResponse, status_code=202)
 async def query(request: QueryRequest):
     """
-    Query the knowledge base and get a synthesized answer.
+    Submit a query job for async processing.
 
-    Retrieves relevant documents and uses Claude to synthesize
-    an answer with citations.
+    Returns a job ID immediately. Poll GET /jobs/{job_id} for results.
     """
     if not vector_store:
         raise HTTPException(status_code=503, detail="Vector store not initialized")
 
-    pipeline = build_query_pipeline(app.state.tracer)
-    pipeline_result = await run_pipeline(
-        pipeline,
-        input={"query": request.query, "n_results": request.n_results},
-        context={"vector_store": vector_store, "llm": app.state.llm_client},
+    job = app.state.job_store.create("query")
+    task = asyncio.create_task(
+        run_query_job(job.id, request.query, request.n_results)
     )
-    result = pipeline_result.output
+    app.state.job_store.update(job.id, _task=task)
 
-    return QueryResponse(
-        answer=result.get("answer", ""),
-        sources=result.get("sources", []),
-        model=result.get("model"),
-        error=result.get("error"),
-    )
+    return {"job_id": job.id, "status": job.status.value}
+
+
+async def run_query_job(job_id: str, query_text: str, n_results: int):
+    """Background task: run query pipeline and store result."""
+    store = app.state.job_store
+    store.update(job_id, status=JobStatus.RUNNING, progress="Retrieving documents...")
+
+    try:
+        pipeline = build_query_pipeline(app.state.tracer)
+        pipeline_result = await run_pipeline(
+            pipeline,
+            input={"query": query_text, "n_results": n_results},
+            context={"vector_store": vector_store, "llm": app.state.llm_client},
+        )
+        result = pipeline_result.output
+
+        store.update(
+            job_id,
+            status=JobStatus.COMPLETE,
+            progress="Complete",
+            progress_detail=None,
+            result={
+                "answer": result.get("answer", ""),
+                "sources": result.get("sources", []),
+                "model": result.get("model"),
+                "error": result.get("error"),
+            },
+        )
+    except Exception as e:
+        logger.error(f"Query job {job_id} failed: {e}")
+        store.update(job_id, status=JobStatus.FAILED, progress="Failed",
+                     progress_detail=None, result=None, error=str(e))
+
+
+# ============ Job Status ============
+
+@app.get("/jobs/{job_id}")
+async def get_job(job_id: str):
+    """Get the status and result of an async job."""
+    job = app.state.job_store.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return app.state.job_store.to_dict(job)
 
 
 # ============ Search Mode (without synthesis) ============
@@ -328,61 +364,91 @@ class ProposalData(BaseModel):
     match_reason: Optional[str] = None
 
 
-class IngestResponse(BaseModel):
-    entry_id: str
-    proposals: list[ProposalData]
-
-
-@app.post("/ingest", response_model=IngestResponse)
+@app.post("/ingest", response_model=JobSubmitResponse, status_code=202)
 async def ingest(request: IngestRequest):
     """
-    Ingest a new entry and generate update proposals.
+    Submit an ingest job for async processing.
 
-    Loads the entry, identifies related summaries, and generates
-    structured proposals for updating them.
+    Validates the entry synchronously, then runs indexing and proposal
+    generation in the background. Poll GET /jobs/{job_id} for results.
     """
     if not vector_store:
         raise HTTPException(status_code=503, detail="Vector store not initialized")
 
-    # Load and validate the entry using shared helper
-    abs_path, raw_entry, entry = load_entry_document(request.file_path, CONTENT_DIR)
+    # Validate entry synchronously so errors return immediately
+    load_entry_document(request.file_path, CONTENT_DIR)
 
-    # Update last_ingested date in the entry file
-    from ruamel.yaml import YAML
-    yaml_parser = YAML()
-    yaml_parser.preserve_quotes = True
-    yaml_parser.indent(mapping=2, sequence=4, offset=2)
+    job = app.state.job_store.create("ingest")
+    task = asyncio.create_task(
+        run_ingest_job(job.id, request.file_path, request.max_proposals)
+    )
+    app.state.job_store.update(job.id, _task=task)
 
-    last_ingested = date.today().isoformat()
-    raw_entry["last_ingested"] = last_ingested
+    return {"job_id": job.id, "status": job.status.value}
+
+
+async def run_ingest_job(job_id: str, file_path: str, max_proposals: int | None):
+    """Background task: ingest entry, index, and generate proposals."""
+    store = app.state.job_store
+    store.update(job_id, status=JobStatus.RUNNING, progress="Loading entry...")
+
     try:
-        with open(abs_path, 'w') as f:
-            yaml_parser.dump(raw_entry, f)
-        logger.info(f"Updated last_ingested for entry: {entry['id']}")
-        # Only update cache with last_ingested if file write succeeded
-        entry["raw"] = raw_entry
-        entry["metadata"]["last_ingested"] = last_ingested
-    except Exception as e:
-        # Revert last_ingested in raw_entry since file write failed
-        raw_entry.pop("last_ingested", None)
-        logger.warning(f"Failed to update last_ingested: {e}")
+        # Load and validate entry
+        abs_path, raw_entry, entry = load_entry_document(file_path, CONTENT_DIR)
 
-    # Index the new entry
-    vector_store.index_documents([entry])
-    entries_cache[entry["id"]] = entry
-    logger.info(f"Indexed new entry: {entry['id']}")
+        # Update last_ingested date
+        store.update(job_id, progress="Updating entry metadata...")
+        from ruamel.yaml import YAML
+        yaml_parser = YAML()
+        yaml_parser.preserve_quotes = True
+        yaml_parser.indent(mapping=2, sequence=4, offset=2)
 
-    # Log changes to changelog
-    if changelog and version_cache:
+        last_ingested = date.today().isoformat()
+        raw_entry["last_ingested"] = last_ingested
         try:
-            changes = diff_and_log(abs_path, raw_entry, changelog, version_cache)
-            logger.info(f"Logged {len(changes)} changes for {entry['id']}")
+            with open(abs_path, 'w') as f:
+                yaml_parser.dump(raw_entry, f)
+            logger.info(f"Updated last_ingested for entry: {entry['id']}")
+            entry["raw"] = raw_entry
+            entry["metadata"]["last_ingested"] = last_ingested
         except Exception as e:
-            logger.warning(f"Failed to log changes: {e}")
+            raw_entry.pop("last_ingested", None)
+            logger.warning(f"Failed to update last_ingested: {e}")
 
-    # Generate proposals via jig pipeline
-    related = identify_related_summaries(entry, vector_store, max_results=request.max_proposals)
-    if related:
+        # Index the entry
+        store.update(job_id, progress="Indexing entry...")
+        vector_store.index_documents([entry])
+        entries_cache[entry["id"]] = entry
+        logger.info(f"Indexed new entry: {entry['id']}")
+
+        # Log changes
+        if changelog and version_cache:
+            try:
+                changes = diff_and_log(abs_path, raw_entry, changelog, version_cache)
+                logger.info(f"Logged {len(changes)} changes for {entry['id']}")
+            except Exception as e:
+                logger.warning(f"Failed to log changes: {e}")
+
+        # Find related summaries
+        store.update(job_id, progress="Finding related summaries...")
+        related = identify_related_summaries(entry, vector_store, max_results=max_proposals)
+
+        if not related:
+            store.update(
+                job_id,
+                status=JobStatus.COMPLETE,
+                progress="Complete",
+                result={"entry_id": entry["id"], "proposals": []},
+            )
+            return
+
+        # Generate proposals (parallel via map_pipeline)
+        n = len(related)
+        store.update(
+            job_id,
+            progress=f"Generating proposals for {n} {'summary' if n == 1 else 'summaries'}...",
+        )
+
         proposal_pipeline = build_proposal_pipeline(app.state.tracer)
         map_result = await map_pipeline(
             proposal_pipeline,
@@ -393,13 +459,22 @@ async def ingest(request: IngestRequest):
             r.output for r in map_result.results
             if not r.output.get("no_updates") and not r.output.get("error")
         ]
-    else:
-        proposals = []
 
-    return IngestResponse(
-        entry_id=entry["id"],
-        proposals=[ProposalData(**p) for p in proposals],
-    )
+        store.update(
+            job_id,
+            status=JobStatus.COMPLETE,
+            progress="Complete",
+            progress_detail=None,
+            result={
+                "entry_id": entry["id"],
+                "proposals": proposals,
+            },
+        )
+
+    except Exception as e:
+        logger.error(f"Ingest job {job_id} failed: {e}")
+        store.update(job_id, status=JobStatus.FAILED, progress="Failed",
+                     progress_detail=None, result=None, error=str(e))
 
 
 class IndexRequest(FilePathRequest):
