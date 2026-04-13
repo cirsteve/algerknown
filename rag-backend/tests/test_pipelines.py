@@ -13,7 +13,7 @@ import pytest
 import json
 from unittest.mock import MagicMock
 
-from jig import run_pipeline, map_pipeline, PipelineResult
+from jig import run_pipeline, map_pipeline
 from jig.tracing import StdoutTracer
 from jig.core.errors import JigLLMError
 
