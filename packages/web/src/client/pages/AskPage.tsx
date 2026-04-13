@@ -26,7 +26,7 @@ export function AskPage() {
     checkConnection();
   }, []);
 
-  // Scroll to bottom when new messages arrive or loading state changes
+  // Scroll to bottom when new messages arrive or job starts/finishes
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, currentJobId]);

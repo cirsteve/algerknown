@@ -175,7 +175,8 @@ async def run_query_job(job_id: str, query_text: str, n_results: int):
         )
     except Exception as e:
         logger.error(f"Query job {job_id} failed: {e}")
-        store.update(job_id, status=JobStatus.FAILED, progress="Failed", error=str(e))
+        store.update(job_id, status=JobStatus.FAILED, progress="Failed",
+                     progress_detail=None, result=None, error=str(e))
 
 
 # ============ Job Status ============
@@ -441,7 +442,6 @@ async def run_ingest_job(job_id: str, file_path: str, max_proposals: int | None)
         store.update(
             job_id,
             progress=f"Generating proposals for {n} {'summary' if n == 1 else 'summaries'}...",
-            progress_detail={"current_step": 0, "total_steps": n, "step_name": "propose"},
         )
 
         proposal_pipeline = build_proposal_pipeline(app.state.tracer)
@@ -468,7 +468,8 @@ async def run_ingest_job(job_id: str, file_path: str, max_proposals: int | None)
 
     except Exception as e:
         logger.error(f"Ingest job {job_id} failed: {e}")
-        store.update(job_id, status=JobStatus.FAILED, progress="Failed", error=str(e))
+        store.update(job_id, status=JobStatus.FAILED, progress="Failed",
+                     progress_detail=None, result=None, error=str(e))
 
 
 class IndexRequest(FilePathRequest):

@@ -5,7 +5,7 @@ Tests for the API endpoints.
 import asyncio
 import os
 import tempfile
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import patch, MagicMock
 
 import pytest
 import httpx
@@ -411,6 +411,69 @@ class TestIngestEndpoint:
             finally:
                 api.CONTENT_DIR = old_content_dir
 
+    @pytest.mark.asyncio
+    @patch("api.identify_related_summaries")
+    @patch("api.map_pipeline")
+    async def test_ingest_job_completes_with_proposals(self, mock_map_pipeline, mock_identify):
+        """Should complete the ingest job with proposals when related summaries found."""
+        from api import app
+        from ruamel.yaml import YAML
+
+        yaml = YAML()
+        yaml.preserve_quotes = True
+
+        mock_identify.return_value = [
+            {"id": "summary-1", "content": "S1", "metadata": {}, "score": 0.9, "match_reason": "semantic"},
+        ]
+
+        # Mock map_pipeline to return a proposal result
+        mock_result = MagicMock()
+        mock_proposal_result = MagicMock()
+        mock_proposal_result.output = {
+            "target_summary_id": "summary-1",
+            "source_entry_id": "test-entry",
+            "new_learnings": [{"insight": "Test learning"}],
+            "rationale": "Test",
+        }
+        mock_result.results = [mock_proposal_result]
+        mock_map_pipeline.return_value = mock_result
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            entries_dir = os.path.join(tmpdir, "entries")
+            os.makedirs(entries_dir)
+            entry_file = os.path.join(entries_dir, "test-entry.yaml")
+
+            with open(entry_file, "w") as f:
+                yaml.dump({"id": "test-entry", "type": "entry", "topic": "Test", "content": "Test"}, f)
+
+            import api
+            old_content_dir = api.CONTENT_DIR
+            api.CONTENT_DIR = tmpdir
+            api.entries_cache.clear()
+
+            try:
+                async with httpx.AsyncClient(
+                    transport=httpx.ASGITransport(app=app), base_url="http://test"
+                ) as client:
+                    response = await client.post("/ingest", json={"file_path": entry_file})
+                    assert response.status_code == 202
+                    job_id = response.json()["job_id"]
+
+                    for _ in range(50):
+                        status = await client.get(f"/jobs/{job_id}")
+                        if status.json()["status"] in ("complete", "failed"):
+                            break
+                        await asyncio.sleep(0.05)
+
+                    result = status.json()
+                    assert result["status"] == "complete"
+                    assert result["result"]["entry_id"] == "test-entry"
+                    assert len(result["result"]["proposals"]) == 1
+                    assert result["result"]["proposals"][0]["target_summary_id"] == "summary-1"
+                    assert result["progress_detail"] is None  # cleared on completion
+            finally:
+                api.CONTENT_DIR = old_content_dir
+
 
 class TestEntriesWithLastIngested:
     """Tests for the /entries endpoint with last_ingested field."""
@@ -641,6 +704,38 @@ class TestEntryHistoryEndpoint:
                     data = response.json()
                     assert len(data["changes"]) == 2
                     assert data["total"] == 2
+                finally:
+                    api.changelog = old_changelog
+                    api.entries_cache.pop("test-entry", None)
+
+    def test_entry_history_respects_limit(self):
+        """Should respect the limit parameter."""
+        from fastapi.testclient import TestClient
+        from api import app
+        import api
+        from diff_engine import Changelog
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with TestClient(app) as client:
+                old_changelog = api.changelog
+                api.changelog = Changelog(Path(tmpdir) / "changelog.jsonl")
+                api.entries_cache["test-entry"] = {
+                    "id": "test-entry", "content": "Test",
+                    "metadata": {"type": "entry", "file_path": "entries/test-entry.yaml"},
+                }
+                changes = [
+                    {"timestamp": f"2024-01-15T{10+i:02d}:00:00Z", "source": "entries/test-entry.yaml", "path": f"field{i}", "type": "added"}
+                    for i in range(10)
+                ]
+                api.changelog.append(changes)
+
+                try:
+                    response = client.get("/entries/test-entry/history?limit=3")
+                    assert response.status_code == 200
+                    data = response.json()
+                    assert len(data["changes"]) == 3
+                    assert data["total"] == 10
                 finally:
                     api.changelog = old_changelog
                     api.entries_cache.pop("test-entry", None)

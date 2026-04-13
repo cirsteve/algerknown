@@ -7,7 +7,6 @@ Tests cover:
 """
 
 import time
-from unittest.mock import patch
 
 from jobs import Job, JobStatus, JobStore
 
