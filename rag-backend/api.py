@@ -20,10 +20,14 @@ from dotenv import load_dotenv
 load_dotenv("../.env")  # Root .env
 load_dotenv()  # Local .env (overrides)
 
+from jig import run_pipeline, map_pipeline
+from jig.llm import AnthropicClient
+from jig.tracing import StdoutTracer
+
 from loader import load_content, flatten_document
 from vectorstore import VectorStore
-from synthesizer import synthesize_answer
-from proposer import generate_all_proposals
+from proposer import identify_related_summaries
+from pipelines import build_query_pipeline, build_proposal_pipeline
 from writer import apply_update, preview_update, validate_proposal
 from diff_engine import Changelog, VersionCache, diff_and_log
 
@@ -54,18 +58,22 @@ _stats_cache_file_info: Optional[tuple[float, int]] = None  # (mtime, size)
 async def lifespan(app: FastAPI):
     """Application lifespan - initialize on startup."""
     global vector_store, entries_cache, changelog, version_cache
-    
+
     logger.info(f"Initializing RAG backend...")
     logger.info(f"Content directory: {CONTENT_DIR}")
     logger.info(f"ChromaDB directory: {CHROMA_DB_DIR}")
-    
+
     # Initialize vector store
     vector_store = VectorStore(CHROMA_DB_DIR)
-    
+
+    # Initialize LLM client and tracer
+    app.state.llm_client = AnthropicClient(model="claude-sonnet-4-20250514")
+    app.state.tracer = StdoutTracer()
+
     # Initialize changelog and version cache
     changelog = Changelog(Path(CONTENT_DIR) / "changelog.jsonl")
     version_cache = VersionCache(Path(CONTENT_DIR) / ".version_cache")
-    
+
     # Load and index content
     content_path = Path(CONTENT_DIR)
     if content_path.exists():
@@ -75,9 +83,9 @@ async def lifespan(app: FastAPI):
         logger.info(f"Indexed {len(documents)} documents")
     else:
         logger.warning(f"Content directory not found: {CONTENT_DIR}")
-    
+
     yield
-    
+
     logger.info("Shutting down RAG backend...")
 
 
@@ -125,33 +133,29 @@ class QueryResponse(BaseModel):
 
 
 @app.post("/query", response_model=QueryResponse)
-def query(request: QueryRequest):
+async def query(request: QueryRequest):
     """
     Query the knowledge base and get a synthesized answer.
-    
+
     Retrieves relevant documents and uses Claude to synthesize
     an answer with citations.
     """
     if not vector_store:
         raise HTTPException(status_code=503, detail="Vector store not initialized")
-    
-    # Retrieve similar documents
-    retrieved = vector_store.query(request.query, request.n_results)
-    
-    if not retrieved:
-        return QueryResponse(
-            answer="No relevant documents found for your query.",
-            sources=[]
-        )
-    
-    # Synthesize answer
-    result = synthesize_answer(request.query, retrieved)
-    
+
+    pipeline = build_query_pipeline(app.state.tracer)
+    pipeline_result = await run_pipeline(
+        pipeline,
+        input={"query": request.query, "n_results": request.n_results},
+        context={"vector_store": vector_store, "llm": app.state.llm_client},
+    )
+    result = pipeline_result.output
+
     return QueryResponse(
         answer=result.get("answer", ""),
         sources=result.get("sources", []),
         model=result.get("model"),
-        error=result.get("error")
+        error=result.get("error"),
     )
 
 
@@ -330,25 +334,25 @@ class IngestResponse(BaseModel):
 
 
 @app.post("/ingest", response_model=IngestResponse)
-def ingest(request: IngestRequest):
+async def ingest(request: IngestRequest):
     """
     Ingest a new entry and generate update proposals.
-    
+
     Loads the entry, identifies related summaries, and generates
     structured proposals for updating them.
     """
     if not vector_store:
         raise HTTPException(status_code=503, detail="Vector store not initialized")
-    
+
     # Load and validate the entry using shared helper
     abs_path, raw_entry, entry = load_entry_document(request.file_path, CONTENT_DIR)
-    
+
     # Update last_ingested date in the entry file
     from ruamel.yaml import YAML
     yaml_parser = YAML()
     yaml_parser.preserve_quotes = True
     yaml_parser.indent(mapping=2, sequence=4, offset=2)
-    
+
     last_ingested = date.today().isoformat()
     raw_entry["last_ingested"] = last_ingested
     try:
@@ -362,12 +366,12 @@ def ingest(request: IngestRequest):
         # Revert last_ingested in raw_entry since file write failed
         raw_entry.pop("last_ingested", None)
         logger.warning(f"Failed to update last_ingested: {e}")
-    
+
     # Index the new entry
     vector_store.index_documents([entry])
     entries_cache[entry["id"]] = entry
     logger.info(f"Indexed new entry: {entry['id']}")
-    
+
     # Log changes to changelog
     if changelog and version_cache:
         try:
@@ -375,13 +379,26 @@ def ingest(request: IngestRequest):
             logger.info(f"Logged {len(changes)} changes for {entry['id']}")
         except Exception as e:
             logger.warning(f"Failed to log changes: {e}")
-    
-    # Generate proposals
-    proposals = generate_all_proposals(entry, vector_store, max_proposals=request.max_proposals)
-    
+
+    # Generate proposals via jig pipeline
+    related = identify_related_summaries(entry, vector_store, max_results=request.max_proposals)
+    if related:
+        proposal_pipeline = build_proposal_pipeline(app.state.tracer)
+        map_result = await map_pipeline(
+            proposal_pipeline,
+            items=[{"entry": entry, "summary": s} for s in related],
+            context={"llm": app.state.llm_client},
+        )
+        proposals = [
+            r.output for r in map_result.results
+            if not r.output.get("no_updates") and not r.output.get("error")
+        ]
+    else:
+        proposals = []
+
     return IngestResponse(
         entry_id=entry["id"],
-        proposals=[ProposalData(**p) for p in proposals]
+        proposals=[ProposalData(**p) for p in proposals],
     )
 
 
