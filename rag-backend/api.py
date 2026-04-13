@@ -64,6 +64,7 @@ def create_llm_client(provider: str, model: str) -> LLMClient:
       - "anthropic": Cloud Anthropic API
       - "dispatch": Local models via smithers dispatch
     """
+    provider = provider.strip().lower()
     if provider == "anthropic":
         return AnthropicClient(model=model)
     elif provider == "dispatch":
