@@ -181,7 +181,7 @@ async def run_query_job(job_id: str, query_text: str, n_results: int):
 # ============ Job Status ============
 
 @app.get("/jobs/{job_id}")
-def get_job(job_id: str):
+async def get_job(job_id: str):
     """Get the status and result of an async job."""
     job = app.state.job_store.get(job_id)
     if not job:

@@ -19,7 +19,7 @@ export function AskPage() {
   const [documentsIndexed, setDocumentsIndexed] = useState<number>(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const { isComplete, isFailed, result, progress, job } = useJob<QueryResult>(currentJobId);
+  const { isComplete, isFailed, result, progress, job, error: jobError } = useJob<QueryResult>(currentJobId);
 
   // Check RAG backend connection on mount
   useEffect(() => {
@@ -31,7 +31,7 @@ export function AskPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, currentJobId]);
 
-  // Handle job completion
+  // Handle job completion or polling errors
   useEffect(() => {
     if (isComplete && result) {
       const assistantMessage: Message = {
@@ -55,6 +55,20 @@ export function AskPage() {
       setCurrentJobId(null);
     }
   }, [isComplete, isFailed]);
+
+  // Handle polling/network errors (job expired, backend down)
+  useEffect(() => {
+    if (jobError && currentJobId) {
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: `Error: ${jobError.message || 'Lost connection to job'}`,
+        timestamp: new Date(),
+      };
+      setMessages(prev => [...prev, errorMessage]);
+      setCurrentJobId(null);
+    }
+  }, [jobError]);
 
   const checkConnection = async () => {
     const connResult = await checkRagConnection();

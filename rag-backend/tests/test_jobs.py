@@ -112,10 +112,11 @@ class TestJobStore:
         assert job.result == result
         assert job.status == JobStatus.COMPLETE
 
-    def test_cleanup_removes_expired_jobs(self):
-        """Should remove jobs older than TTL."""
+    def test_cleanup_removes_expired_terminal_jobs(self):
+        """Should remove completed/failed jobs older than TTL."""
         store = JobStore(ttl_seconds=1)
         job = store.create("query")
+        store.update(job.id, status=JobStatus.COMPLETE)
 
         # Simulate expiry
         job.updated_at = time.time() - 2
@@ -128,6 +129,18 @@ class TestJobStore:
         """Should keep jobs within TTL."""
         store = JobStore(ttl_seconds=3600)
         job = store.create("query")
+        store.update(job.id, status=JobStatus.COMPLETE)
+
+        removed = store.cleanup()
+        assert removed == 0
+        assert store.get(job.id) is not None
+
+    def test_cleanup_preserves_running_jobs(self):
+        """Should not remove pending/running jobs even if expired."""
+        store = JobStore(ttl_seconds=1)
+        job = store.create("query")
+        store.update(job.id, status=JobStatus.RUNNING)
+        job.updated_at = time.time() - 2
 
         removed = store.cleanup()
         assert removed == 0
@@ -137,6 +150,7 @@ class TestJobStore:
         """Should opportunistically clean up on create."""
         store = JobStore(ttl_seconds=1)
         old_job = store.create("query")
+        store.update(old_job.id, status=JobStatus.FAILED)
         old_job.updated_at = time.time() - 2
 
         # Creating a new job triggers cleanup

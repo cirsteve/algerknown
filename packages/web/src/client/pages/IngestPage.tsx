@@ -21,7 +21,7 @@ export function IngestPage() {
   const [loading, setLoading] = useState(false);
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
 
-  const { isComplete, isFailed, result, progress, progressDetail, job } = useJob<IngestResult>(currentJobId);
+  const { isComplete, isFailed, result, progress, progressDetail, job, error: jobError } = useJob<IngestResult>(currentJobId);
 
   // Refetch entries every time page is loaded/navigated to
   useEffect(() => {
@@ -42,6 +42,15 @@ export function IngestPage() {
       setCurrentJobId(null);
     }
   }, [isComplete, isFailed]);
+
+  // Handle polling/network errors (job expired, backend down)
+  useEffect(() => {
+    if (jobError && currentJobId) {
+      setError(jobError.message || 'Lost connection to job');
+      setState('selecting');
+      setCurrentJobId(null);
+    }
+  }, [jobError]);
 
   const checkConnection = async () => {
     const connResult = await checkRagConnection();

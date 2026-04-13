@@ -367,7 +367,7 @@ class TestIngestEndpoint:
     @patch("api.identify_related_summaries")
     @patch("api.map_pipeline")
     async def test_ingest_job_completes(self, mock_map_pipeline, mock_identify):
-        """Should complete the ingest job with proposals."""
+        """Should complete the ingest job (no related summaries, empty proposals)."""
         from api import app
         from ruamel.yaml import YAML
 

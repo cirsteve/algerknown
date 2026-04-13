@@ -78,9 +78,13 @@ class JobStore:
         job.updated_at = time.time()
 
     def cleanup(self) -> int:
-        """Remove jobs older than TTL. Returns count removed."""
+        """Remove terminal jobs older than TTL. Skips pending/running jobs."""
         cutoff = time.time() - self._ttl
-        expired = [jid for jid, job in self._jobs.items() if job.updated_at < cutoff]
+        expired = [
+            jid for jid, job in self._jobs.items()
+            if job.updated_at < cutoff
+            and job.status in (JobStatus.COMPLETE, JobStatus.FAILED)
+        ]
         for jid in expired:
             del self._jobs[jid]
         if expired:
