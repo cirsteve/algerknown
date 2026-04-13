@@ -3,7 +3,7 @@ import useSWR from 'swr';
 export interface JobProgressDetail {
   current_step: number;
   total_steps: number;
-  step_name: string;
+  step_name?: string;
 }
 
 export interface JobResponse<T = unknown> {

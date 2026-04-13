@@ -62,18 +62,20 @@ class JobStore:
         """Get a job by ID, or None if not found."""
         return self._jobs.get(job_id)
 
+    _MUTABLE_FIELDS = {"status", "progress", "progress_detail", "result", "error", "_task"}
+
     def update(self, job_id: str, **kwargs) -> None:
-        """Update job fields. Automatically sets updated_at."""
+        """Update mutable job fields. Automatically sets updated_at."""
         job = self._jobs.get(job_id)
         if job is None:
             logger.warning(f"Attempted to update non-existent job: {job_id}")
             return
 
         for key, value in kwargs.items():
-            if hasattr(job, key):
+            if key in self._MUTABLE_FIELDS:
                 setattr(job, key, value)
             else:
-                logger.warning(f"Unknown job field: {key}")
+                logger.warning(f"Cannot update immutable or unknown job field: {key}")
 
         job.updated_at = time.time()
 

@@ -128,7 +128,12 @@ class QueryRequest(BaseModel):
     n_results: int = Field(default=5, ge=1, le=20, description="Number of results to retrieve")
 
 
-@app.post("/query", status_code=202)
+class JobSubmitResponse(BaseModel):
+    job_id: str
+    status: str
+
+
+@app.post("/query", response_model=JobSubmitResponse, status_code=202)
 async def query(request: QueryRequest):
     """
     Submit a query job for async processing.
@@ -359,7 +364,7 @@ class ProposalData(BaseModel):
     match_reason: Optional[str] = None
 
 
-@app.post("/ingest", status_code=202)
+@app.post("/ingest", response_model=JobSubmitResponse, status_code=202)
 async def ingest(request: IngestRequest):
     """
     Submit an ingest job for async processing.
