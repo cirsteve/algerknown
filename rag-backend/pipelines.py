@@ -14,7 +14,6 @@ from jig import (
     Role,
     Step,
     TracingLogger,
-    map_pipeline,
 )
 from jig.core.errors import JigLLMError
 
@@ -78,14 +77,16 @@ async def propose_step(ctx: dict) -> dict:
     llm = ctx["llm"]
 
     prompt = build_proposal_prompt(entry, summary)
+    response_text = None
 
     try:
         response = await llm.complete(CompletionParams(
             messages=[Message(role=Role.USER, content=prompt)],
             max_tokens=1024,
         ))
+        response_text = response.content
 
-        return parse_proposal_response(response.content, summary, entry)
+        return parse_proposal_response(response_text, summary, entry)
 
     except json.JSONDecodeError as e:
         logger.error(f"Failed to parse LLM response: {e}")
@@ -93,7 +94,7 @@ async def propose_step(ctx: dict) -> dict:
             "target_summary_id": summary["id"],
             "source_entry_id": entry["id"],
             "error": "Failed to parse LLM response",
-            "raw_response": response.content if 'response' in dir() else None,
+            "raw_response": response_text,
         }
     except JigLLMError as e:
         logger.error(f"LLM error in proposal: {e}")

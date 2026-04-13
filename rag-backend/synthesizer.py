@@ -119,7 +119,6 @@ async def synthesize_with_followup(
     retrieved_entries: list[dict],
     llm_client: LLMClient,
     conversation_history: list[dict] = None,
-    model: str = "claude-sonnet-4-20250514",
 ) -> dict:
     """
     Synthesize with conversation context for follow-up questions.
@@ -129,12 +128,13 @@ async def synthesize_with_followup(
         retrieved_entries: Retrieved documents
         llm_client: jig LLMClient instance
         conversation_history: List of previous {role, content} messages
-        model: Claude model to use
 
     Returns:
         Dict with answer and sources
     """
-    system_prompt = build_followup_system_prompt(retrieved_entries)
+    # Only first 10 entries are included in the prompt
+    context_entries = retrieved_entries[:10]
+    system_prompt = build_followup_system_prompt(context_entries)
 
     messages = []
     if conversation_history:
@@ -152,7 +152,7 @@ async def synthesize_with_followup(
 
         return {
             "answer": response.content,
-            "sources": [e["id"] for e in retrieved_entries],
+            "sources": [e["id"] for e in context_entries],
         }
 
     except Exception as e:

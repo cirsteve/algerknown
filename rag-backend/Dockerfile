@@ -2,7 +2,8 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install dependencies
+# Install dependencies (jig wheel copied first for layer caching)
+COPY wheels/ /tmp/wheels/
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
