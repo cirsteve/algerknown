@@ -26,21 +26,18 @@ class TestCreateLLMClient:
         client = create_llm_client("anthropic", "claude-sonnet-4-20250514")
         assert isinstance(client, AnthropicClient)
 
-    def test_dispatch_provider(self):
+    def test_dispatch_provider(self, monkeypatch):
         from api import create_llm_client
         from jig.llm import DispatchClient
 
-        os.environ["DISPATCH_URL"] = "http://localhost:8900"
-        try:
-            client = create_llm_client("dispatch", "llama-70b")
-            assert isinstance(client, DispatchClient)
-        finally:
-            os.environ.pop("DISPATCH_URL", None)
+        monkeypatch.setenv("DISPATCH_URL", "http://localhost:8900")
+        client = create_llm_client("dispatch", "llama-70b")
+        assert isinstance(client, DispatchClient)
 
-    def test_dispatch_requires_url(self):
+    def test_dispatch_requires_url(self, monkeypatch):
         from api import create_llm_client
 
-        os.environ.pop("DISPATCH_URL", None)
+        monkeypatch.delenv("DISPATCH_URL", raising=False)
         with pytest.raises(ValueError, match="DISPATCH_URL must be set"):
             create_llm_client("dispatch", "llama-70b")
 
