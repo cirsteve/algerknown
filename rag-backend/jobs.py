@@ -33,6 +33,7 @@ class Job:
     progress_detail: dict | None = None
     result: dict | None = None
     error: str | None = None
+    trace_id: str | None = None
     _task: asyncio.Task | None = field(default=None, repr=False)
 
 
@@ -62,7 +63,7 @@ class JobStore:
         """Get a job by ID, or None if not found."""
         return self._jobs.get(job_id)
 
-    _MUTABLE_FIELDS = {"status", "progress", "progress_detail", "result", "error", "_task"}
+    _MUTABLE_FIELDS = {"status", "progress", "progress_detail", "result", "error", "trace_id", "_task"}
 
     def update(self, job_id: str, **kwargs) -> None:
         """Update mutable job fields. Automatically sets updated_at."""
@@ -93,6 +94,15 @@ class JobStore:
             logger.info(f"Cleaned up {len(expired)} expired jobs")
         return len(expired)
 
+    def list_all(self, status: JobStatus | None = None, limit: int = 50) -> list[Job]:
+        """List all jobs, optionally filtered by status, sorted by created_at desc."""
+        self.cleanup()
+        jobs = list(self._jobs.values())
+        if status is not None:
+            jobs = [j for j in jobs if j.status == status]
+        jobs.sort(key=lambda j: j.created_at, reverse=True)
+        return jobs[:limit]
+
     def to_dict(self, job: Job) -> dict:
         """Serialize a job for API response. Excludes internal fields."""
         return {
@@ -105,4 +115,5 @@ class JobStore:
             "progress_detail": job.progress_detail,
             "result": job.result,
             "error": job.error,
+            "trace_id": job.trace_id,
         }
