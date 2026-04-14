@@ -83,13 +83,17 @@ function JobRow({ job }: { job: JobResponse }) {
                     View Trace &rarr;
                   </Link>
                 )}
-                {job.type === 'ingest' && job.status === 'complete' && hasProposals(job) && (
+                {job.type === 'ingest' && (
+                  job.status === 'pending' ||
+                  job.status === 'running' ||
+                  (job.status === 'complete' && hasProposals(job))
+                ) && (
                   <Link
                     to={`/ingest?job=${job.job_id}`}
                     className="text-amber-400 hover:text-amber-300 text-sm"
                     onClick={e => e.stopPropagation()}
                   >
-                    Review Proposals &rarr;
+                    {job.status === 'complete' ? 'Review Proposals' : 'Resume Ingest'} &rarr;
                   </Link>
                 )}
               </div>

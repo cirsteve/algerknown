@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { ragApi, ProposalData, checkRagConnection, type IngestResult } from '../lib/ragApi';
 import { api, IndexEntryRef } from '../lib/api';
-import { useJob, type JobResponse } from '../hooks/useJob';
+import { useJob } from '../hooks/useJob';
 import { useJobsContext } from '../context/JobsContext';
 
 type IngestState = 'idle' | 'selecting' | 'ingesting' | 'reviewing' | 'applying';
@@ -27,18 +27,11 @@ export function IngestPage() {
   const { trackJob } = useJobsContext();
 
   // Resume proposal review from ?job= param (e.g. navigating from Jobs dashboard)
+  const resumeJobId = searchParams.get('job');
   useEffect(() => {
-    const resumeJobId = searchParams.get('job');
     if (!resumeJobId) return;
 
-    // Clear the param so refreshing doesn't re-fetch
-    setSearchParams({}, { replace: true });
-
-    fetch(`/rag/jobs/${resumeJobId}`)
-      .then(r => {
-        if (!r.ok) throw new Error(`Job fetch failed: ${r.status}`);
-        return r.json() as Promise<JobResponse<IngestResult>>;
-      })
+    ragApi.getJob<IngestResult>(resumeJobId)
       .then(job => {
         if (job.status === 'complete' && job.result?.proposals?.length) {
           setProposals(job.result.proposals as ProposalData[]);
@@ -46,12 +39,16 @@ export function IngestPage() {
         } else if (job.status === 'running' || job.status === 'pending') {
           setCurrentJobId(resumeJobId);
           setState('ingesting');
+        } else if (job.status === 'failed') {
+          setError(job.error || 'Ingest failed');
         } else {
           setError('Job has no proposals to review');
         }
+        // Clear param only after successful rehydration
+        setSearchParams({}, { replace: true });
       })
-      .catch(() => setError('Could not load job'));
-  }, []);
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Could not load job'));
+  }, [resumeJobId]);
 
   // Refetch entries every time page is loaded/navigated to
   useEffect(() => {
