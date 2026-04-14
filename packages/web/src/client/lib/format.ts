@@ -5,11 +5,8 @@ export function formatDuration(ms: number | null): string {
 }
 
 export function formatTimestamp(iso: string): string {
-  try {
-    return new Date(iso).toLocaleString();
-  } catch {
-    return iso;
-  }
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? iso : d.toLocaleString();
 }
 
 export function formatRelativeTime(epochSeconds: number): string {

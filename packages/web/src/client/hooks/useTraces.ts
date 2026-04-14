@@ -13,6 +13,7 @@ export function useTraces(pageSize = 50) {
   const [cursor, setCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
+  const [hasPaginated, setHasPaginated] = useState(false);
 
   const { data, error, isLoading } = useSWR<TracesResponse>(
     `/rag/traces?limit=${pageSize}`,
@@ -21,6 +22,7 @@ export function useTraces(pageSize = 50) {
       refreshInterval: 10000,
       revalidateOnFocus: false,
       onSuccess: (data) => {
+        if (hasPaginated) return; // Don't overwrite user's paginated data
         setAllTraces(data.traces);
         setCursor(data.next_cursor);
         setHasMore(data.traces.length >= pageSize);
@@ -31,6 +33,7 @@ export function useTraces(pageSize = 50) {
   const loadMore = useCallback(async () => {
     if (!cursor || loadingMore) return;
     setLoadingMore(true);
+    setHasPaginated(true);
     try {
       const params = new URLSearchParams({ limit: pageSize.toString(), before: cursor });
       const resp = await fetch(`/rag/traces?${params}`);

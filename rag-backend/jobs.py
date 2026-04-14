@@ -96,6 +96,7 @@ class JobStore:
 
     def list_all(self, status: JobStatus | None = None, limit: int = 50) -> list[Job]:
         """List all jobs, optionally filtered by status, sorted by created_at desc."""
+        self.cleanup()
         jobs = list(self._jobs.values())
         if status is not None:
             jobs = [j for j in jobs if j.status == status]

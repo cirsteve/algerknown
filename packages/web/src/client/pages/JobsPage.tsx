@@ -122,7 +122,11 @@ export function JobsPage() {
   );
 
   const jobs = data?.jobs ?? [];
-  const filtered = filter === 'all' ? jobs : jobs.filter(j => j.status === filter);
+  const filtered = filter === 'all'
+    ? jobs
+    : filter === 'running'
+      ? jobs.filter(j => j.status === 'pending' || j.status === 'running')
+      : jobs.filter(j => j.status === filter);
   const runningCount = jobs.filter(j => j.status === 'running' || j.status === 'pending').length;
   const completedCount = jobs.filter(j => j.status === 'complete').length;
   const failedCount = jobs.filter(j => j.status === 'failed').length;

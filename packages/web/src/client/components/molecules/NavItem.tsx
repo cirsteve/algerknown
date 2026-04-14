@@ -57,7 +57,7 @@ export function NavItem({
       <span>{icon}</span>
       <span className="flex-1">{label}</span>
       {badge != null && badge > 0 && (
-        <span className="ml-auto flex h-5 w-5 items-center justify-center rounded-full bg-sky-500 text-xs font-medium text-white">
+        <span className="ml-auto flex h-5 min-w-5 px-1.5 items-center justify-center rounded-full bg-sky-500 text-xs font-medium text-white">
           {badge}
         </span>
       )}

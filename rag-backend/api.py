@@ -22,7 +22,7 @@ load_dotenv("../.env")  # Root .env
 load_dotenv()  # Local .env (overrides)
 
 from jig import run_pipeline, map_pipeline
-from jig.core.types import LLMClient, SpanKind
+from jig.core.types import LLMClient
 from jig.llm import AnthropicClient
 from jig.tracing import SQLiteTracer
 
@@ -230,8 +230,8 @@ async def run_query_job(job_id: str, query_text: str, n_results: int):
         logger.error(f"Query job {job_id} failed: {e}")
         try:
             await app.state.tracer.flush()
-        except Exception:
-            pass
+        except Exception as flush_err:
+            logger.debug(f"Tracer flush failed after query job error: {flush_err}")
         store.update(job_id, status=JobStatus.FAILED, progress="Failed",
                      progress_detail=None, result=None, error=str(e))
 
@@ -241,15 +241,18 @@ async def run_query_job(job_id: str, query_text: str, n_results: int):
 @app.get("/jobs")
 async def list_jobs(status: Optional[str] = None, limit: int = 50):
     """List all jobs, optionally filtered by status."""
+    limit = min(max(limit, 1), 200)
     store = app.state.job_store
     status_filter = None
     if status:
         try:
             status_filter = JobStatus(status)
         except ValueError:
-            raise HTTPException(status_code=400, detail=f"Invalid status: {status}")
-    jobs = store.list_all(status=status_filter, limit=limit)
-    return {"jobs": [store.to_dict(j) for j in jobs], "total": len(jobs)}
+            raise HTTPException(status_code=400, detail=f"Invalid status: {status}") from None
+    all_jobs = store.list_all(status=status_filter, limit=10000)
+    total = len(all_jobs)
+    jobs = all_jobs[:limit]
+    return {"jobs": [store.to_dict(j) for j in jobs], "total": total, "returned": len(jobs)}
 
 
 @app.get("/jobs/{job_id}")
@@ -304,6 +307,7 @@ async def list_traces(limit: int = 50, before: Optional[str] = None):
     Uses direct DB queries since SQLiteTracer.list_traces() filters on
     AGENT_RUN, but algerknown pipelines use PIPELINE_RUN as root spans.
     """
+    limit = min(max(limit, 1), 200)
     tracer = app.state.tracer
     db = await tracer._get_db()
 
@@ -637,8 +641,8 @@ async def run_ingest_job(job_id: str, file_path: str, max_proposals: int | None)
         logger.error(f"Ingest job {job_id} failed: {e}")
         try:
             await app.state.tracer.flush()
-        except Exception:
-            pass
+        except Exception as flush_err:
+            logger.debug(f"Tracer flush failed after ingest job error: {flush_err}")
         store.update(job_id, status=JobStatus.FAILED, progress="Failed",
                      progress_detail=None, result=None, error=str(e))
 

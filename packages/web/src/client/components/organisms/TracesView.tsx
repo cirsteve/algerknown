@@ -98,7 +98,8 @@ function TraceDetail({ traceId }: { traceId: string }) {
   if (isLoading) return <div className="py-4 text-sm text-slate-500">Loading spans...</div>;
   if (spans.length === 0) return <div className="py-4 text-sm text-slate-500">No spans found</div>;
 
-  // Build depth map from parent_id chain
+  // Build depth map from parent_id chain.
+  // Spans arrive sorted by started_at ASC from SQLiteTracer, so parents always precede children.
   const depthMap = new Map<string, number>();
   for (const span of spans) {
     if (!span.parent_id) {

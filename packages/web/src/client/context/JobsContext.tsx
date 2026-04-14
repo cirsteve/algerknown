@@ -10,6 +10,7 @@ export interface TrackedJob {
   error: string | null;
   trace_id: string | null;
   createdAt: number;
+  updatedAt: number;
 }
 
 interface JobsContextValue {
@@ -67,6 +68,7 @@ function JobPoller({
         error: job.error,
         trace_id: job.trace_id,
         createdAt: job.created_at,
+        updatedAt: job.updated_at,
       });
     }
   }, [job, jobId, type, onUpdate]);
@@ -95,8 +97,8 @@ export function JobsProvider({ children }: { children: ReactNode }) {
           if (!data) return true; // keep if no data yet
           if (data.status === 'pending' || data.status === 'running') return true;
           // Keep terminal jobs for AUTO_DISMISS_MS after they finished
-          const elapsed = now - (data.createdAt * 1000 + AUTO_DISMISS_MS);
-          return elapsed < 0;
+          const completedAt = data.updatedAt * 1000;
+          return now - completedAt < AUTO_DISMISS_MS;
         });
         return filtered.length !== prev.length ? filtered : prev;
       });
@@ -124,7 +126,14 @@ export function JobsProvider({ children }: { children: ReactNode }) {
     setJobData(prev => {
       const existing = prev.get(jobId);
       // Only create new Map if data actually changed
-      if (existing && existing.status === data.status && existing.progress === data.progress) {
+      if (
+        existing &&
+        existing.status === data.status &&
+        existing.progress === data.progress &&
+        existing.result === data.result &&
+        existing.error === data.error &&
+        existing.trace_id === data.trace_id
+      ) {
         return prev;
       }
       const next = new Map(prev);

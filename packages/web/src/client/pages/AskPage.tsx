@@ -82,7 +82,7 @@ export function AskPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!query.trim()) return;
+    if (!query.trim() || currentJobId) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -245,12 +245,12 @@ export function AskPage() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Ask a question..."
-          disabled={!ragConnected}
+          disabled={!ragConnected || !!currentJobId}
           className="flex-1 bg-slate-800 border border-slate-600 rounded-lg px-4 py-3 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-sky-500 disabled:opacity-50"
         />
         <button
           type="submit"
-          disabled={!ragConnected || !query.trim()}
+          disabled={!ragConnected || !query.trim() || !!currentJobId}
           className="bg-sky-500 hover:bg-sky-400 disabled:bg-slate-600 disabled:cursor-not-allowed px-6 py-3 rounded-lg font-medium transition-colors"
         >
           Ask
