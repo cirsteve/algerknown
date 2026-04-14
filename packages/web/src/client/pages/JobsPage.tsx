@@ -21,6 +21,11 @@ function Badge({ label, className = '' }: { label: string; className?: string })
   );
 }
 
+function hasProposals(job: JobResponse): boolean {
+  const result = job.result as Record<string, unknown> | null;
+  return Array.isArray(result?.proposals) && result.proposals.length > 0;
+}
+
 function JobRow({ job }: { job: JobResponse }) {
   const [expanded, setExpanded] = useState(false);
   const duration = job.updated_at - job.created_at;
@@ -68,8 +73,8 @@ function JobRow({ job }: { job: JobResponse }) {
                 <span>Updated: {new Date(job.updated_at * 1000).toLocaleString()}</span>
               </div>
 
-              {job.trace_id && (
-                <div>
+              <div className="flex gap-4">
+                {job.trace_id && (
                   <Link
                     to={`/traces?highlight=${job.trace_id}`}
                     className="text-sky-400 hover:text-sky-300 text-sm"
@@ -77,8 +82,17 @@ function JobRow({ job }: { job: JobResponse }) {
                   >
                     View Trace &rarr;
                   </Link>
-                </div>
-              )}
+                )}
+                {job.type === 'ingest' && job.status === 'complete' && hasProposals(job) && (
+                  <Link
+                    to={`/ingest?job=${job.job_id}`}
+                    className="text-amber-400 hover:text-amber-300 text-sm"
+                    onClick={e => e.stopPropagation()}
+                  >
+                    Review Proposals &rarr;
+                  </Link>
+                )}
+              </div>
 
               {job.error && (
                 <div className="bg-red-900/30 border border-red-700 rounded p-3">
