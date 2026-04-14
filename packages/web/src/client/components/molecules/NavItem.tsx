@@ -7,19 +7,21 @@ interface NavItemProps {
   label: string;
   disabled?: boolean;
   disabledReason?: string;
+  badge?: number;
   className?: string;
 }
 
 /**
  * NavItem molecule - Navigation link with icon
  */
-export function NavItem({ 
-  to, 
-  icon, 
-  label, 
+export function NavItem({
+  to,
+  icon,
+  label,
   disabled = false,
   disabledReason,
-  className = '' 
+  badge,
+  className = ''
 }: NavItemProps) {
   const location = useLocation();
   const isActive = location.pathname === to;
@@ -53,7 +55,12 @@ export function NavItem({
       `}
     >
       <span>{icon}</span>
-      <span>{label}</span>
+      <span className="flex-1">{label}</span>
+      {badge != null && badge > 0 && (
+        <span className="ml-auto flex h-5 w-5 items-center justify-center rounded-full bg-sky-500 text-xs font-medium text-white">
+          {badge}
+        </span>
+      )}
     </Link>
   );
 }

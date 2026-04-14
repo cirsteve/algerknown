@@ -1,5 +1,6 @@
 import { ReactNode } from 'react';
 import { Sidebar } from '../organisms/Sidebar';
+import { useJobsContext } from '../../context/JobsContext';
 
 interface MainLayoutProps {
   children: ReactNode;
@@ -7,11 +8,13 @@ interface MainLayoutProps {
 
 /**
  * MainLayout template - Primary application layout with sidebar
- * 
+ *
  * This is the main structural template used across all pages.
  * It provides the sidebar navigation and main content area.
  */
 export function MainLayout({ children }: MainLayoutProps) {
+  const { activeCount } = useJobsContext();
+
   const navItems = [
     { path: '/', label: 'Dashboard', icon: '📊', requiresRag: false },
     { path: '/entries', label: 'Entries', icon: '📝', requiresRag: false },
@@ -21,6 +24,8 @@ export function MainLayout({ children }: MainLayoutProps) {
     { path: '/ask', label: 'Ask', icon: '💬', requiresRag: true },
     { path: '/ingest', label: 'Ingest', icon: '📥', requiresRag: true },
     { path: '/changes', label: 'Changes', icon: '📜', requiresRag: true },
+    { path: '/jobs', label: 'Jobs', icon: '⚡', requiresRag: true, badge: activeCount },
+    { path: '/traces', label: 'Traces', icon: '📡', requiresRag: true },
   ];
 
   return (

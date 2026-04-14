@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { ragApi, ProposalData, checkRagConnection, type IngestResult } from '../lib/ragApi';
 import { api, IndexEntryRef } from '../lib/api';
 import { useJob } from '../hooks/useJob';
+import { useJobsContext } from '../context/JobsContext';
 
 type IngestState = 'idle' | 'selecting' | 'ingesting' | 'reviewing' | 'applying';
 
@@ -22,6 +23,7 @@ export function IngestPage() {
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
 
   const { isComplete, isFailed, result, progress, progressDetail, job, error: jobError } = useJob<IngestResult>(currentJobId);
+  const { trackJob } = useJobsContext();
 
   // Refetch entries every time page is loaded/navigated to
   useEffect(() => {
@@ -78,6 +80,7 @@ export function IngestPage() {
 
       const response = await ragApi.ingest(entry.path);
       setCurrentJobId(response.job_id);
+      trackJob(response.job_id, 'ingest');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ingest failed');
       setState('selecting');

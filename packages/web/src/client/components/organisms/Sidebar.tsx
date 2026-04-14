@@ -11,6 +11,7 @@ interface NavItemConfig {
   label: string;
   icon: ReactNode;
   requiresRag?: boolean;
+  badge?: number;
 }
 
 interface SidebarProps {
@@ -79,6 +80,7 @@ export function Sidebar({ navItems, className = '' }: SidebarProps) {
                 to={item.path}
                 icon={item.icon}
                 label={item.label}
+                badge={item.badge}
                 disabled={item.requiresRag && ragConnected === false}
                 disabledReason={
                   !item.requiresRag

@@ -22,9 +22,9 @@ load_dotenv("../.env")  # Root .env
 load_dotenv()  # Local .env (overrides)
 
 from jig import run_pipeline, map_pipeline
-from jig.core.types import LLMClient
+from jig.core.types import LLMClient, SpanKind
 from jig.llm import AnthropicClient
-from jig.tracing import StdoutTracer
+from jig.tracing import SQLiteTracer
 
 from loader import load_content, flatten_document
 from vectorstore import VectorStore
@@ -114,7 +114,8 @@ async def lifespan(app: FastAPI):
     logger.info(f"Query LLM: {query_provider}/{query_model}")
     logger.info(f"Ingest LLM: {ingest_provider}/{ingest_model}")
 
-    app.state.tracer = StdoutTracer()
+    tracer_db = os.getenv("TRACER_DB_PATH", "jig_traces.db")
+    app.state.tracer = SQLiteTracer(db_path=tracer_db)
     app.state.job_store = JobStore()
 
     # Initialize changelog and version cache
@@ -134,6 +135,7 @@ async def lifespan(app: FastAPI):
     yield
 
     logger.info("Shutting down RAG backend...")
+    await app.state.tracer.close()
 
 
 app = FastAPI(
@@ -208,6 +210,7 @@ async def run_query_job(job_id: str, query_text: str, n_results: int):
             input={"query": query_text, "n_results": n_results},
             context={"vector_store": vector_store, "llm": app.state.query_llm},
         )
+        await app.state.tracer.flush()
         result = pipeline_result.output
 
         store.update(
@@ -215,6 +218,7 @@ async def run_query_job(job_id: str, query_text: str, n_results: int):
             status=JobStatus.COMPLETE,
             progress="Complete",
             progress_detail=None,
+            trace_id=pipeline_result.trace_id,
             result={
                 "answer": result.get("answer", ""),
                 "sources": result.get("sources", []),
@@ -224,11 +228,29 @@ async def run_query_job(job_id: str, query_text: str, n_results: int):
         )
     except Exception as e:
         logger.error(f"Query job {job_id} failed: {e}")
+        try:
+            await app.state.tracer.flush()
+        except Exception:
+            pass
         store.update(job_id, status=JobStatus.FAILED, progress="Failed",
                      progress_detail=None, result=None, error=str(e))
 
 
 # ============ Job Status ============
+
+@app.get("/jobs")
+async def list_jobs(status: Optional[str] = None, limit: int = 50):
+    """List all jobs, optionally filtered by status."""
+    store = app.state.job_store
+    status_filter = None
+    if status:
+        try:
+            status_filter = JobStatus(status)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid status: {status}")
+    jobs = store.list_all(status=status_filter, limit=limit)
+    return {"jobs": [store.to_dict(j) for j in jobs], "total": len(jobs)}
+
 
 @app.get("/jobs/{job_id}")
 async def get_job(job_id: str):
@@ -237,6 +259,100 @@ async def get_job(job_id: str):
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return app.state.job_store.to_dict(job)
+
+
+# ============ Traces ============
+
+def _span_to_dict(span) -> dict:
+    """Serialize a jig Span to a JSON-friendly dict."""
+    import json as _json
+    def _safe_dumps(obj):
+        if obj is None:
+            return None
+        if isinstance(obj, str):
+            return obj
+        try:
+            return _json.dumps(obj, default=str)
+        except (TypeError, ValueError):
+            return repr(obj)
+
+    return {
+        "id": span.id,
+        "trace_id": span.trace_id,
+        "parent_id": span.parent_id,
+        "kind": span.kind.value if hasattr(span.kind, "value") else str(span.kind),
+        "name": span.name,
+        "input": _safe_dumps(span.input),
+        "output": _safe_dumps(span.output),
+        "started_at": span.started_at.isoformat() if span.started_at else None,
+        "ended_at": span.ended_at.isoformat() if span.ended_at else None,
+        "duration_ms": span.duration_ms,
+        "error": span.error,
+        "usage": {
+            "input_tokens": span.usage.input_tokens,
+            "output_tokens": span.usage.output_tokens,
+            "cost": span.usage.cost,
+        } if span.usage else None,
+    }
+
+
+@app.get("/traces")
+async def list_traces(limit: int = 50, before: Optional[str] = None):
+    """
+    List root pipeline traces with aggregated step/error counts.
+
+    Uses direct DB queries since SQLiteTracer.list_traces() filters on
+    AGENT_RUN, but algerknown pipelines use PIPELINE_RUN as root spans.
+    """
+    tracer = app.state.tracer
+    db = await tracer._get_db()
+
+    # Query root spans (no parent) — these are the top-level pipeline/map executions
+    query = """
+        SELECT s.trace_id, s.name, s.started_at, s.duration_ms, s.error,
+               COUNT(c.id) AS step_count,
+               SUM(CASE WHEN c.error IS NOT NULL THEN 1 ELSE 0 END) AS error_count
+        FROM spans s
+        LEFT JOIN spans c ON c.trace_id = s.trace_id AND c.id != s.id
+        WHERE s.parent_id IS NULL
+    """
+    params: list = []
+    if before:
+        query += " AND s.started_at < ?"
+        params.append(before)
+    query += " GROUP BY s.trace_id ORDER BY s.started_at DESC LIMIT ?"
+    params.append(limit)
+
+    cursor = await db.execute(query, params)
+    rows = await cursor.fetchall()
+
+    traces = []
+    for row in rows:
+        trace_id, name, started_at, duration_ms, error, step_count, error_count = row
+        traces.append({
+            "trace_id": trace_id,
+            "name": name,
+            "started_at": started_at,
+            "duration_ms": duration_ms,
+            "error": error,
+            "step_count": step_count,
+            "error_count": error_count,
+        })
+
+    # Determine next_cursor for pagination
+    next_cursor = traces[-1]["started_at"] if traces else None
+
+    return {"traces": traces, "next_cursor": next_cursor}
+
+
+@app.get("/traces/{trace_id}")
+async def get_trace(trace_id: str):
+    """Get all spans for a specific trace."""
+    tracer = app.state.tracer
+    spans = await tracer.get_trace(trace_id)
+    if not spans:
+        raise HTTPException(status_code=404, detail="Trace not found")
+    return {"spans": [_span_to_dict(s) for s in spans]}
 
 
 # ============ Search Mode (without synthesis) ============
@@ -499,6 +615,7 @@ async def run_ingest_job(job_id: str, file_path: str, max_proposals: int | None)
             items=[{"entry": entry, "summary": s} for s in related],
             context={"llm": app.state.ingest_llm},
         )
+        await app.state.tracer.flush()
         proposals = [
             r.output for r in map_result.results
             if not r.output.get("no_updates") and not r.output.get("error")
@@ -509,6 +626,7 @@ async def run_ingest_job(job_id: str, file_path: str, max_proposals: int | None)
             status=JobStatus.COMPLETE,
             progress="Complete",
             progress_detail=None,
+            trace_id=map_result.trace_id,
             result={
                 "entry_id": entry["id"],
                 "proposals": proposals,
@@ -517,6 +635,10 @@ async def run_ingest_job(job_id: str, file_path: str, max_proposals: int | None)
 
     except Exception as e:
         logger.error(f"Ingest job {job_id} failed: {e}")
+        try:
+            await app.state.tracer.flush()
+        except Exception:
+            pass
         store.update(job_id, status=JobStatus.FAILED, progress="Failed",
                      progress_detail=None, result=None, error=str(e))
 

@@ -183,6 +183,29 @@ export const ragApi = {
   getJob: <T = unknown>(jobId: string) =>
     ragRequest<import('../hooks/useJob').JobResponse<T>>(`/jobs/${jobId}`),
 
+  // Job list
+  getJobs: (status?: string, limit = 50) => {
+    const params = new URLSearchParams();
+    if (status) params.set('status', status);
+    params.set('limit', limit.toString());
+    const query = params.toString();
+    return ragRequest<{ jobs: import('../hooks/useJob').JobResponse[]; total: number }>(
+      `/jobs${query ? `?${query}` : ''}`
+    );
+  },
+
+  // Traces
+  getTraces: (limit = 50, before?: string) => {
+    const params = new URLSearchParams();
+    params.set('limit', limit.toString());
+    if (before) params.set('before', before);
+    const query = params.toString();
+    return ragRequest<import('./traceTypes').TracesResponse>(`/traces?${query}`);
+  },
+
+  getTrace: (traceId: string) =>
+    ragRequest<import('./traceTypes').TraceDetailResponse>(`/traces/${traceId}`),
+
   // Re-index all content
   reindex: () =>
     ragRequest<{ indexed: number }>('/reindex', { method: 'POST' }),

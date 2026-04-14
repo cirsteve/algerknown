@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { ragApi, checkRagConnection, type QueryResult } from '../lib/ragApi';
 import { useJob } from '../hooks/useJob';
+import { useJobsContext } from '../context/JobsContext';
 
 interface Message {
   id: string;
@@ -18,6 +19,7 @@ export function AskPage() {
   const [ragConnected, setRagConnected] = useState<boolean | null>(null);
   const [documentsIndexed, setDocumentsIndexed] = useState<number>(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const { trackJob } = useJobsContext();
 
   const { isComplete, isFailed, result, progress, job, error: jobError } = useJob<QueryResult>(currentJobId);
 
@@ -80,7 +82,7 @@ export function AskPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!query.trim() || currentJobId) return;
+    if (!query.trim()) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -96,6 +98,7 @@ export function AskPage() {
     try {
       const response = await ragApi.query(queryText, 5);
       setCurrentJobId(response.job_id);
+      trackJob(response.job_id, 'query');
     } catch (error) {
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
@@ -242,12 +245,12 @@ export function AskPage() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Ask a question..."
-          disabled={!ragConnected || !!currentJobId}
+          disabled={!ragConnected}
           className="flex-1 bg-slate-800 border border-slate-600 rounded-lg px-4 py-3 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-sky-500 disabled:opacity-50"
         />
         <button
           type="submit"
-          disabled={!ragConnected || !!currentJobId || !query.trim()}
+          disabled={!ragConnected || !query.trim()}
           className="bg-sky-500 hover:bg-sky-400 disabled:bg-slate-600 disabled:cursor-not-allowed px-6 py-3 rounded-lg font-medium transition-colors"
         >
           Ask

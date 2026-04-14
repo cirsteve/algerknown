@@ -16,6 +16,7 @@ export interface JobResponse<T = unknown> {
   updated_at: number;
   result: T | null;
   error: string | null;
+  trace_id: string | null;
 }
 
 const fetcher = (url: string) =>
