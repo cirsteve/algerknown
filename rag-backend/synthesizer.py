@@ -1,182 +1,178 @@
 """
 Algerknown RAG - Synthesizer
 
-LLM synthesis for query mode - takes retrieved entries and generates
-synthesized answers with citations.
+Takes retrieved documents and asks the synthesizer agent to produce a
+cited answer via ``jig.run_agent``. The agent returns a typed
+``SynthesizedAnswer`` with the answer text and cited document IDs.
 """
 
-import anthropic
-import os
+from __future__ import annotations
+
 import logging
+import os
+from typing import Any
+
+from jig import AgentConfig, ToolRegistry, from_model, run_agent
+from jig.feedback.loop import SQLiteFeedbackLoop
+from jig.tracing.sqlite import SQLiteTracer
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
-
-def get_anthropic_client() -> anthropic.Anthropic:
-    """Get configured Anthropic client."""
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    if not api_key or api_key.startswith("sk-ant-..."):
-        raise ValueError("ANTHROPIC_API_KEY not configured")
-    return anthropic.Anthropic(api_key=api_key)
+DEFAULT_MODEL = os.getenv("SYNTHESIZER_MODEL", "claude-sonnet-4-6")
+DEFAULT_MAX_CONTEXT_TOKENS = int(os.getenv("SYNTHESIZER_MAX_CONTEXT_TOKENS", "12000"))
 
 
-def synthesize_answer(
-    query: str, 
-    retrieved_entries: list[dict],
-    model: str = "claude-sonnet-4-20250514",
-    max_context_tokens: int = 12000
-) -> dict:
-    """
-    Synthesize an answer from retrieved entries.
-    
-    Args:
-        query: User's natural language query
-        retrieved_entries: List of retrieved documents with content and metadata
-        model: Claude model to use
-        max_context_tokens: Maximum tokens for context (rough estimate)
-        
-    Returns:
-        Dict with 'answer' and 'sources' fields
-    """
-    client = get_anthropic_client()
-    
-    # Format retrieved entries for context, respecting token limit
-    context_parts = []
-    total_chars = 0
-    max_chars = max_context_tokens * 4  # Rough char-to-token ratio
-    
+# --- Schema ----------------------------------------------------------------
+
+
+class SynthesizedAnswer(BaseModel):
+    """Typed output of the synthesizer agent."""
+
+    answer: str
+    cited_document_ids: list[str] = Field(default_factory=list)
+
+
+# --- Prompt building -------------------------------------------------------
+
+
+_SYNTHESIZER_SYSTEM_PROMPT = """You are a knowledge assistant for a personal knowledge \
+base about ZK proofs, privacy, cryptography, and related topics.
+
+Answer the user's query using only the retrieved documents. Call \
+`submit_output` with:
+
+- `answer`: the synthesized answer. Cite document ids inline using \
+`[document-id]` (e.g. `[zksnarks]`). If the documents don't cover the query, \
+say so directly.
+- `cited_document_ids`: the list of document ids you cited in `answer`.
+
+Rules:
+- Synthesize across documents when relevant.
+- Prioritize learnings and decisions.
+- Mention related open questions when they bear on the query.
+- Be concise.
+"""
+
+
+def _format_context(
+    retrieved_entries: list[dict[str, Any]], max_context_chars: int
+) -> tuple[str, list[str]]:
+    """Fit retrieved docs under the char budget; return (context, used_ids)."""
+    parts: list[str] = []
+    used_ids: list[str] = []
+    total = 0
+
     for entry in retrieved_entries:
         topic = entry.get("metadata", {}).get("topic", "")
         doc_type = entry.get("metadata", {}).get("type", "entry")
-        
         part = (
             f'<document id="{entry["id"]}" type="{doc_type}" topic="{topic}">\n'
             f'{entry["content"]}\n'
-            f'</document>'
+            f"</document>"
         )
-        
-        if total_chars + len(part) > max_chars:
-            logger.warning(f"Context truncated at {len(context_parts)} entries")
+        if total + len(part) > max_context_chars:
+            logger.warning("Context truncated at %d entries", len(parts))
             break
-            
-        context_parts.append(part)
-        total_chars += len(part)
-        
-    context = "\n\n".join(context_parts)
-    
-    prompt = f"""You are a knowledge assistant helping query a personal knowledge base about ZK proofs, privacy, cryptography, and related topics.
+        parts.append(part)
+        used_ids.append(entry["id"])
+        total += len(part)
 
-Based on the retrieved documents below, answer the user's query.
+    return "\n\n".join(parts), used_ids
 
-Rules:
-- Synthesize information across documents when relevant
-- Cite specific document IDs when making claims using this format: [document-id]
-- If the documents don't contain relevant information, say so clearly
-- Be concise and direct
-- Prioritize learnings and decisions from the documents
-- If there are open questions related to the query, mention them
 
-<retrieved_documents>
-{context}
-</retrieved_documents>
+def _user_prompt(query: str, context: str) -> str:
+    return (
+        f"<retrieved_documents>\n{context}\n</retrieved_documents>\n\n"
+        f"<query>{query}</query>"
+    )
 
-<query>{query}</query>
 
-Provide a synthesized answer with citations:"""
+# --- Module-level tracer/feedback singletons ---
 
-    try:
-        response = client.messages.create(
-            model=model,
-            max_tokens=1024,
-            messages=[{"role": "user", "content": prompt}]
+_tracer: SQLiteTracer | None = None
+_feedback: SQLiteFeedbackLoop | None = None
+
+
+def _get_tracer() -> SQLiteTracer:
+    global _tracer
+    if _tracer is None:
+        _tracer = SQLiteTracer(db_path=os.getenv("TRACE_DB_PATH", "./traces.db"))
+    return _tracer
+
+
+def _get_feedback() -> SQLiteFeedbackLoop:
+    global _feedback
+    if _feedback is None:
+        _feedback = SQLiteFeedbackLoop(
+            db_path=os.getenv("FEEDBACK_DB_PATH", "./feedback.db"),
         )
-        
-        answer = response.content[0].text
-        
-        return {
-            "answer": answer,
-            "sources": [e["id"] for e in retrieved_entries[:len(context_parts)]],
-            "model": model,
-        }
-        
-    except anthropic.APIError as e:
-        logger.error(f"Anthropic API error: {e}")
-        return {
-            "answer": f"Error generating answer: {str(e)}",
-            "sources": [],
-            "error": str(e),
-        }
+    return _feedback
 
 
-def synthesize_with_followup(
+def _build_config(*, model: str) -> AgentConfig[SynthesizedAnswer]:
+    return AgentConfig[SynthesizedAnswer](
+        name="synthesizer",
+        description="Algerknown synthesizer: cited answer from retrieved documents.",
+        system_prompt=_SYNTHESIZER_SYSTEM_PROMPT,
+        llm=from_model(model),
+        feedback=_get_feedback(),
+        tracer=_get_tracer(),
+        tools=ToolRegistry([]),
+        output_schema=SynthesizedAnswer,
+        max_parse_retries=2,
+        include_memory_in_prompt=False,
+        include_feedback_in_prompt=False,
+    )
+
+
+# --- Public API ------------------------------------------------------------
+
+
+async def synthesize_answer(
     query: str,
-    retrieved_entries: list[dict],
-    conversation_history: list[dict] = None,
-    model: str = "claude-sonnet-4-20250514"
-) -> dict:
-    """
-    Synthesize with conversation context for follow-up questions.
-    
-    Args:
-        query: Current user query
-        retrieved_entries: Retrieved documents
-        conversation_history: List of previous {role, content} messages
-        model: Claude model to use
-        
-    Returns:
-        Dict with answer and sources
-    """
-    client = get_anthropic_client()
-    
-    # Build context
-    context_parts = []
-    for entry in retrieved_entries[:10]:  # Limit for follow-ups
-        topic = entry.get("metadata", {}).get("topic", "")
-        part = (
-            f'<document id="{entry["id"]}" topic="{topic}">\n'
-            f'{entry["content"]}\n'
-            f'</document>'
-        )
-        context_parts.append(part)
-        
-    context = "\n\n".join(context_parts)
-    
-    system_prompt = f"""You are a knowledge assistant helping query a personal knowledge base about ZK proofs, privacy, cryptography, and related topics.
+    retrieved_entries: list[dict[str, Any]],
+    model: str = DEFAULT_MODEL,
+    max_context_tokens: int = DEFAULT_MAX_CONTEXT_TOKENS,
+) -> dict[str, Any]:
+    """Run the synthesizer agent; return ``{answer, sources, model, error?}``."""
+    max_chars = max_context_tokens * 4
+    context, used_ids = _format_context(retrieved_entries, max_chars)
 
-You have access to these retrieved documents:
+    config = _build_config(model=model)
 
-<retrieved_documents>
-{context}
-</retrieved_documents>
-
-Rules:
-- Synthesize information across documents when relevant
-- Cite specific document IDs when making claims: [document-id]
-- If the documents don't contain relevant information, say so
-- Be concise and direct"""
-
-    messages = []
-    if conversation_history:
-        messages.extend(conversation_history)
-    messages.append({"role": "user", "content": query})
-    
     try:
-        response = client.messages.create(
-            model=model,
-            max_tokens=1024,
-            system=system_prompt,
-            messages=messages
-        )
-        
+        result = await run_agent(config, _user_prompt(query, context))
+    except Exception as e:
+        logger.error("Synthesizer run_agent raised: %s", e, exc_info=True)
         return {
-            "answer": response.content[0].text,
-            "sources": [e["id"] for e in retrieved_entries],
-        }
-        
-    except anthropic.APIError as e:
-        logger.error(f"Anthropic API error: {e}")
-        return {
-            "answer": f"Error: {str(e)}",
+            "answer": f"Error generating answer: {e}",
             "sources": [],
             "error": str(e),
         }
+
+    if result.error is not None:
+        logger.warning("Synthesizer terminated with agent error: %s", result.error)
+        return {
+            "answer": f"Error generating answer: {result.error}",
+            "sources": [],
+            "error": str(result.error),
+        }
+
+    answer = result.parsed
+    if answer is None:
+        return {
+            "answer": "Synthesizer returned no parsed output.",
+            "sources": [],
+            "error": "no parsed output",
+        }
+
+    # Prefer the agent's own cited ids if set; otherwise fall back to the
+    # ids we included in context so callers always get something useful.
+    sources = answer.cited_document_ids or used_ids
+
+    return {
+        "answer": answer.answer,
+        "sources": sources,
+        "model": model,
+    }

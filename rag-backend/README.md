@@ -49,10 +49,14 @@ Environment variables (set in root `.env`):
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `OPENAI_API_KEY` | OpenAI API key for embeddings | Required |
-| `ANTHROPIC_API_KEY` | Anthropic API key for synthesis | Required |
+| `OPENAI_API_KEY` | OpenAI API key for embeddings | Required (or use `USE_LOCAL_EMBEDDINGS=true`) |
+| `ANTHROPIC_API_KEY` | Anthropic API key for proposer / synthesizer | Required |
 | `CONTENT_DIR` | Path to content directory | `../content-agn` |
-| `CHROMA_DB_DIR` | Path for ChromaDB persistence | `./chroma_db` |
+| `MEMORY_DB_PATH` | Path to the jig memory SQLite file | `./memory.db` |
+| `FEEDBACK_DB_PATH` | Path to the jig feedback SQLite file | `./feedback.db` |
+| `TRACE_DB_PATH` | Path to the jig trace SQLite file | `./traces.db` |
+| `PROPOSER_MODEL` | Model for the proposer agent | `claude-sonnet-4-6` |
+| `SYNTHESIZER_MODEL` | Model for the synthesizer agent | `claude-sonnet-4-6` |
 | `RAG_HOST` | Server host | `0.0.0.0` |
 | `RAG_PORT` | Server port | `4735` |
 
@@ -117,13 +121,13 @@ Once running, visit:
 
 ## Embedding Options
 
-The vector store supports multiple embedding backends:
+The memory store (jig `SqliteStore`) accepts a custom embedder:
 
 | Mode | When Used | Model |
 |------|-----------|-------|
-| OpenAI | `OPENAI_API_KEY` is valid | `text-embedding-3-small` |
-| Local | No valid OpenAI key | `all-MiniLM-L6-v2` (sentence-transformers) |
-| Mock | Testing only | Deterministic 384-dim vectors |
+| OpenAI | Valid `OPENAI_API_KEY` and no override | `text-embedding-3-small` |
+| Local | `USE_LOCAL_EMBEDDINGS=true` or no OpenAI key | `all-MiniLM-L6-v2` (sentence-transformers) |
+| Mock | `USE_MOCK_EMBEDDINGS=true` (tests) | Deterministic 384-dim vectors |
 
 The Docker image pre-downloads the sentence-transformers model to avoid cold-start delays.
 
@@ -145,16 +149,16 @@ allowing reliable testing without downloading models or making API calls.
 ## Architecture
 
 ```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│  Web UI         │────▶│  API Server     │────▶│  Vector Store   │
-│  (packages/web) │     │  (FastAPI)      │     │  (ChromaDB)     │
-└─────────────────┘     └────────┬────────┘     └─────────────────┘
-                                 │
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────────┐
+│  Web UI         │────▶│  API Server     │────▶│  Memory Store       │
+│  (packages/web) │     │  (FastAPI)      │     │  (jig SqliteStore   │
+└─────────────────┘     └────────┬────────┘     │   + DenseRetriever) │
+                                 │              └─────────────────────┘
                         ┌────────┴────────┐
                         ▼                 ▼
                ┌─────────────────┐ ┌─────────────────┐
-               │  LLM Synthesis  │ │  YAML Writer    │
-               │  (Claude API)   │ │  (ruamel.yaml)  │
+               │  Synthesizer    │ │  YAML Writer    │
+               │  (jig agent)    │ │  (ruamel.yaml)  │
                └─────────────────┘ └─────────────────┘
 ```
 
@@ -164,7 +168,7 @@ allowing reliable testing without downloading models or making API calls.
 |------|---------|
 | `api.py` | FastAPI endpoints |
 | `loader.py` | YAML parsing and document loading |
-| `vectorstore.py` | ChromaDB operations |
-| `synthesizer.py` | Claude synthesis (query mode) |
-| `proposer.py` | Update proposal generation (ingest mode) |
+| `memory_store.py` | Thin wrapper over jig's `SqliteStore` + `DenseRetriever` (chunking, reconstruction, embedder selection) |
+| `synthesizer.py` | Synthesizer agent (`jig.run_agent` + `SynthesizedAnswer`) |
+| `proposer.py` | Proposer agent (`jig.run_agent` + `Proposal`) |
 | `writer.py` | YAML write-back with formatting preservation |

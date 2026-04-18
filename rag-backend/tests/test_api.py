@@ -3,13 +3,13 @@ Tests for the API endpoints.
 """
 
 from fastapi.testclient import TestClient
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 import os
 import tempfile
 
 # Mock environment variables before importing api
 os.environ["CONTENT_DIR"] = "/tmp/test-content"
-os.environ["CHROMA_DB_DIR"] = "/tmp/test-chroma"
+os.environ["MEMORY_DB_PATH"] = "/tmp/test-memory.db"
 os.environ["USE_MOCK_EMBEDDINGS"] = "true"  # Use mock embeddings for tests (no network calls)
 
 
@@ -32,34 +32,27 @@ class TestHealthEndpoint:
 class TestQueryEndpoint:
     """Tests for the /query endpoint."""
     
-    @patch("api.VectorStore")
-    @patch("api.synthesize_answer")
-    def test_query_success(self, mock_synthesize, MockVectorStore):
+    @patch("api.search", new_callable=AsyncMock)
+    @patch("api.synthesize_answer", new_callable=AsyncMock)
+    def test_query_success(self, mock_synthesize, mock_search):
         """Should return synthesized answer."""
         from api import app
-        from unittest.mock import MagicMock
-        
-        # Create mock instance that will be returned by VectorStore()
-        mock_store = MagicMock()
-        mock_store.query.return_value = [
+
+        mock_search.return_value = [
             {"id": "doc-1", "content": "Test content", "metadata": {}, "distance": 0.1}
         ]
-        mock_store.count.return_value = 1
-        mock_store.index_documents.return_value = 0
-        MockVectorStore.return_value = mock_store
-        
         mock_synthesize.return_value = {
             "answer": "Test answer",
             "sources": ["doc-1"],
-            "model": "claude-sonnet-4-20250514"
+            "model": "claude-sonnet-4-20250514",
         }
-        
+
         with TestClient(app) as client:
             response = client.post("/query", json={
                 "query": "What is ZK?",
                 "n_results": 5
             })
-            
+
             assert response.status_code == 200
             data = response.json()
             assert "answer" in data
@@ -180,22 +173,17 @@ class TestIndexEndpoint:
             finally:
                 api.CONTENT_DIR = old_content_dir
     
-    @patch("api.VectorStore")
-    def test_index_does_not_update_last_ingested(self, MockVectorStore):
+    @patch("api.index_documents", new_callable=AsyncMock)
+    def test_index_does_not_update_last_ingested(self, mock_index):
         """Should NOT update last_ingested field in entry file after indexing."""
         from api import app
         from ruamel.yaml import YAML
-        from unittest.mock import MagicMock
-        
+
         yaml = YAML()
         yaml.preserve_quotes = True
-        
-        # Create mock instance that will be returned by VectorStore()
-        mock_store = MagicMock()
-        mock_store.index_documents.return_value = 1
-        mock_store.count.return_value = 0
-        MockVectorStore.return_value = mock_store
-        
+
+        mock_index.return_value = 1
+
         with tempfile.TemporaryDirectory() as tmpdir:
             # Create test entry file
             entries_dir = os.path.join(tmpdir, "entries")
@@ -231,23 +219,17 @@ class TestIndexEndpoint:
             finally:
                 api.CONTENT_DIR = old_content_dir
     
-    @patch("api.generate_all_proposals")
-    @patch("api.VectorStore")
-    def test_index_does_not_generate_proposals(self, MockVectorStore, mock_proposals):
+    @patch("api.generate_all_proposals", new_callable=AsyncMock)
+    @patch("api.index_documents", new_callable=AsyncMock)
+    def test_index_does_not_generate_proposals(self, mock_index, mock_proposals):
         """Should NOT generate proposals when indexing."""
         from api import app
         from ruamel.yaml import YAML
-        from unittest.mock import MagicMock
-        
+
         yaml = YAML()
         yaml.preserve_quotes = True
-        
-        # Create mock instance that will be returned by VectorStore()
-        mock_store = MagicMock()
-        mock_store.index_documents.return_value = 1
-        mock_store.count.return_value = 0
-        MockVectorStore.return_value = mock_store
-        
+
+        mock_index.return_value = 1
         mock_proposals.return_value = [{"target_summary_id": "test"}]
         
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -380,25 +362,19 @@ class TestIngestEndpoint:
             finally:
                 api.CONTENT_DIR = old_content_dir
     
-    @patch("api.generate_all_proposals")
-    @patch("api.VectorStore")
-    def test_ingest_updates_last_ingested(self, MockVectorStore, mock_proposals):
+    @patch("api.generate_all_proposals", new_callable=AsyncMock)
+    @patch("api.index_documents", new_callable=AsyncMock)
+    def test_ingest_updates_last_ingested(self, mock_index, mock_proposals):
         """Should update last_ingested field in entry file after ingestion."""
         from api import app
         from datetime import date
         from ruamel.yaml import YAML
-        from unittest.mock import MagicMock
-        
+
         yaml = YAML()
         yaml.preserve_quotes = True
-        
+
         mock_proposals.return_value = []
-        
-        # Create mock instance that will be returned by VectorStore()
-        mock_store = MagicMock()
-        mock_store.index_documents.return_value = 1
-        mock_store.count.return_value = 0
-        MockVectorStore.return_value = mock_store
+        mock_index.return_value = 1
         
         with tempfile.TemporaryDirectory() as tmpdir:
             # Create test entry file
@@ -500,18 +476,12 @@ class TestApproveEndpoint:
     
     @patch("api.apply_update")
     @patch("api.load_content")
-    @patch("api.VectorStore")
-    def test_approve_success(self, MockVectorStore, mock_load, mock_apply):
+    @patch("api.index_documents", new_callable=AsyncMock)
+    def test_approve_success(self, mock_index, mock_load, mock_apply):
         """Should apply approved proposal."""
         from api import app
-        from unittest.mock import MagicMock
-        
-        # Create mock instance that will be returned by VectorStore()
-        mock_store = MagicMock()
-        mock_store.index_documents.return_value = 1
-        mock_store.count.return_value = 0
-        MockVectorStore.return_value = mock_store
-        
+
+        mock_index.return_value = 1
         mock_apply.return_value = {
             "success": True,
             "file": "/path/to/file.yaml",

@@ -82,7 +82,9 @@ def extract_metadata(entry: dict, file_path: Path) -> dict:
         "file_path": str(file_path),
     }
     
-    # Handle tags - ChromaDB requires flat values, so join as string
+    # Tags stored as a comma-joined string. The proposer's overlap scoring
+    # splits on "," — if this becomes a list, update `identify_related_summaries`
+    # in proposer.py to match.
     tags = entry.get("tags", [])
     if tags:
         metadata["tags"] = ",".join(tags)
