@@ -476,7 +476,9 @@ class TestIngestEndpoint:
         # tracer, LLM clients — has to be pinned by the test. A prior
         # TestClient test may have set them, but standalone runs start cold
         # and bound-to-dead-loop state from earlier tests is worse than no
-        # state. Override everything the /ingest path touches.
+        # state. Override everything the /ingest path touches, then restore
+        # in finally so the next test starts from whatever lifespan last
+        # produced (or None, if this was the first test to run).
         from jobs import JobStore
 
         import api
@@ -490,6 +492,12 @@ class TestIngestEndpoint:
         mock_tracer = MagicMock()
         mock_tracer.flush = AsyncMock()
         mock_tracer.close = AsyncMock()
+
+        old_job_store = getattr(app.state, "job_store", None)
+        old_tracer = getattr(app.state, "tracer", None)
+        old_query_llm = getattr(app.state, "query_llm", None)
+        old_ingest_llm = getattr(app.state, "ingest_llm", None)
+
         app.state.job_store = JobStore()
         app.state.tracer = mock_tracer
         app.state.query_llm = MagicMock()
@@ -530,6 +538,10 @@ class TestIngestEndpoint:
             finally:
                 api.CONTENT_DIR = old_content_dir
                 api.vector_store = old_store
+                app.state.job_store = old_job_store
+                app.state.tracer = old_tracer
+                app.state.query_llm = old_query_llm
+                app.state.ingest_llm = old_ingest_llm
 
 
 class TestEntriesWithLastIngested:

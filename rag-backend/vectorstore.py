@@ -174,7 +174,11 @@ class VectorStore:
     # ------------------------------------------------------------------
 
     async def _delete_by_entry_id(self, entry_id: str) -> None:
-        """Remove every chunk row carrying the given algerknown id."""
+        """Remove every chunk row carrying the given algerknown id.
+
+        Single-document helper used by `delete()`. `index_documents`
+        uses a bulk path that scans once for N documents instead.
+        """
         for row in await self._store.all():
             if row.metadata.get("entry_id") == entry_id:
                 await self._store.delete(row.id)
@@ -186,16 +190,23 @@ class VectorStore:
         one row carrying `entry_id`, `parent_id`, and `chunk_index`
         metadata alongside the caller's fields.
 
+        The deletion phase scans `store.all()` once and bulk-removes every
+        row whose `entry_id` is in the incoming document set. This keeps
+        bulk reindex at O(total_rows) instead of O(total_rows × documents).
+
         Returns the total number of chunk rows written.
         """
         if not documents:
             return 0
 
+        incoming_ids = {doc["id"] for doc in documents}
+        for row in await self._store.all():
+            if row.metadata.get("entry_id") in incoming_ids:
+                await self._store.delete(row.id)
+
         total_chunks = 0
         for doc in documents:
             entry_id = doc["id"]
-            await self._delete_by_entry_id(entry_id)
-
             chunks = self._chunk_text(doc["content"])
             if len(chunks) > 1:
                 logger.info(f"Splitting document '{entry_id}' into {len(chunks)} chunks")

@@ -136,14 +136,17 @@ async def lifespan(app: FastAPI):
     if content_path.exists():
         documents = load_content(CONTENT_DIR)
         entries_cache = {d["id"]: d for d in documents}
-        if await vector_store.count() == 0:
+        # Cache the count — it scans every row, and the log message below
+        # would otherwise pay the same cost twice on every restart.
+        document_count = await vector_store.count()
+        if document_count == 0:
             logger.info(
                 f"Empty memory store — seeding with {len(documents)} documents"
             )
             await vector_store.index_documents(documents)
         else:
             logger.info(
-                f"Memory store already populated ({await vector_store.count()} docs) — skipping reindex"
+                f"Memory store already populated ({document_count} docs) — skipping reindex"
             )
     else:
         logger.warning(f"Content directory not found: {CONTENT_DIR}")
