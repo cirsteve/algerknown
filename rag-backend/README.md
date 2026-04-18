@@ -145,7 +145,7 @@ The Docker image pre-downloads the sentence-transformers model to avoid cold-sta
 
 ## Testing
 
-Tests use `MockEmbeddingFunction` for deterministic behavior without network calls:
+Tests use `embedders.mock_embedder()` for deterministic behavior without network calls:
 
 ```bash
 # Run tests
@@ -155,8 +155,13 @@ pytest tests/ -v
 pytest tests/ -v --cov=. --cov-report=term-missing
 ```
 
-The mock embedding function returns consistent 384-dimensional vectors based on input hashing,
-allowing reliable testing without downloading models or making API calls.
+`mock_embedder()` returns consistent 384-dimensional vectors seeded by a sha256 of the input,
+allowing reliable testing without downloading models or making API calls. `select_embedder()`
+also routes to it when `USE_MOCK_EMBEDDINGS=true` is set in the environment.
+
+Note: the vector store persists on disk across restarts and is only seeded on first boot
+(when `count()` returns 0). If you change YAML content after the store has been created,
+call `POST /reindex` or delete the DB file to rebuild it from source.
 
 ## Architecture
 

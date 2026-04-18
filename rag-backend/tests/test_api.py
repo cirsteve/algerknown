@@ -471,10 +471,14 @@ class TestIngestEndpoint:
         mock_result.results = [mock_proposal_result]
         mock_map_pipeline.return_value = mock_result
 
-        # Inject a mock vector_store directly — httpx.ASGITransport does not
-        # fire lifespan in httpx 0.28, so the module-level vector_store may
-        # be None (standalone run) or bound to a stale event loop (after
-        # prior TestClient tests). Bypass both by pinning a mock.
+        # httpx.ASGITransport in 0.28 does not fire FastAPI's lifespan, so
+        # every bit of state lifespan builds — vector_store, job_store,
+        # tracer, LLM clients — has to be pinned by the test. A prior
+        # TestClient test may have set them, but standalone runs start cold
+        # and bound-to-dead-loop state from earlier tests is worse than no
+        # state. Override everything the /ingest path touches.
+        from jobs import JobStore
+
         import api
         mock_store = MagicMock()
         mock_store.index_documents = AsyncMock(return_value=1)
@@ -482,6 +486,14 @@ class TestIngestEndpoint:
         mock_store.close = AsyncMock()
         old_store = api.vector_store
         api.vector_store = mock_store
+
+        mock_tracer = MagicMock()
+        mock_tracer.flush = AsyncMock()
+        mock_tracer.close = AsyncMock()
+        app.state.job_store = JobStore()
+        app.state.tracer = mock_tracer
+        app.state.query_llm = MagicMock()
+        app.state.ingest_llm = MagicMock()
 
         with tempfile.TemporaryDirectory() as tmpdir:
             entries_dir = os.path.join(tmpdir, "entries")

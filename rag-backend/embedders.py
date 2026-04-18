@@ -62,9 +62,11 @@ def openai_embedder(
 def sentence_transformer_embedder(
     model_name: str = "sentence-transformers/all-MiniLM-L6-v2",
 ) -> Embedder:
-    """Local sentence-transformers embeddings. The model is loaded once
-    at import; `encode` is pushed to a thread because the underlying
-    `model.encode` is blocking."""
+    """Local sentence-transformers embeddings. The model is loaded when
+    `sentence_transformer_embedder()` is called (not at import), and
+    `encode` is pushed to a thread because the underlying `model.encode`
+    is blocking. `select_embedder` calls this once per process during
+    lifespan startup, so the model is instantiated once in practice."""
     from sentence_transformers import SentenceTransformer
 
     model = SentenceTransformer(model_name)

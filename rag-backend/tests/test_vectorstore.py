@@ -89,7 +89,10 @@ class TestVectorStoreInit:
         store = VectorStore(str(dir_path), embedder=mock_embedder())
         try:
             assert await store.count() == 0
-            assert (dir_path / "memory.db").parent.exists()
+            # `count()` opens the SqliteStore connection, which creates
+            # the db file at the resolved path. Verifies the directory-
+            # path form wrote to `<dir>/memory.db`, not somewhere else.
+            assert (dir_path / "memory.db").exists()
         finally:
             await store.close()
 
