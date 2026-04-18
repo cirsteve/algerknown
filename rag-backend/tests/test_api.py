@@ -5,7 +5,7 @@ Tests for the API endpoints.
 import asyncio
 import os
 import tempfile
-from unittest.mock import patch, MagicMock
+from unittest.mock import AsyncMock, patch, MagicMock
 
 import pytest
 import httpx
@@ -265,8 +265,9 @@ class TestIndexEndpoint:
         yaml.preserve_quotes = True
 
         mock_store = MagicMock()
-        mock_store.index_documents.return_value = 1
-        mock_store.count.return_value = 0
+        mock_store.index_documents = AsyncMock(return_value=1)
+        mock_store.count = AsyncMock(return_value=0)
+        mock_store.close = AsyncMock()
         MockVectorStore.return_value = mock_store
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -470,6 +471,18 @@ class TestIngestEndpoint:
         mock_result.results = [mock_proposal_result]
         mock_map_pipeline.return_value = mock_result
 
+        # Inject a mock vector_store directly — httpx.ASGITransport does not
+        # fire lifespan in httpx 0.28, so the module-level vector_store may
+        # be None (standalone run) or bound to a stale event loop (after
+        # prior TestClient tests). Bypass both by pinning a mock.
+        import api
+        mock_store = MagicMock()
+        mock_store.index_documents = AsyncMock(return_value=1)
+        mock_store.count = AsyncMock(return_value=0)
+        mock_store.close = AsyncMock()
+        old_store = api.vector_store
+        api.vector_store = mock_store
+
         with tempfile.TemporaryDirectory() as tmpdir:
             entries_dir = os.path.join(tmpdir, "entries")
             os.makedirs(entries_dir)
@@ -478,7 +491,6 @@ class TestIngestEndpoint:
             with open(entry_file, "w") as f:
                 yaml.dump({"id": "test-entry", "type": "entry", "topic": "Test", "content": "Test"}, f)
 
-            import api
             old_content_dir = api.CONTENT_DIR
             api.CONTENT_DIR = tmpdir
             api.entries_cache.clear()
@@ -505,6 +517,7 @@ class TestIngestEndpoint:
                     assert result["progress_detail"] is None  # cleared on completion
             finally:
                 api.CONTENT_DIR = old_content_dir
+                api.vector_store = old_store
 
 
 class TestEntriesWithLastIngested:
@@ -554,8 +567,9 @@ class TestApproveEndpoint:
         from api import app
 
         mock_store = MagicMock()
-        mock_store.index_documents.return_value = 1
-        mock_store.count.return_value = 0
+        mock_store.index_documents = AsyncMock(return_value=1)
+        mock_store.count = AsyncMock(return_value=0)
+        mock_store.close = AsyncMock()
         MockVectorStore.return_value = mock_store
 
         mock_apply.return_value = {"success": True, "file": "/path/to/file.yaml", "changes": ["Added learning"]}

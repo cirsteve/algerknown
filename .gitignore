@@ -52,6 +52,8 @@ rag-backend/__pycache__/
 rag-backend/**/__pycache__/
 rag-backend/*.pyc
 rag-backend/.pytest_cache/
-rag-backend/chroma_db/
+rag-backend/memory_db/
+rag-backend/*.db
+rag-backend/*.db-journal
 *.egg-info/
 .eggs/

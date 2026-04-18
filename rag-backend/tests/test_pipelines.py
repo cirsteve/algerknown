@@ -11,7 +11,7 @@ Tests cover:
 
 import pytest
 import json
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from jig import run_pipeline, map_pipeline
 from jig.tracing import StdoutTracer
@@ -29,9 +29,9 @@ class TestRetrieveStep:
         from pipelines import retrieve_step
 
         mock_store = MagicMock()
-        mock_store.query.return_value = [
+        mock_store.query = AsyncMock(return_value=[
             {"id": "doc-1", "content": "Test", "metadata": {}, "distance": 0.1}
-        ]
+        ])
 
         ctx = {
             "input": {"query": "What are nullifiers?", "n_results": 5},
@@ -50,7 +50,7 @@ class TestRetrieveStep:
         from pipelines import retrieve_step
 
         mock_store = MagicMock()
-        mock_store.query.return_value = []
+        mock_store.query = AsyncMock(return_value=[])
 
         ctx = {
             "input": {"query": "test"},
@@ -256,9 +256,9 @@ class TestQueryPipelineIntegration:
         from pipelines import build_query_pipeline
 
         mock_store = MagicMock()
-        mock_store.query.return_value = [
+        mock_store.query = AsyncMock(return_value=[
             {"id": "doc-1", "content": "ZK content", "metadata": {"type": "entry", "topic": "ZK"}},
-        ]
+        ])
 
         mock_client = MockLLMClient([make_llm_response("Synthesized answer about ZK [doc-1].")])
         tracer = StdoutTracer(color=False)

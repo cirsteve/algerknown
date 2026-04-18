@@ -32,7 +32,7 @@ async def retrieve_step(ctx: dict) -> list[dict]:
     n_results = ctx["input"].get("n_results", 5)
     vector_store = ctx["vector_store"]
 
-    return vector_store.query(query, n_results)
+    return await vector_store.query(query, n_results)
 
 
 async def synthesize_step(ctx: dict) -> dict:

@@ -59,9 +59,12 @@ Environment variables (set in root `.env`):
 | `DISPATCH_URL` | Smithers dispatch server URL | Required when using `dispatch` provider |
 | `DISPATCH_TIMEOUT` | Dispatch job timeout in seconds | `300` |
 | `CONTENT_DIR` | Path to content directory | `../content-agn` |
-| `CHROMA_DB_DIR` | Path for ChromaDB persistence | `./chroma_db` |
+| `MEMORY_DB_PATH` | jig SqliteStore path (file) | `./memory_db/memory.db` |
+| `TRACER_DB_PATH` | jig SQLite tracer path | `jig_traces.db` |
 | `RAG_HOST` | Server host | `0.0.0.0` |
 | `RAG_PORT` | Server port | `4735` |
+
+`CHROMA_DB_DIR` is still honored as a fallback for `MEMORY_DB_PATH` during the rollout window.
 
 ## API Endpoints
 
@@ -158,16 +161,16 @@ allowing reliable testing without downloading models or making API calls.
 ## Architecture
 
 ```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│  Web UI         │────▶│  API Server     │────▶│  Vector Store   │
-│  (packages/web) │     │  (FastAPI)      │     │  (ChromaDB)     │
-└─────────────────┘     └────────┬────────┘     └─────────────────┘
-                                 │
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────────┐
+│  Web UI         │────▶│  API Server     │────▶│  Vector Store       │
+│  (packages/web) │     │  (FastAPI)      │     │  (jig SqliteStore + │
+└─────────────────┘     └────────┬────────┘     │   DenseRetriever)   │
+                                 │              └─────────────────────┘
                         ┌────────┴────────┐
                         ▼                 ▼
                ┌─────────────────┐ ┌─────────────────┐
                │  LLM Synthesis  │ │  YAML Writer    │
-               │  (Claude API)   │ │  (ruamel.yaml)  │
+               │  (jig pipeline) │ │  (ruamel.yaml)  │
                └─────────────────┘ └─────────────────┘
 ```
 
@@ -177,7 +180,10 @@ allowing reliable testing without downloading models or making API calls.
 |------|---------|
 | `api.py` | FastAPI endpoints |
 | `loader.py` | YAML parsing and document loading |
-| `vectorstore.py` | ChromaDB operations |
-| `synthesizer.py` | Claude synthesis (query mode) |
-| `proposer.py` | Update proposal generation (ingest mode) |
+| `vectorstore.py` | Similarity search + chunking atop jig's `SqliteStore` + `DenseRetriever` |
+| `embedders.py` | Embedder selection (mock / local sentence-transformers / OpenAI) |
+| `pipelines.py` | jig `PipelineConfig` + `Step` definitions for query + proposal |
+| `synthesizer.py` | Prompt building for query synthesis |
+| `proposer.py` | Candidate-summary ranking + proposal prompt builder |
+| `jobs.py` | In-memory async job store for long-running tasks |
 | `writer.py` | YAML write-back with formatting preservation |
