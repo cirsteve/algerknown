@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_MAX_PROPOSALS = int(os.getenv("MAX_PROPOSALS", "5"))
 
 
-def identify_related_summaries(
+async def identify_related_summaries(
     entry: dict,
     vector_store: VectorStore,
     max_results: int | None = None
@@ -41,7 +41,7 @@ def identify_related_summaries(
     if max_results is None:
         max_results = DEFAULT_MAX_PROPOSALS
 
-    all_summaries = vector_store.get_summaries()
+    all_summaries = await vector_store.get_summaries()
 
     if not all_summaries:
         logger.warning("No summaries found in vector store")
@@ -63,7 +63,7 @@ def identify_related_summaries(
                 break
 
     # 2. Semantic similarity search
-    similar = vector_store.query(
+    similar = await vector_store.query(
         entry["content"],
         n_results=10,
         where={"type": "summary"}

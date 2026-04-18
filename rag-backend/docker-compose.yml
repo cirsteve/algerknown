@@ -8,11 +8,12 @@ services:
     volumes:
       # Mount content directory (read-write for ingest updates)
       - ../content-agn:/app/content-agn
-      # Persist vector store
-      - ./chroma_db:/app/chroma_db
+      # Persist the jig memory / feedback / trace SQLite files
+      - ./memory_db:/app/memory_db
     environment:
       - CONTENT_DIR=/app/content-agn
-      - CHROMA_DB_DIR=/app/chroma_db
+      - MEMORY_DB_PATH=/app/memory_db/memory.db
+      - TRACER_DB_PATH=/app/memory_db/traces.db
     env_file:
       - .env
     restart: unless-stopped
@@ -21,4 +22,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 10s
+      # First boot re-embeds ~50 documents from YAML into the fresh
+      # SqliteStore; with OpenAI or local sentence-transformers this
+      # takes 30–60s. A 10s start_period would flap the container.
+      start_period: 120s

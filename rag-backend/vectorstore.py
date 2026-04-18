@@ -1,150 +1,111 @@
 """
 Algerknown RAG - Vector Store
 
-ChromaDB operations for embedding storage and retrieval.
+Backed by jig's `SqliteStore` + `DenseRetriever`. Preserves the public
+surface the rest of the backend consumed from the ChromaDB era — same
+class name, same method names, same return shapes — so callers only
+needed to add `await`.
+
+Two quirks worth knowing:
+
+1. **Entry-id indirection.** `SqliteStore` generates UUIDs on insert.
+   Algerknown's custom ids (e.g. `"zksnarks"`) live in metadata under
+   `entry_id` + `parent_id`. Lookups by algerknown id scan all rows
+   and filter — cheap at the current corpus size (~50 docs, ~100 chunks).
+2. **Upsert via delete-then-add.** jig has no native upsert; every
+   write path (`/ingest`, `/approve`, `/reindex`) first removes any
+   rows whose metadata `entry_id` matches, then inserts fresh chunks.
+   Matches the semantics ChromaDB's `collection.upsert` provided.
 """
 
-import chromadb
-from chromadb.utils import embedding_functions
-from typing import Optional
-import os
+from __future__ import annotations
+
 import logging
+from pathlib import Path
+from typing import Any, Optional
+
+from jig.memory.local import DenseRetriever, SqliteStore
+
+from embedders import Embedder, select_embedder
 
 logger = logging.getLogger(__name__)
 
 
-def get_embedding_function():
-    """
-    Get the embedding function based on configuration and available API keys.
-    Set USE_MOCK_EMBEDDINGS=true for testing (no network calls).
-    Set USE_LOCAL_EMBEDDINGS=true to force local sentence-transformers.
-    Otherwise prefers OpenAI, falls back to local if key is missing/invalid.
-    """
-    # Check if mock embeddings are requested (for testing)
-    use_mock = os.getenv("USE_MOCK_EMBEDDINGS", "").lower() in ("true", "1", "yes")
-    
-    if use_mock:
-        logger.info("Using mock embeddings (USE_MOCK_EMBEDDINGS=true)")
-        return MockEmbeddingFunction()
-    
-    # Check if local embeddings are explicitly requested
-    use_local = os.getenv("USE_LOCAL_EMBEDDINGS", "").lower() in ("true", "1", "yes")
-    
-    if use_local:
-        logger.info("Using local sentence-transformers embeddings (USE_LOCAL_EMBEDDINGS=true)")
-        return embedding_functions.SentenceTransformerEmbeddingFunction(
-            model_name="all-MiniLM-L6-v2"
-        )
-    
-    openai_key = os.getenv("OPENAI_API_KEY", "")
-    
-    # Use OpenAI if we have a real API key (not placeholder or test key)
-    if openai_key and openai_key.startswith("sk-") and openai_key != "sk-..." and not openai_key.startswith("test"):
-        logger.info("Using OpenAI embeddings (text-embedding-3-small)")
-        return embedding_functions.OpenAIEmbeddingFunction(
-            api_key=openai_key,
-            model_name="text-embedding-3-small"
-        )
-    else:
-        logger.info("Using local sentence-transformers embeddings (no valid OpenAI key)")
-        return embedding_functions.SentenceTransformerEmbeddingFunction(
-            model_name="all-MiniLM-L6-v2"
-        )
-
-
-class MockEmbeddingFunction:
-    """
-    Mock embedding function for testing.
-    Returns deterministic fixed-dimension vectors without network calls.
-    Compatible with ChromaDB's embedding function interface.
-    """
-    
-    # Tell ChromaDB this is not a legacy embedding function
-    is_legacy = False
-    
-    def name(self) -> str:
-        """Return the name of the embedding function (required by ChromaDB)."""
-        return "mock_embedding"
-    
-    def __call__(self, input: list[str]) -> list[list[float]]:
-        """Generate deterministic mock embeddings."""
-        return self._embed(input)
-    
-    def embed_documents(self, input: list[str]) -> list[list[float]]:
-        """Embed a list of documents (alias for __call__)."""
-        return self._embed(input)
-    
-    def embed_query(self, input: list[str]) -> list[list[float]]:
-        """Embed a query (alias for __call__)."""
-        return self._embed(input)
-    
-    def _embed(self, input: list[str]) -> list[list[float]]:
-        """Generate deterministic mock embeddings."""
-        import hashlib
-        
-        # Return 384-dimensional vectors (same as all-MiniLM-L6-v2)
-        # Use sha256 of text to make embeddings deterministic across runs/platforms
-        embeddings = []
-        for text in input:
-            # Create a deterministic seed from text
-            sha = hashlib.sha256(text.encode("utf-8")).digest()
-            # Convert first 8 bytes to an integer for seeding logic
-            seed_val = int.from_bytes(sha[:8], "big")
-            
-            # Generate 384 values between -1 and 1
-            embedding = [
-                ((seed_val * (i + 1)) % 10000) / 5000.0 - 1.0
-                for i in range(384)
-            ]
-            embeddings.append(embedding)
-        return embeddings
-
-
 class VectorStore:
-    """ChromaDB vector store for algerknown documents."""
-    
-    def __init__(self, persist_dir: str = "./chroma_db", embedding_function=None):
+    """Document store with similarity search and metadata filtering.
+
+    Public methods mirror the pre-migration ChromaDB wrapper so callers
+    only change sync → async. Embedder is selected from the env by
+    default; pass `embedder=` for tests.
+    """
+
+    def __init__(
+        self,
+        persist_dir: str,
+        embedder: Optional[Embedder] = None,
+    ):
         """
-        Initialize the vector store.
-        
         Args:
-            persist_dir: Directory to persist ChromaDB data
-            embedding_function: Optional custom embedding function.
-                               If None, uses get_embedding_function().
-                               Pass MockEmbeddingFunction() for tests.
+            persist_dir: Either a directory (legacy ChromaDB convention
+                — SqliteStore places `memory.db` inside it) or a direct
+                path to a `.db` file. Missing parent directories are
+                created.
+            embedder: Optional `Embedder`. Defaults to `select_embedder()`
+                which honors the legacy `USE_MOCK_EMBEDDINGS`,
+                `USE_LOCAL_EMBEDDINGS`, `OPENAI_API_KEY` env vars.
         """
-        self.client = chromadb.PersistentClient(path=persist_dir)
-        self.embedding_fn = embedding_function if embedding_function is not None else get_embedding_function()
-        self.collection = self.client.get_or_create_collection(
-            name="algerknown",
-            embedding_function=self.embedding_fn
+        db_path = self._resolve_db_path(persist_dir)
+        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+
+        self._store = SqliteStore(
+            db_path=db_path,
+            embedder=embedder or select_embedder(),
         )
-        logger.info(f"Initialized ChromaDB at {persist_dir}")
-        
+        self._retriever = DenseRetriever(self._store)
+        logger.info(f"Initialized SqliteStore at {db_path}")
+
+    @staticmethod
+    def _resolve_db_path(persist_dir: str) -> str:
+        """Let callers pass either a directory (legacy) or a `.db` path.
+
+        `./chroma_db` (directory) → `./chroma_db/memory.db`
+        `./memory_db/memory.db`    → unchanged
+        """
+        p = Path(persist_dir)
+        if p.suffix == ".db" or (not p.exists() and p.suffix):
+            return str(p)
+        return str(p / "memory.db")
+
+    async def close(self) -> None:
+        """Release the underlying sqlite connection. Call on shutdown."""
+        await self._store.close()
+
+    # ------------------------------------------------------------------
+    # Chunking (ported verbatim from the ChromaDB implementation)
+    # ------------------------------------------------------------------
+
     @staticmethod
     def _chunk_text(text: str, max_chars: int = 6000) -> list[str]:
         """
         Split text into chunks that stay under the embedding model's token limit.
-        
-        Uses ~6000 characters per chunk (≈1500 tokens) to stay well within the
+
+        Uses ~6000 characters per chunk (~1500 tokens) to stay well within the
         8192-token limit of text-embedding-3-small. Splits on paragraph boundaries
         first, then falls back to sentence boundaries.
         """
         if len(text) <= max_chars:
             return [text]
-        
-        chunks = []
+
+        chunks: list[str] = []
         paragraphs = text.split("\n\n")
         current_chunk = ""
-        
+
         for para in paragraphs:
             # If a single paragraph exceeds max_chars, split it further
             if len(para) > max_chars:
-                # Flush current chunk first
                 if current_chunk.strip():
                     chunks.append(current_chunk.strip())
                     current_chunk = ""
-                # Split long paragraph by sentences (period + space)
                 sentences = para.replace(". ", ".\n").split("\n")
                 for sentence in sentences:
                     if len(current_chunk) + len(sentence) + 1 > max_chars:
@@ -159,217 +120,176 @@ class VectorStore:
                 current_chunk = para
             else:
                 current_chunk += ("\n\n" if current_chunk else "") + para
-        
+
         if current_chunk.strip():
             chunks.append(current_chunk.strip())
-        
+
         return chunks if chunks else [text]
 
     @staticmethod
-    def _reconstruct_documents(results: dict) -> list[dict]:
+    def _reconstruct_from_entries(entries: list[Any]) -> list[dict]:
         """
-        Reconstruct full documents from get() results that may contain chunks.
+        Group jig `MemoryEntry` rows by their algerknown parent id, sort by
+        `chunk_index`, rejoin content. Returns one dict per logical document
+        in the `{id, content, metadata, distance?}` shape callers expect.
 
-        Groups chunked rows by parent ID, sorts by chunk index, and joins
-        chunk content to return one full document per parent.
+        `distance` comes from `MemoryEntry.score` (cosine similarity); we
+        invert to `1 - sim` so "lower is better" matches ChromaDB semantics.
         """
-        grouped = {}
+        grouped: dict[str, list[Any]] = {}
+        for entry in entries:
+            parent = (
+                entry.metadata.get("parent_id")
+                or entry.metadata.get("entry_id")
+                or entry.id
+            )
+            grouped.setdefault(parent, []).append(entry)
 
-        for i in range(len(results["ids"])):
-            meta = results["metadatas"][i]
-            doc_id = meta.get("parent_id", results["ids"][i])
-            chunk_index = meta.get("chunk_index", 0)
-
-            if doc_id not in grouped:
-                grouped[doc_id] = []
-
-            grouped[doc_id].append((chunk_index, results["documents"][i], meta))
-
-        reconstructed = []
-        for doc_id, chunks in grouped.items():
-            chunks.sort(key=lambda c: c[0])
-            base_meta = {k: v for k, v in chunks[0][2].items()
-                         if k not in ("chunk_index", "parent_id")}
-
-            reconstructed.append({
-                "id": doc_id,
-                "content": "\n\n".join(chunk[1] for chunk in chunks),
+        reconstructed: list[dict] = []
+        for parent, rows in grouped.items():
+            rows.sort(key=lambda e: e.metadata.get("chunk_index", 0))
+            base_meta = {
+                k: v
+                for k, v in rows[0].metadata.items()
+                if k not in ("chunk_index", "parent_id", "entry_id")
+            }
+            doc: dict[str, Any] = {
+                "id": parent,
+                "content": "\n\n".join(r.content for r in rows),
                 "metadata": base_meta,
-            })
+            }
+            # Best-scoring chunk wins when multiple chunks match a query.
+            best_score = max(
+                (r.score for r in rows if r.score is not None),
+                default=None,
+            )
+            if best_score is not None:
+                doc["distance"] = 1.0 - best_score
+            reconstructed.append(doc)
 
         return reconstructed
 
-    def index_documents(self, documents: list[dict]) -> int:
+    # ------------------------------------------------------------------
+    # Index / upsert
+    # ------------------------------------------------------------------
+
+    async def _delete_by_entry_id(self, entry_id: str) -> None:
+        """Remove every chunk row carrying the given algerknown id.
+
+        Single-document helper used by `delete()`. `index_documents`
+        uses a bulk path that scans once for N documents instead.
         """
-        Index documents into the vector store.
-        Uses upsert to handle updates. Documents exceeding the embedding
-        model's token limit are automatically chunked.
-        
-        Args:
-            documents: List of document dicts with id, content, metadata
-            
-        Returns:
-            Number of document chunks indexed
+        for row in await self._store.all():
+            if row.metadata.get("entry_id") == entry_id:
+                await self._store.delete(row.id)
+
+    async def index_documents(self, documents: list[dict]) -> int:
+        """
+        Index documents. Upsert semantics: any existing rows with the same
+        `id` are deleted first. Long content is chunked; each chunk becomes
+        one row carrying `entry_id`, `parent_id`, and `chunk_index`
+        metadata alongside the caller's fields.
+
+        The deletion phase scans `store.all()` once and bulk-removes every
+        row whose `entry_id` is in the incoming document set. This keeps
+        bulk reindex at O(total_rows) instead of O(total_rows × documents).
+
+        Returns the total number of chunk rows written.
         """
         if not documents:
             return 0
-        
-        ids = []
-        contents = []
-        metadatas = []
-        
-        for d in documents:
-            chunks = self._chunk_text(d["content"])
-            if len(chunks) == 1:
-                ids.append(d["id"])
-                contents.append(d["content"])
-                metadatas.append(d["metadata"])
-            else:
-                logger.info(f"Splitting document '{d['id']}' into {len(chunks)} chunks")
-                for i, chunk in enumerate(chunks):
-                    chunk_meta = {**d["metadata"], "chunk_index": i, "parent_id": d["id"]}
-                    ids.append(f"{d['id']}_chunk_{i}")
-                    contents.append(chunk)
-                    metadatas.append(chunk_meta)
-        
-        # Upsert in batches to avoid oversized requests
-        batch_size = 100
-        for start in range(0, len(ids), batch_size):
-            end = start + batch_size
-            self.collection.upsert(
-                ids=ids[start:end],
-                documents=contents[start:end],
-                metadatas=metadatas[start:end],
-            )
-        
-        logger.info(f"Indexed {len(documents)} documents ({len(ids)} chunks)")
-        return len(ids)
-        
-    def query(
-        self, 
-        query_text: str, 
+
+        incoming_ids = {doc["id"] for doc in documents}
+        for row in await self._store.all():
+            if row.metadata.get("entry_id") in incoming_ids:
+                await self._store.delete(row.id)
+
+        total_chunks = 0
+        for doc in documents:
+            entry_id = doc["id"]
+            chunks = self._chunk_text(doc["content"])
+            if len(chunks) > 1:
+                logger.info(f"Splitting document '{entry_id}' into {len(chunks)} chunks")
+
+            for i, chunk in enumerate(chunks):
+                meta = {
+                    **doc["metadata"],
+                    "entry_id": entry_id,
+                    "chunk_index": i,
+                    "parent_id": entry_id,
+                }
+                await self._store.add(chunk, meta)
+                total_chunks += 1
+
+        logger.info(f"Indexed {len(documents)} documents ({total_chunks} chunks)")
+        return total_chunks
+
+    # ------------------------------------------------------------------
+    # Query / read
+    # ------------------------------------------------------------------
+
+    async def query(
+        self,
+        query_text: str,
         n_results: int = 5,
-        where: Optional[dict] = None
+        where: Optional[dict] = None,
     ) -> list[dict]:
         """
-        Query the vector store for similar documents.
-        
-        Args:
-            query_text: Natural language query
-            n_results: Maximum number of results
-            where: Optional metadata filter
-            
-        Returns:
-            List of matching documents with scores
-        """
-        # Request extra results to account for deduplication of chunks
-        kwargs = {
-            "query_texts": [query_text],
-            "n_results": min(n_results * 3, self.collection.count()),
-            "include": ["documents", "metadatas", "distances"]
-        }
-        if where:
-            kwargs["where"] = where
-            
-        results = self.collection.query(**kwargs)
-        
-        # Handle empty results
-        if not results["ids"] or not results["ids"][0]:
-            return []
-        
-        # Deduplicate chunks: keep best-scoring chunk per parent document
-        seen_parents = {}
-        for i in range(len(results["ids"][0])):
-            metadata = results["metadatas"][0][i]
-            doc_id = metadata.get("parent_id", results["ids"][0][i])
-            
-            if doc_id not in seen_parents:
-                seen_parents[doc_id] = {
-                    "id": doc_id,
-                    "content": results["documents"][0][i],
-                    "metadata": {k: v for k, v in metadata.items()
-                                 if k not in ("chunk_index", "parent_id")},
-                    "distance": results["distances"][0][i]
-                }
-            
-            if len(seen_parents) >= n_results:
-                break
-            
-        return list(seen_parents.values())
-        
-    def get_summaries(self) -> list[dict]:
-        """
-        Get all summary-type documents.
-        
-        Returns:
-            List of summary documents
-        """
-        results = self.collection.get(
-            where={"type": "summary"},
-            include=["documents", "metadatas"]
-        )
-        
-        if not results["ids"]:
-            return []
+        Return top `n_results` documents by similarity, deduped across chunks.
 
-        return self._reconstruct_documents(results)
-        
-    def get_by_id(self, doc_id: str) -> Optional[dict]:
+        `where` is an equality metadata filter (e.g. `{"type": "summary"}`),
+        plumbed through jig's `context={"filter": ...}`. We over-fetch to
+        let chunk deduplication shrink the result back to `n_results`.
         """
-        Get a specific document by ID.
-        
-        Args:
-            doc_id: Document ID
-            
-        Returns:
-            Document dict or None
-        """
-        results = self.collection.get(
-            ids=[doc_id],
-            include=["documents", "metadatas"]
+        context = {"filter": where} if where else None
+        hits = await self._retriever.retrieve(
+            query_text, k=n_results * 3, context=context
         )
-        
-        if not results["ids"]:
+        if not hits:
+            return []
+        reconstructed = self._reconstruct_from_entries(hits)
+        return reconstructed[:n_results]
+
+    async def get_summaries(self) -> list[dict]:
+        """Return all `type=="summary"` documents, chunks reconstructed."""
+        rows = await self._store.all()
+        summaries = [r for r in rows if r.metadata.get("type") == "summary"]
+        return self._reconstruct_from_entries(summaries)
+
+    async def get_by_id(self, doc_id: str) -> Optional[dict]:
+        """Return the logical document for a given algerknown id, or None."""
+        rows = [
+            r
+            for r in await self._store.all()
+            if r.metadata.get("entry_id") == doc_id
+        ]
+        if not rows:
             return None
-            
-        return {
-            "id": results["ids"][0],
-            "content": results["documents"][0],
-            "metadata": results["metadatas"][0]
-        }
-        
-    def get_all(self) -> list[dict]:
-        """
-        Get all documents in the store.
-        
-        Returns:
-            List of all documents
-        """
-        results = self.collection.get(
-            include=["documents", "metadatas"]
-        )
-        
-        if not results["ids"]:
-            return []
+        reconstructed = self._reconstruct_from_entries(rows)
+        return reconstructed[0] if reconstructed else None
 
-        return self._reconstruct_documents(results)
-        
-    def count(self) -> int:
-        """Get the number of documents in the store."""
-        return self.collection.count()
-        
-    def delete(self, doc_id: str) -> bool:
-        """
-        Delete a document by ID.
-        
-        Args:
-            doc_id: Document ID to delete
-            
-        Returns:
-            True if deleted
+    async def get_all(self) -> list[dict]:
+        """Return every logical document indexed."""
+        rows = await self._store.all()
+        if not rows:
+            return []
+        return self._reconstruct_from_entries(rows)
+
+    async def count(self) -> int:
+        """Number of logical documents (not chunk rows)."""
+        seen: set[str] = set()
+        for row in await self._store.all():
+            seen.add(row.metadata.get("entry_id") or row.id)
+        return len(seen)
+
+    async def delete(self, doc_id: str) -> bool:
+        """Remove every chunk belonging to the given algerknown id.
+
+        Returns True on success. False is reserved for future backend
+        errors; the in-memory delete itself can't fail today.
         """
         try:
-            self.collection.delete(ids=[doc_id])
+            await self._delete_by_entry_id(doc_id)
             return True
         except Exception as e:
             logger.error(f"Failed to delete {doc_id}: {e}")

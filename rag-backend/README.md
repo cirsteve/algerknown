@@ -59,9 +59,12 @@ Environment variables (set in root `.env`):
 | `DISPATCH_URL` | Smithers dispatch server URL | Required when using `dispatch` provider |
 | `DISPATCH_TIMEOUT` | Dispatch job timeout in seconds | `300` |
 | `CONTENT_DIR` | Path to content directory | `../content-agn` |
-| `CHROMA_DB_DIR` | Path for ChromaDB persistence | `./chroma_db` |
+| `MEMORY_DB_PATH` | jig SqliteStore path (file) | `./memory_db/memory.db` |
+| `TRACER_DB_PATH` | jig SQLite tracer path | `jig_traces.db` |
 | `RAG_HOST` | Server host | `0.0.0.0` |
 | `RAG_PORT` | Server port | `4735` |
+
+`CHROMA_DB_DIR` is still honored as a fallback for `MEMORY_DB_PATH` during the rollout window.
 
 ## API Endpoints
 
@@ -142,7 +145,7 @@ The Docker image pre-downloads the sentence-transformers model to avoid cold-sta
 
 ## Testing
 
-Tests use `MockEmbeddingFunction` for deterministic behavior without network calls:
+Tests use `embedders.mock_embedder()` for deterministic behavior without network calls:
 
 ```bash
 # Run tests
@@ -152,22 +155,27 @@ pytest tests/ -v
 pytest tests/ -v --cov=. --cov-report=term-missing
 ```
 
-The mock embedding function returns consistent 384-dimensional vectors based on input hashing,
-allowing reliable testing without downloading models or making API calls.
+`mock_embedder()` returns consistent 384-dimensional vectors seeded by a sha256 of the input,
+allowing reliable testing without downloading models or making API calls. `select_embedder()`
+also routes to it when `USE_MOCK_EMBEDDINGS=true` is set in the environment.
+
+Note: the vector store persists on disk across restarts and is only seeded on first boot
+(when `count()` returns 0). If you change YAML content after the store has been created,
+call `POST /reindex` or delete the DB file to rebuild it from source.
 
 ## Architecture
 
 ```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│  Web UI         │────▶│  API Server     │────▶│  Vector Store   │
-│  (packages/web) │     │  (FastAPI)      │     │  (ChromaDB)     │
-└─────────────────┘     └────────┬────────┘     └─────────────────┘
-                                 │
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────────┐
+│  Web UI         │────▶│  API Server     │────▶│  Vector Store       │
+│  (packages/web) │     │  (FastAPI)      │     │  (jig SqliteStore + │
+└─────────────────┘     └────────┬────────┘     │   DenseRetriever)   │
+                                 │              └─────────────────────┘
                         ┌────────┴────────┐
                         ▼                 ▼
                ┌─────────────────┐ ┌─────────────────┐
                │  LLM Synthesis  │ │  YAML Writer    │
-               │  (Claude API)   │ │  (ruamel.yaml)  │
+               │  (jig pipeline) │ │  (ruamel.yaml)  │
                └─────────────────┘ └─────────────────┘
 ```
 
@@ -177,7 +185,10 @@ allowing reliable testing without downloading models or making API calls.
 |------|---------|
 | `api.py` | FastAPI endpoints |
 | `loader.py` | YAML parsing and document loading |
-| `vectorstore.py` | ChromaDB operations |
-| `synthesizer.py` | Claude synthesis (query mode) |
-| `proposer.py` | Update proposal generation (ingest mode) |
+| `vectorstore.py` | Similarity search + chunking atop jig's `SqliteStore` + `DenseRetriever` |
+| `embedders.py` | Embedder selection (mock / local sentence-transformers / OpenAI) |
+| `pipelines.py` | jig `PipelineConfig` + `Step` definitions for query + proposal |
+| `synthesizer.py` | Prompt building for query synthesis |
+| `proposer.py` | Candidate-summary ranking + proposal prompt builder |
+| `jobs.py` | In-memory async job store for long-running tasks |
 | `writer.py` | YAML write-back with formatting preservation |

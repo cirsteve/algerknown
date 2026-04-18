@@ -14,8 +14,8 @@ RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTr
 # Copy application code
 COPY *.py .
 
-# Create directories for data
-RUN mkdir -p /app/chroma_db
+# Create directory for the jig memory store SQLite files
+RUN mkdir -p /app/memory_db
 
 # Expose port
 EXPOSE 4735

@@ -9,7 +9,7 @@ Tests cover:
 
 import pytest
 import json
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 
 class TestIdentifyRelatedSummaries:
@@ -36,11 +36,11 @@ class TestIdentifyRelatedSummaries:
 
     @pytest.fixture
     def mock_vector_store(self):
-        """Create a mock VectorStore."""
+        """Create a mock VectorStore with async methods."""
         store = MagicMock()
-
-        # Mock summaries
-        store.get_summaries.return_value = [
+        # Methods that post-phase-13 VectorStore awaits — use AsyncMock so
+        # `await store.method()` returns the configured value.
+        store.get_summaries = AsyncMock(return_value=[
             {
                 "id": "summary-nullifiers",
                 "content": "Summary of nullifier patterns",
@@ -56,10 +56,8 @@ class TestIdentifyRelatedSummaries:
                 "content": "Summary of privacy techniques",
                 "metadata": {"type": "summary", "topic": "Privacy", "tags": "privacy"},
             },
-        ]
-
-        # Mock semantic search results
-        store.query.return_value = [
+        ])
+        store.query = AsyncMock(return_value=[
             {
                 "id": "summary-privacy",
                 "content": "Summary of privacy techniques",
@@ -72,35 +70,34 @@ class TestIdentifyRelatedSummaries:
                 "metadata": {"type": "summary", "topic": "ZKML", "tags": "zk,ml"},
                 "distance": 0.5,
             },
-        ]
-
+        ])
         return store
 
-    def test_explicit_links_get_highest_score(self, sample_entry, mock_vector_store):
+    async def test_explicit_links_get_highest_score(self, sample_entry, mock_vector_store):
         """Explicitly linked summaries should get score 1.0."""
         from proposer import identify_related_summaries
 
-        results = identify_related_summaries(sample_entry, mock_vector_store)
+        results = await identify_related_summaries(sample_entry, mock_vector_store)
 
         linked = next((r for r in results if r["id"] == "summary-nullifiers"), None)
         assert linked is not None
         assert linked["score"] == 1.0
         assert linked["match_reason"] == "explicit_link"
 
-    def test_semantic_search_results_included(self, sample_entry, mock_vector_store):
+    async def test_semantic_search_results_included(self, sample_entry, mock_vector_store):
         """Semantically similar summaries should be included."""
         from proposer import identify_related_summaries
 
-        results = identify_related_summaries(sample_entry, mock_vector_store)
+        results = await identify_related_summaries(sample_entry, mock_vector_store)
 
         result_ids = [r["id"] for r in results]
         assert "summary-privacy" in result_ids
 
-    def test_semantic_score_decays_with_rank(self, sample_entry, mock_vector_store):
+    async def test_semantic_score_decays_with_rank(self, sample_entry, mock_vector_store):
         """Semantic matches should have decaying scores based on rank."""
         from proposer import identify_related_summaries
 
-        results = identify_related_summaries(sample_entry, mock_vector_store)
+        results = await identify_related_summaries(sample_entry, mock_vector_store)
 
         privacy = next((r for r in results if r["id"] == "summary-privacy"), None)
         zkml = next((r for r in results if r["id"] == "summary-zkml"), None)
@@ -108,52 +105,52 @@ class TestIdentifyRelatedSummaries:
         if privacy and zkml:
             assert privacy["score"] > 0
 
-    def test_tag_overlap_boosts_score(self, sample_entry, mock_vector_store):
+    async def test_tag_overlap_boosts_score(self, sample_entry, mock_vector_store):
         """Tag overlap should boost candidate scores."""
         from proposer import identify_related_summaries
 
-        results = identify_related_summaries(sample_entry, mock_vector_store)
+        results = await identify_related_summaries(sample_entry, mock_vector_store)
 
         privacy = next((r for r in results if r["id"] == "summary-privacy"), None)
         assert privacy is not None
         assert privacy["score"] > 0.2
 
-    def test_topic_match_boosts_score(self, sample_entry, mock_vector_store):
+    async def test_topic_match_boosts_score(self, sample_entry, mock_vector_store):
         """Topic match should boost candidate scores."""
         from proposer import identify_related_summaries
 
-        results = identify_related_summaries(sample_entry, mock_vector_store)
+        results = await identify_related_summaries(sample_entry, mock_vector_store)
 
         nullifiers = next((r for r in results if r["id"] == "summary-nullifiers"), None)
         assert nullifiers is not None
         assert nullifiers["score"] >= 1.0
 
-    def test_respects_max_results(self, sample_entry, mock_vector_store):
+    async def test_respects_max_results(self, sample_entry, mock_vector_store):
         """Should respect max_results limit."""
         from proposer import identify_related_summaries
 
-        results = identify_related_summaries(sample_entry, mock_vector_store, max_results=2)
+        results = await identify_related_summaries(sample_entry, mock_vector_store, max_results=2)
         assert len(results) <= 2
 
-    def test_results_sorted_by_score(self, sample_entry, mock_vector_store):
+    async def test_results_sorted_by_score(self, sample_entry, mock_vector_store):
         """Results should be sorted by score descending."""
         from proposer import identify_related_summaries
 
-        results = identify_related_summaries(sample_entry, mock_vector_store)
+        results = await identify_related_summaries(sample_entry, mock_vector_store)
 
         scores = [r["score"] for r in results]
         assert scores == sorted(scores, reverse=True)
 
-    def test_empty_summaries_returns_empty(self, sample_entry, mock_vector_store):
+    async def test_empty_summaries_returns_empty(self, sample_entry, mock_vector_store):
         """Should return empty list when no summaries exist."""
         mock_vector_store.get_summaries.return_value = []
 
         from proposer import identify_related_summaries
 
-        results = identify_related_summaries(sample_entry, mock_vector_store)
+        results = await identify_related_summaries(sample_entry, mock_vector_store)
         assert results == []
 
-    def test_entry_without_links(self, mock_vector_store):
+    async def test_entry_without_links(self, mock_vector_store):
         """Should work for entries without explicit links."""
         entry = {
             "id": "entry-new",
@@ -164,10 +161,10 @@ class TestIdentifyRelatedSummaries:
 
         from proposer import identify_related_summaries
 
-        results = identify_related_summaries(entry, mock_vector_store)
+        results = await identify_related_summaries(entry, mock_vector_store)
         assert len(results) > 0
 
-    def test_entry_without_tags(self, mock_vector_store):
+    async def test_entry_without_tags(self, mock_vector_store):
         """Should work for entries without tags."""
         entry = {
             "id": "entry-new",
@@ -178,7 +175,7 @@ class TestIdentifyRelatedSummaries:
 
         from proposer import identify_related_summaries
 
-        results = identify_related_summaries(entry, mock_vector_store)
+        results = await identify_related_summaries(entry, mock_vector_store)
         assert isinstance(results, list)
 
 

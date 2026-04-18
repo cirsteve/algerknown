@@ -46,7 +46,12 @@ logger = logging.getLogger(__name__)
 CONTENT_DIR = os.path.abspath(
     os.getenv("ALGERKNOWN_KB_ROOT") or os.getenv("CONTENT_DIR") or "../content-agn"
 )
-CHROMA_DB_DIR = os.getenv("CHROMA_DB_DIR", "./chroma_db")
+# MEMORY_DB_PATH replaces CHROMA_DB_DIR post-phase-13. The legacy env
+# var is honored as a fallback during the rollout window — operators
+# can migrate to MEMORY_DB_PATH without breaking existing deployments.
+MEMORY_DB_PATH = os.getenv("MEMORY_DB_PATH") or os.getenv(
+    "CHROMA_DB_DIR", "./memory_db/memory.db"
+)
 
 # Global state
 vector_store: Optional[VectorStore] = None
@@ -96,12 +101,12 @@ async def lifespan(app: FastAPI):
     """Application lifespan - initialize on startup."""
     global vector_store, entries_cache, changelog, version_cache
 
-    logger.info(f"Initializing RAG backend...")
+    logger.info("Initializing RAG backend...")
     logger.info(f"Content directory: {CONTENT_DIR}")
-    logger.info(f"ChromaDB directory: {CHROMA_DB_DIR}")
+    logger.info(f"Memory DB path: {MEMORY_DB_PATH}")
 
-    # Initialize vector store
-    vector_store = VectorStore(CHROMA_DB_DIR)
+    # Initialize vector store (jig-backed SqliteStore + DenseRetriever)
+    vector_store = VectorStore(MEMORY_DB_PATH)
 
     # Initialize LLM clients (configurable per operation), tracer, and job store
     query_provider = os.getenv("LLM_QUERY_PROVIDER", "anthropic")
@@ -122,13 +127,27 @@ async def lifespan(app: FastAPI):
     changelog = Changelog(Path(CONTENT_DIR) / "changelog.jsonl")
     version_cache = VersionCache(Path(CONTENT_DIR) / ".version_cache")
 
-    # Load and index content
+    # Load content. entries_cache rebuilds on every boot so /entries
+    # reflects the current YAML. The vector store persists across
+    # restarts, so we only seed it when it's empty — re-embedding on
+    # every start would be wasteful and would take the service past
+    # the healthcheck start_period.
     content_path = Path(CONTENT_DIR)
     if content_path.exists():
         documents = load_content(CONTENT_DIR)
-        vector_store.index_documents(documents)
         entries_cache = {d["id"]: d for d in documents}
-        logger.info(f"Indexed {len(documents)} documents")
+        # Cache the count — it scans every row, and the log message below
+        # would otherwise pay the same cost twice on every restart.
+        document_count = await vector_store.count()
+        if document_count == 0:
+            logger.info(
+                f"Empty memory store — seeding with {len(documents)} documents"
+            )
+            await vector_store.index_documents(documents)
+        else:
+            logger.info(
+                f"Memory store already populated ({document_count} docs) — skipping reindex"
+            )
     else:
         logger.warning(f"Content directory not found: {CONTENT_DIR}")
 
@@ -136,6 +155,8 @@ async def lifespan(app: FastAPI):
 
     logger.info("Shutting down RAG backend...")
     await app.state.tracer.close()
+    if vector_store is not None:
+        await vector_store.close()
 
 
 app = FastAPI(
@@ -158,11 +179,11 @@ app.add_middleware(
 # ============ Health Check ============
 
 @app.get("/health")
-def health_check():
+async def health_check():
     """Health check endpoint."""
     return {
         "status": "healthy",
-        "documents_indexed": vector_store.count() if vector_store else 0,
+        "documents_indexed": await vector_store.count() if vector_store else 0,
         "content_dir": CONTENT_DIR,
     }
 
@@ -380,20 +401,20 @@ class SearchResponse(BaseModel):
 
 
 @app.post("/search", response_model=SearchResponse)
-def search(request: SearchRequest):
+async def search(request: SearchRequest):
     """
     Search the knowledge base without LLM synthesis.
-    
+
     Returns raw search results for browsing/exploration.
     """
     if not vector_store:
         raise HTTPException(status_code=503, detail="Vector store not initialized")
-    
+
     where = None
     if request.type_filter:
         where = {"type": request.type_filter}
-    
-    retrieved = vector_store.query(request.query, request.n_results, where)
+
+    retrieved = await vector_store.query(request.query, request.n_results, where)
     
     results = []
     for doc in retrieved:
@@ -581,7 +602,7 @@ async def run_ingest_job(job_id: str, file_path: str, max_proposals: int | None)
 
         # Index the entry
         store.update(job_id, progress="Indexing entry...")
-        vector_store.index_documents([entry])
+        await vector_store.index_documents([entry])
         entries_cache[entry["id"]] = entry
         logger.info(f"Indexed new entry: {entry['id']}")
 
@@ -595,7 +616,7 @@ async def run_ingest_job(job_id: str, file_path: str, max_proposals: int | None)
 
         # Find related summaries
         store.update(job_id, progress="Finding related summaries...")
-        related = identify_related_summaries(entry, vector_store, max_results=max_proposals)
+        related = await identify_related_summaries(entry, vector_store, max_results=max_proposals)
 
         if not related:
             store.update(
@@ -652,24 +673,24 @@ class IndexRequest(FilePathRequest):
 
 
 @app.post("/index")
-def index_document(request: IndexRequest):
+async def index_document(request: IndexRequest):
     """
     Index an entry without generating proposals or updating last_ingested.
-    
+
     Used for initial creation of entries where we want them searchable
     but don't want to trigger the full ingestion workflow yet.
     """
     if not vector_store:
         raise HTTPException(status_code=503, detail="Vector store not initialized")
-    
+
     # Load and validate the entry using shared helper
     _abs_path, _raw_entry, entry = load_entry_document(request.file_path, CONTENT_DIR)
-    
+
     # Index the entry
-    vector_store.index_documents([entry])
+    await vector_store.index_documents([entry])
     entries_cache[entry["id"]] = entry
     logger.info(f"Indexed entry (no proposals/last_ingested update): {entry['id']}")
-    
+
     return {"status": "indexed", "id": entry["id"]}
 
 
@@ -687,30 +708,30 @@ class ApproveResponse(BaseModel):
 
 
 @app.post("/approve", response_model=ApproveResponse)
-def approve(request: ApproveRequest):
+async def approve(request: ApproveRequest):
     """
     Apply an approved proposal to update a summary.
-    
+
     Writes the proposed changes to the YAML file.
     """
     proposal_dict = request.proposal.model_dump()
-    
+
     # Validate
     is_valid, error = validate_proposal(proposal_dict)
     if not is_valid:
         return ApproveResponse(success=False, error=error)
-    
+
     # Apply update
     result = apply_update(proposal_dict, CONTENT_DIR)
-    
+
     if not result.get("success"):
         return ApproveResponse(success=False, error=result.get("error"))
-    
+
     # Re-index the updated summary and log changes
     documents = load_content(CONTENT_DIR)
     updated = [d for d in documents if d["id"] == request.proposal.target_summary_id]
     if updated and vector_store:
-        vector_store.index_documents(updated)
+        await vector_store.index_documents(updated)
         entries_cache[updated[0]["id"]] = updated[0]
         
         # Log the diff for this summary update
@@ -740,17 +761,17 @@ def preview(request: PreviewRequest):
 # ============ Utility Endpoints ============
 
 @app.post("/reindex")
-def reindex():
+async def reindex():
     """Re-index all content from the content directory."""
     global entries_cache
-    
+
     if not vector_store:
         raise HTTPException(status_code=503, detail="Vector store not initialized")
-    
+
     documents = load_content(CONTENT_DIR)
-    vector_store.index_documents(documents)
+    await vector_store.index_documents(documents)
     entries_cache = {d["id"]: d for d in documents}
-    
+
     return {"indexed": len(documents)}
 
 
@@ -792,12 +813,12 @@ def get_entry(entry_id: str):
 
 
 @app.get("/summaries")
-def list_summaries():
+async def list_summaries():
     """List all summary documents."""
     if not vector_store:
         raise HTTPException(status_code=503, detail="Vector store not initialized")
-    
-    summaries = vector_store.get_summaries()
+
+    summaries = await vector_store.get_summaries()
     return {
         "summaries": [
             {

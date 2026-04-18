@@ -5,7 +5,7 @@ Tests for the API endpoints.
 import asyncio
 import os
 import tempfile
-from unittest.mock import patch, MagicMock
+from unittest.mock import AsyncMock, patch, MagicMock
 
 import pytest
 import httpx
@@ -265,8 +265,9 @@ class TestIndexEndpoint:
         yaml.preserve_quotes = True
 
         mock_store = MagicMock()
-        mock_store.index_documents.return_value = 1
-        mock_store.count.return_value = 0
+        mock_store.index_documents = AsyncMock(return_value=1)
+        mock_store.count = AsyncMock(return_value=0)
+        mock_store.close = AsyncMock()
         MockVectorStore.return_value = mock_store
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -470,6 +471,38 @@ class TestIngestEndpoint:
         mock_result.results = [mock_proposal_result]
         mock_map_pipeline.return_value = mock_result
 
+        # httpx.ASGITransport in 0.28 does not fire FastAPI's lifespan, so
+        # every bit of state lifespan builds — vector_store, job_store,
+        # tracer, LLM clients — has to be pinned by the test. A prior
+        # TestClient test may have set them, but standalone runs start cold
+        # and bound-to-dead-loop state from earlier tests is worse than no
+        # state. Override everything the /ingest path touches, then restore
+        # in finally so the next test starts from whatever lifespan last
+        # produced (or None, if this was the first test to run).
+        from jobs import JobStore
+
+        import api
+        mock_store = MagicMock()
+        mock_store.index_documents = AsyncMock(return_value=1)
+        mock_store.count = AsyncMock(return_value=0)
+        mock_store.close = AsyncMock()
+        old_store = api.vector_store
+        api.vector_store = mock_store
+
+        mock_tracer = MagicMock()
+        mock_tracer.flush = AsyncMock()
+        mock_tracer.close = AsyncMock()
+
+        old_job_store = getattr(app.state, "job_store", None)
+        old_tracer = getattr(app.state, "tracer", None)
+        old_query_llm = getattr(app.state, "query_llm", None)
+        old_ingest_llm = getattr(app.state, "ingest_llm", None)
+
+        app.state.job_store = JobStore()
+        app.state.tracer = mock_tracer
+        app.state.query_llm = MagicMock()
+        app.state.ingest_llm = MagicMock()
+
         with tempfile.TemporaryDirectory() as tmpdir:
             entries_dir = os.path.join(tmpdir, "entries")
             os.makedirs(entries_dir)
@@ -478,7 +511,6 @@ class TestIngestEndpoint:
             with open(entry_file, "w") as f:
                 yaml.dump({"id": "test-entry", "type": "entry", "topic": "Test", "content": "Test"}, f)
 
-            import api
             old_content_dir = api.CONTENT_DIR
             api.CONTENT_DIR = tmpdir
             api.entries_cache.clear()
@@ -505,6 +537,11 @@ class TestIngestEndpoint:
                     assert result["progress_detail"] is None  # cleared on completion
             finally:
                 api.CONTENT_DIR = old_content_dir
+                api.vector_store = old_store
+                app.state.job_store = old_job_store
+                app.state.tracer = old_tracer
+                app.state.query_llm = old_query_llm
+                app.state.ingest_llm = old_ingest_llm
 
 
 class TestEntriesWithLastIngested:
@@ -554,8 +591,9 @@ class TestApproveEndpoint:
         from api import app
 
         mock_store = MagicMock()
-        mock_store.index_documents.return_value = 1
-        mock_store.count.return_value = 0
+        mock_store.index_documents = AsyncMock(return_value=1)
+        mock_store.count = AsyncMock(return_value=0)
+        mock_store.close = AsyncMock()
         MockVectorStore.return_value = mock_store
 
         mock_apply.return_value = {"success": True, "file": "/path/to/file.yaml", "changes": ["Added learning"]}
