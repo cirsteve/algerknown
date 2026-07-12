@@ -16,7 +16,7 @@ let ajvInstance: Ajv2020 | null = null;
 let loadedRoot: string | null = null;
 
 // Patterns for recognising genuinely immutable references.
-// Accepts: 40-char hex git SHA, sha256:hex digest, DOI, versioned arxiv, wayback snapshot, versioned npm, semver pkg.
+// Accepts: 40-char hex git SHA, sha256:hex digest, DOI, versioned arXiv id, or Wayback Machine snapshot URL.
 const IMMUTABLE_REF_PATTERN =
   /^(?:[0-9a-f]{40}|sha256:[0-9a-f]{64}|10\.\d{4,}\/\S+|[0-9]{4}\.\d{4,5}v\d+|https:\/\/web\.archive\.org\/web\/\d{14}\/)/i;
 
@@ -104,7 +104,7 @@ function validateDossier(dossier: Dossier, basePath: string): ValidationError[] 
   const today = new Date().toISOString().slice(0, 10);
   if (dossier.last_reviewed > today) {
     errors.push({
-      path: `${basePath}.last_reviewed`,
+      path: `${basePath}/last_reviewed`,
       message: `last_reviewed (${dossier.last_reviewed}) is in the future`,
     });
   }
@@ -113,18 +113,18 @@ function validateDossier(dossier: Dossier, basePath: string): ValidationError[] 
   const evidenceIds = new Set<string>();
   for (let i = 0; i < dossier.evidence.length; i++) {
     const ev: DossierEvidence = dossier.evidence[i];
-    const p = `${basePath}.evidence[${i}]`;
+    const p = `${basePath}/evidence/${i}`;
 
     if (allIds.has(ev.id)) {
-      errors.push({ path: `${p}.id`, message: `Duplicate dossier id: ${ev.id} (also at ${allIds.get(ev.id)})` });
+      errors.push({ path: `${p}/id`, message: `Duplicate dossier id: ${ev.id} (also at ${allIds.get(ev.id)})` });
     } else {
-      allIds.set(ev.id, `${p}.id`);
+      allIds.set(ev.id, `${p}/id`);
     }
     evidenceIds.add(ev.id);
 
     if (!IMMUTABLE_REF_PATTERN.test(ev.immutable_ref)) {
       errors.push({
-        path: `${p}.immutable_ref`,
+        path: `${p}/immutable_ref`,
         message: `immutable_ref "${ev.immutable_ref}" does not satisfy immutability requirements (must be a 40-char git SHA, sha256: digest, DOI, versioned arXiv id, or Wayback Machine snapshot URL)`,
       });
     }
@@ -135,12 +135,12 @@ function validateDossier(dossier: Dossier, basePath: string): ValidationError[] 
   const seenSafePhrasings = new Set<string>();
   for (let i = 0; i < dossier.facts.length; i++) {
     const fact: DossierFact = dossier.facts[i];
-    const p = `${basePath}.facts[${i}]`;
+    const p = `${basePath}/facts/${i}`;
 
     if (allIds.has(fact.id)) {
-      errors.push({ path: `${p}.id`, message: `Duplicate dossier id: ${fact.id} (also at ${allIds.get(fact.id)})` });
+      errors.push({ path: `${p}/id`, message: `Duplicate dossier id: ${fact.id} (also at ${allIds.get(fact.id)})` });
     } else {
-      allIds.set(fact.id, `${p}.id`);
+      allIds.set(fact.id, `${p}/id`);
     }
     factIds.add(fact.id);
 
@@ -148,7 +148,7 @@ function validateDossier(dossier: Dossier, basePath: string): ValidationError[] 
       const norm = normPhrase(fact.safe_phrasings[j]);
       if (seenSafePhrasings.has(norm)) {
         errors.push({
-          path: `${p}.safe_phrasings[${j}]`,
+          path: `${p}/safe_phrasings/${j}`,
           message: `Duplicate safe phrasing after normalization: "${norm}"`,
         });
       }
@@ -158,7 +158,7 @@ function validateDossier(dossier: Dossier, basePath: string): ValidationError[] 
     for (let j = 0; j < fact.evidence_ids.length; j++) {
       if (!evidenceIds.has(fact.evidence_ids[j])) {
         errors.push({
-          path: `${p}.evidence_ids[${j}]`,
+          path: `${p}/evidence_ids/${j}`,
           message: `evidence_id "${fact.evidence_ids[j]}" does not reference any dossier evidence record`,
         });
       }
@@ -170,28 +170,28 @@ function validateDossier(dossier: Dossier, basePath: string): ValidationError[] 
   const seenCanonicalUrls = new Map<string, string>();
   for (let i = 0; i < dossier.resources.length; i++) {
     const res: DossierResource = dossier.resources[i];
-    const p = `${basePath}.resources[${i}]`;
+    const p = `${basePath}/resources/${i}`;
 
     if (allIds.has(res.id)) {
-      errors.push({ path: `${p}.id`, message: `Duplicate dossier id: ${res.id} (also at ${allIds.get(res.id)})` });
+      errors.push({ path: `${p}/id`, message: `Duplicate dossier id: ${res.id} (also at ${allIds.get(res.id)})` });
     } else {
-      allIds.set(res.id, `${p}.id`);
+      allIds.set(res.id, `${p}/id`);
     }
     resourceIds.add(res.id);
 
     const cUrl = canonicalUrl(res.canonical_url);
     if (seenCanonicalUrls.has(cUrl)) {
       errors.push({
-        path: `${p}.canonical_url`,
+        path: `${p}/canonical_url`,
         message: `Duplicate canonical URL after normalization: "${cUrl}" (also at ${seenCanonicalUrls.get(cUrl)})`,
       });
     }
-    seenCanonicalUrls.set(cUrl, `${p}.canonical_url`);
+    seenCanonicalUrls.set(cUrl, `${p}/canonical_url`);
 
     for (let j = 0; j < res.evidence_ids.length; j++) {
       if (!evidenceIds.has(res.evidence_ids[j])) {
         errors.push({
-          path: `${p}.evidence_ids[${j}]`,
+          path: `${p}/evidence_ids/${j}`,
           message: `evidence_id "${res.evidence_ids[j]}" does not reference any dossier evidence record`,
         });
       }
@@ -202,12 +202,12 @@ function validateDossier(dossier: Dossier, basePath: string): ValidationError[] 
   const seenForbiddenPhrasings = new Set<string>();
   for (let i = 0; i < dossier.prohibitions.length; i++) {
     const proh: DossierProhibition = dossier.prohibitions[i];
-    const p = `${basePath}.prohibitions[${i}]`;
+    const p = `${basePath}/prohibitions/${i}`;
 
     if (allIds.has(proh.id)) {
-      errors.push({ path: `${p}.id`, message: `Duplicate dossier id: ${proh.id} (also at ${allIds.get(proh.id)})` });
+      errors.push({ path: `${p}/id`, message: `Duplicate dossier id: ${proh.id} (also at ${allIds.get(proh.id)})` });
     } else {
-      allIds.set(proh.id, `${p}.id`);
+      allIds.set(proh.id, `${p}/id`);
     }
 
     // Exactly one matcher must be present
@@ -227,7 +227,7 @@ function validateDossier(dossier: Dossier, basePath: string): ValidationError[] 
       for (const ch of flags) {
         if (!PERMITTED_FLAGS.has(ch)) {
           errors.push({
-            path: `${p}.flags`,
+            path: `${p}/flags`,
             message: `Unsupported regex flag "${ch}"; only i, m, s are permitted`,
           });
         }
@@ -236,7 +236,7 @@ function validateDossier(dossier: Dossier, basePath: string): ValidationError[] 
         new RegExp(proh.regex, flags);
       } catch (err) {
         errors.push({
-          path: `${p}.regex`,
+          path: `${p}/regex`,
           message: `Regex compilation failed: ${(err as Error).message}`,
         });
       }
@@ -246,7 +246,7 @@ function validateDossier(dossier: Dossier, basePath: string): ValidationError[] 
       const norm = normPhrase(proh.forbidden_phrasings[j]);
       if (seenForbiddenPhrasings.has(norm)) {
         errors.push({
-          path: `${p}.forbidden_phrasings[${j}]`,
+          path: `${p}/forbidden_phrasings/${j}`,
           message: `Duplicate forbidden phrasing after normalization: "${norm}"`,
         });
       }
@@ -256,7 +256,7 @@ function validateDossier(dossier: Dossier, basePath: string): ValidationError[] 
     for (let j = 0; j < proh.evidence_ids.length; j++) {
       if (!evidenceIds.has(proh.evidence_ids[j])) {
         errors.push({
-          path: `${p}.evidence_ids[${j}]`,
+          path: `${p}/evidence_ids/${j}`,
           message: `evidence_id "${proh.evidence_ids[j]}" does not reference any dossier evidence record`,
         });
       }
@@ -267,7 +267,7 @@ function validateDossier(dossier: Dossier, basePath: string): ValidationError[] 
       for (let j = 0; j < prohWithResourceIds.resource_ids.length; j++) {
         if (!resourceIds.has(prohWithResourceIds.resource_ids[j])) {
           errors.push({
-            path: `${p}.resource_ids[${j}]`,
+            path: `${p}/resource_ids/${j}`,
             message: `resource_id "${prohWithResourceIds.resource_ids[j]}" does not reference any dossier resource`,
           });
         }
@@ -278,19 +278,19 @@ function validateDossier(dossier: Dossier, basePath: string): ValidationError[] 
   // --- Known Gaps ---
   for (let i = 0; i < dossier.known_gaps.length; i++) {
     const gap: DossierKnownGap = dossier.known_gaps[i];
-    const p = `${basePath}.known_gaps[${i}]`;
+    const p = `${basePath}/known_gaps/${i}`;
 
     if (allIds.has(gap.id)) {
-      errors.push({ path: `${p}.id`, message: `Duplicate dossier id: ${gap.id} (also at ${allIds.get(gap.id)})` });
+      errors.push({ path: `${p}/id`, message: `Duplicate dossier id: ${gap.id} (also at ${allIds.get(gap.id)})` });
     } else {
-      allIds.set(gap.id, `${p}.id`);
+      allIds.set(gap.id, `${p}/id`);
     }
 
     if (gap.related_fact_ids) {
       for (let j = 0; j < gap.related_fact_ids.length; j++) {
         if (!factIds.has(gap.related_fact_ids[j])) {
           errors.push({
-            path: `${p}.related_fact_ids[${j}]`,
+            path: `${p}/related_fact_ids/${j}`,
             message: `related_fact_id "${gap.related_fact_ids[j]}" does not reference any dossier fact`,
           });
         }
@@ -301,7 +301,7 @@ function validateDossier(dossier: Dossier, basePath: string): ValidationError[] 
       for (let j = 0; j < gap.related_resource_ids.length; j++) {
         if (!resourceIds.has(gap.related_resource_ids[j])) {
           errors.push({
-            path: `${p}.related_resource_ids[${j}]`,
+            path: `${p}/related_resource_ids/${j}`,
             message: `related_resource_id "${gap.related_resource_ids[j]}" does not reference any dossier resource`,
           });
         }
@@ -338,7 +338,7 @@ export function validate(entry: AnyEntry, root?: string): ValidationResult {
     return {
       valid: false,
       errors: [{
-        path: '',
+        path: '/',
         message: `Schema not found: ${schemaFile}`,
       }],
     };
