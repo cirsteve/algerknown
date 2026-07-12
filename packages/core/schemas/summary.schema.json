@@ -77,6 +77,9 @@
       "type": "string",
       "format": "date",
       "description": "Date this entry was last ingested into the RAG system (auto-populated)"
+    },
+    "dossier": {
+      "$ref": "#/$defs/dossier"
     }
   },
   "$defs": {
@@ -222,6 +225,249 @@
         "enabled_by"
       ],
       "description": "How entries relate to each other. Bidirectional pairs allow expressing relationships from either direction."
+    },
+    "dossier": {
+      "type": "object",
+      "description": "Canonical, versioned, operator-reviewed project dossier for downstream Scout consumption",
+      "required": ["project_key", "last_reviewed", "reviewer", "evidence", "facts", "resources", "prohibitions", "known_gaps"],
+      "additionalProperties": false,
+      "properties": {
+        "project_key": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+$",
+          "description": "Kebab-case key matching the Scout project key"
+        },
+        "last_reviewed": {
+          "type": "string",
+          "format": "date",
+          "description": "ISO YYYY-MM-DD date of last operator review; must not be in the future"
+        },
+        "reviewer": {
+          "$ref": "#/$defs/dossierReviewer"
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/dossierEvidence"
+          }
+        },
+        "facts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/dossierFact"
+          }
+        },
+        "resources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/dossierResource"
+          }
+        },
+        "prohibitions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/dossierProhibition"
+          }
+        },
+        "known_gaps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/dossierKnownGap"
+          }
+        }
+      }
+    },
+    "dossierReviewer": {
+      "type": "object",
+      "required": ["id", "display_name"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Stable reviewer identifier"
+        },
+        "display_name": {
+          "type": "string",
+          "description": "Human-readable reviewer name"
+        }
+      }
+    },
+    "dossierEvidence": {
+      "type": "object",
+      "required": ["id", "kind", "locator", "immutable_ref"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^evidence-[a-z0-9-]+$",
+          "description": "Stable kebab-case id prefixed evidence-"
+        },
+        "kind": {
+          "type": "string",
+          "description": "Category of evidence (e.g. git-commit, arxiv-paper, web-archive)"
+        },
+        "locator": {
+          "type": "string",
+          "description": "Human-readable location or citation"
+        },
+        "immutable_ref": {
+          "type": "string",
+          "description": "Pinned reference: git commit/blob hash, content digest, versioned document id, or archived snapshot identifier"
+        }
+      }
+    },
+    "dossierFact": {
+      "type": "object",
+      "required": ["id", "claim", "status", "safe_phrasings", "evidence_ids"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^fact-[a-z0-9-]+$",
+          "description": "Stable kebab-case id prefixed fact-"
+        },
+        "claim": {
+          "type": "string",
+          "description": "Canonical human-readable meaning of the fact"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["shipped", "experimental", "planned", "deprecated"],
+          "description": "Deployment status of the fact"
+        },
+        "safe_phrasings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "uniqueItems": true,
+          "description": "Finite set of approved exact phrasings; only listed phrasings may be used"
+        },
+        "evidence_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "description": "References to dossier evidence records"
+        }
+      }
+    },
+    "dossierResource": {
+      "type": "object",
+      "required": ["id", "label", "canonical_url", "purpose", "evidence_ids"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^res-[a-z0-9-]+$",
+          "description": "Stable kebab-case id prefixed res-"
+        },
+        "label": {
+          "type": "string",
+          "description": "Human-readable label"
+        },
+        "canonical_url": {
+          "type": "string",
+          "pattern": "^https?://[^#]+$",
+          "description": "Absolute http/https URL with no fragment; must be unique after URL canonicalization"
+        },
+        "purpose": {
+          "type": "string",
+          "description": "Why this resource is included"
+        },
+        "evidence_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "description": "References to dossier evidence records"
+        }
+      }
+    },
+    "dossierProhibition": {
+      "type": "object",
+      "required": ["id", "forbidden_phrasings", "evidence_ids"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^proh-[a-z0-9-]+$",
+          "description": "Stable kebab-case id prefixed proh-"
+        },
+        "exact_phrase": {
+          "type": "string",
+          "description": "Exact literal string to match"
+        },
+        "normalized_phrase": {
+          "type": "string",
+          "description": "Phrase matched after whitespace normalization and case folding"
+        },
+        "regex": {
+          "type": "string",
+          "description": "Regular expression pattern; only flags i, m, s are permitted"
+        },
+        "flags": {
+          "type": "string",
+          "pattern": "^[ims]*$",
+          "description": "Optional regex flags; only i, m, s are supported"
+        },
+        "forbidden_phrasings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "description": "Human-readable examples of forbidden text"
+        },
+        "evidence_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "description": "References to dossier evidence records"
+        },
+        "resource_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Optional references to dossier resources (res-* ids only)"
+        }
+      }
+    },
+    "dossierKnownGap": {
+      "type": "object",
+      "required": ["id", "question"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^gap-[a-z0-9-]+$",
+          "description": "Stable kebab-case id prefixed gap-"
+        },
+        "question": {
+          "type": "string",
+          "description": "The open question representing the gap"
+        },
+        "related_fact_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Optional references to related facts within the dossier"
+        },
+        "related_resource_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Optional references to related resources within the dossier"
+        }
+      }
     }
   }
 }
