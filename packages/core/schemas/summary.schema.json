@@ -411,7 +411,6 @@
         },
         "flags": {
           "type": "string",
-          "pattern": "^[ims]*$",
           "description": "Optional regex flags; only i, m, s are supported"
         },
         "forbidden_phrasings": {
