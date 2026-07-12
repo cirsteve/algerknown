@@ -85,6 +85,87 @@ export interface Outcome {
   surprised?: string[];
 }
 
+// ============== Dossier ==============
+
+export type DossierFactStatus = 'shipped' | 'experimental' | 'planned' | 'deprecated';
+
+export interface DossierReviewer {
+  id: string;
+  display_name: string;
+}
+
+export interface DossierEvidence {
+  id: string;
+  kind: string;
+  locator: string;
+  immutable_ref: string;
+}
+
+export interface DossierFact {
+  id: string;
+  claim: string;
+  status: DossierFactStatus;
+  safe_phrasings: [string, ...string[]];
+  evidence_ids: [string, ...string[]];
+}
+
+export interface DossierResource {
+  id: string;
+  label: string;
+  canonical_url: string;
+  purpose: string;
+  evidence_ids: [string, ...string[]];
+}
+
+export interface DossierProhibitionBase {
+  id: string;
+  forbidden_phrasings: [string, ...string[]];
+  evidence_ids: [string, ...string[]];
+  resource_ids?: string[];
+}
+
+export interface DossierProhibitionExact extends DossierProhibitionBase {
+  exact_phrase: string;
+  normalized_phrase?: never;
+  regex?: never;
+}
+
+export interface DossierProhibitionNormalized extends DossierProhibitionBase {
+  normalized_phrase: string;
+  exact_phrase?: never;
+  regex?: never;
+}
+
+export interface DossierProhibitionRegex extends DossierProhibitionBase {
+  regex: string;
+  flags?: string;
+  exact_phrase?: never;
+  normalized_phrase?: never;
+}
+
+export type DossierProhibition =
+  | DossierProhibitionExact
+  | DossierProhibitionNormalized
+  | DossierProhibitionRegex;
+
+export interface DossierKnownGap {
+  id: string;
+  question: string;
+  related_fact_ids?: string[];
+  related_resource_ids?: string[];
+}
+
+export interface Dossier {
+  project_key: string;
+  last_reviewed: string;
+  reviewer: DossierReviewer;
+  evidence: DossierEvidence[];
+  facts: DossierFact[];
+  resources: DossierResource[];
+  prohibitions: DossierProhibition[];
+  known_gaps: DossierKnownGap[];
+}
+
 // ============== Summary ==============
 
 export interface Summary {
@@ -102,6 +183,7 @@ export interface Summary {
   resources?: Resource[];
   links?: Link[];
   last_ingested?: string; // Date this entry was last ingested into the RAG system (auto-populated)
+  dossier?: Dossier;
 }
 
 // ============== Entry (Journal) ==============

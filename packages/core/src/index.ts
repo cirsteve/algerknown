@@ -22,6 +22,18 @@ export type {
   ValidationError,
   ValidationResult,
   SearchResult,
+  DossierFactStatus,
+  DossierReviewer,
+  DossierEvidence,
+  DossierFact,
+  DossierResource,
+  DossierProhibitionBase,
+  DossierProhibitionExact,
+  DossierProhibitionNormalized,
+  DossierProhibitionRegex,
+  DossierProhibition,
+  DossierKnownGap,
+  Dossier,
 } from './types.js';
 
 export { isSummary, isEntry } from './types.js';
