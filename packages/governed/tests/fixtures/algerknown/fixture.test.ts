@@ -4,7 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { parse } from 'yaml';
 import { validate, resetValidator, init, type Summary } from '@algerknown/core';
-import { gitBlobHash, loadFixtureManifest, readApprovedFixtureShaFromHandoff, readSnapshot } from './loader.js';
+import { extractApprovedShaFromHandoffContent, gitBlobHash, loadFixtureManifest, readApprovedFixtureShaFromHandoff, readSnapshot } from './loader.js';
 
 describe('cohort-1 dossier compatibility fixture', () => {
   const manifest = loadFixtureManifest();
@@ -16,6 +16,12 @@ describe('cohort-1 dossier compatibility fixture', () => {
   it('rejects the fixture unless the recorded commit carries explicit human approval in its handoff', () => {
     const approvedSha = readApprovedFixtureShaFromHandoff();
     expect(manifest.sourceCommit).toBe(approvedSha);
+  });
+
+  it('extracts the approved SHA from a CRLF-terminated handoff (platform-independent)', () => {
+    const sha = 'a'.repeat(40);
+    const crlfContent = `# heading\r\n\r\n\`\`\`\r\n${sha}\r\n\`\`\`\r\n`;
+    expect(extractApprovedShaFromHandoffContent(crlfContent)).toBe(sha);
   });
 
   for (const dossier of manifest.dossiers) {

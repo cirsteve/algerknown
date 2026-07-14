@@ -13,10 +13,16 @@ export interface SidecarEdgeRecord {
   revision: unknown;
 }
 
-/** The latest known provenance/revision metadata for one node, keyed by node id. */
+/**
+ * The latest known provenance/revision/confidence for one node, keyed by
+ * node id. Confidence lives here (not in the dossier, which has no field
+ * for it) so a legitimate confidence-changing update isn't silently lost on
+ * the next read.
+ */
 export interface SidecarNodeProvenance {
   provenance: unknown;
   revision: unknown;
+  confidence: number;
 }
 
 export interface NamespaceSidecar {

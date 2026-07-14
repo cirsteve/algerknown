@@ -33,7 +33,7 @@ describe('namespace sidecar', () => {
   it('round-trips through serialize/parse', () => {
     const sidecar: NamespaceSidecar = {
       mappingVersion: 1,
-      nodeProvenance: { 'fact-1': { provenance: { sources: [], railId: 'human-gated', evaluatorVerdicts: [] }, revision: { revisionId: 'git:abc', namespaceRevision: 1, createdAt: '2026-01-01T00:00:00.000Z', actorId: 'a', actorClass: 'human' } } },
+      nodeProvenance: { 'fact-1': { provenance: { sources: [], railId: 'human-gated', evaluatorVerdicts: [] }, revision: { revisionId: 'git:abc', namespaceRevision: 1, createdAt: '2026-01-01T00:00:00.000Z', actorId: 'a', actorClass: 'human' }, confidence: 1 } },
       edges: [{ id: 'derived_from:a:b', kind: 'derived_from', sourceId: 'a', targetId: 'b', provenance: {}, revision: {} }],
       revisions: [],
     };

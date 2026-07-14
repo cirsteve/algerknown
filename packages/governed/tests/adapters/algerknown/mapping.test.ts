@@ -27,6 +27,7 @@ const stubAttribution: RecordAttribution = {
     actorId: asActorId('fixture-seed'),
     actorClass: 'human',
   },
+  confidence: 1,
 };
 
 function loadFixtureDossier(summaryId: string): Dossier {

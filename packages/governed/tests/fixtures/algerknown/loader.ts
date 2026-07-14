@@ -37,6 +37,11 @@ export function gitBlobHash(content: string): string {
   return createHash('sha1').update(Buffer.concat([header, bytes])).digest('hex');
 }
 
+/** Extracted for testability; \r?\n so a CRLF checkout doesn't spuriously fail to find an approved SHA that is actually present. */
+export function extractApprovedShaFromHandoffContent(content: string): string | undefined {
+  return content.match(/```\s*\r?\n([0-9a-f]{40})\s*\r?\n```/)?.[1];
+}
+
 /**
  * The cohort-1 compatibility commit is only usable as a fixture if it carries
  * explicit human approval. DOSSIER_COMPAT_FIXTURE.md is that approval record:
@@ -49,11 +54,11 @@ export function readApprovedFixtureShaFromHandoff(): string {
     throw new Error(`No approval handoff found at ${handoffPath}; refusing to trust an unapproved fixture commit.`);
   }
   const content = fs.readFileSync(handoffPath, 'utf-8');
-  const match = content.match(/```\s*\n([0-9a-f]{40})\s*\n```/);
-  if (!match) {
+  const sha = extractApprovedShaFromHandoffContent(content);
+  if (!sha) {
     throw new Error(`Could not find an approved 40-character commit SHA in ${handoffPath}`);
   }
-  return match[1]!;
+  return sha;
 }
 
 export interface SeededFixtureRepo {

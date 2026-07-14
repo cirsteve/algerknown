@@ -24,6 +24,8 @@ import { buildEdgeId, isNativeEdgeKind } from './edge-ids.js';
 export interface RecordAttribution {
   provenance: Provenance;
   revision: RevisionMeta;
+  /** The dossier has no field for this; it lives entirely in the sidecar (or defaults to 1 pre-governance). */
+  confidence: number;
 }
 
 /** Supplies the governance metadata a dossier record itself does not carry (sidecar-backed, or synthesized). */
@@ -61,14 +63,14 @@ export function mapDossierToGoverned(
   const edges: GovernedEdge[] = [];
 
   const mkNode = (id: string, type: GovernedNode['type'], payload: Record<string, unknown>): GovernedNode => {
-    const { provenance, revision } = resolveAttribution(id);
+    const { provenance, revision, confidence } = resolveAttribution(id);
     return {
       id: asNodeId(id),
       type,
       namespace,
       subject,
       payload,
-      confidence: 1,
+      confidence,
       provenance,
       revision,
     } as unknown as GovernedNode;

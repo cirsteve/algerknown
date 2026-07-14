@@ -240,14 +240,22 @@ export class GitAlgerknownRepository implements Repository {
       );
     }
 
-    const resolvedDeletions = this.resolveEdgeDeletions(write.edgesDeleted, sidecar, currentDossier);
+    // Explicit deletions must also drop the edge's sidecar id-registry entry;
+    // implied kind-change removals must NOT -- the same write's edge upsert
+    // already overwrote that entry with the new kind, and removing it again
+    // here would erase the very entry that upsert just wrote (see
+    // applySidecarDelta, which only receives explicitDeletions).
+    const nativeById = this.computeNativeEdgesById(currentDossier);
+    const explicitDeletions = this.resolveEdgeDeletions(write.edgesDeleted, sidecar, nativeById);
+    const impliedKindChangeRemovals = this.resolveImpliedKindChangeRemovals(write.edgesUpserted, sidecar, nativeById);
+    const dossierEdgeRemovals = [...impliedKindChangeRemovals, ...explicitDeletions];
 
     const nextDossier = applyGovernedDeltaToDossier(
       currentDossier,
       write.nodesUpserted,
       write.nodesDeleted,
       write.edgesUpserted,
-      resolvedDeletions,
+      dossierEdgeRemovals,
     );
 
     const nextSummary: Summary = { ...summary, dossier: nextDossier };
@@ -260,7 +268,7 @@ export class GitAlgerknownRepository implements Repository {
 
     doc.set('dossier', nextDossier);
     const nextDossierContent = doc.toString();
-    const nextSidecar = this.applySidecarDelta(sidecar, write, resolvedDeletions);
+    const nextSidecar = this.applySidecarDelta(sidecar, write, explicitDeletions);
     const nextSidecarContent = serializeSidecar(nextSidecar);
 
     const files = [
@@ -287,16 +295,8 @@ export class GitAlgerknownRepository implements Repository {
     this.clearRecoveryMarker();
   }
 
-  /**
-   * The governed Repository port carries only bare EdgeIds for deletions, so
-   * this resolves each one's kind/endpoints by lookup against whatever state
-   * it belonged to just before the delete: the sidecar (for derived_from/
-   * contradicts/supersedes) or the dossier's current native edges (for
-   * evidence_for/about). Never assumes a particular edge id scheme.
-   */
-  private resolveEdgeDeletions(edgeIds: EdgeId[], sidecar: NamespaceSidecar, currentDossier: Dossier): ResolvedEdgeDeletion[] {
-    if (edgeIds.length === 0) return [];
-
+  /** Native edges as of the dossier state *before* this write's mutations are applied, keyed by id. */
+  private computeNativeEdgesById(currentDossier: Dossier): Map<EdgeId, GovernedEdge> {
     const unusedAttribution: RecordAttribution = {
       provenance: { sources: [], railId: 'unused', evaluatorVerdicts: [] },
       revision: {
@@ -306,26 +306,71 @@ export class GitAlgerknownRepository implements Repository {
         actorId: asActorId('unused'),
         actorClass: 'human',
       },
+      confidence: 1,
     };
     const { edges: nativeEdges } = mapDossierToGoverned(currentDossier, this.namespace, this.subject, () => unusedAttribution);
-    const nativeById = new Map(nativeEdges.map((e) => [e.id, e]));
+    return new Map(nativeEdges.map((e) => [e.id, e]));
+  }
 
+  /**
+   * Resolves an edge id's kind/endpoints by lookup against whatever state it
+   * belonged to just before this write: the sidecar (for derived_from/
+   * contradicts/supersedes, and for any edge a prior governed write already
+   * registered) or the dossier's current native edges (for evidence_for/
+   * about relationships that predate governance). Never assumes a
+   * particular edge id scheme.
+   */
+  private lookupPriorEdge(edgeId: EdgeId, sidecar: NamespaceSidecar, nativeById: Map<EdgeId, GovernedEdge>): ResolvedEdgeDeletion | undefined {
+    const sidecarRecord = sidecar.edges.find((e) => e.id === String(edgeId));
+    if (sidecarRecord) {
+      return {
+        edgeId,
+        kind: sidecarRecord.kind as EdgeKind,
+        sourceId: asNodeId(sidecarRecord.sourceId),
+        targetId: asNodeId(sidecarRecord.targetId),
+      };
+    }
+    const native = nativeById.get(edgeId);
+    if (native) {
+      return { edgeId, kind: native.kind, sourceId: native.sourceId, targetId: native.targetId };
+    }
+    return undefined;
+  }
+
+  private resolveEdgeDeletions(edgeIds: EdgeId[], sidecar: NamespaceSidecar, nativeById: Map<EdgeId, GovernedEdge>): ResolvedEdgeDeletion[] {
     return edgeIds.map((edgeId) => {
-      const sidecarRecord = sidecar.edges.find((e) => e.id === String(edgeId));
-      if (sidecarRecord) {
-        return {
-          edgeId,
-          kind: sidecarRecord.kind as EdgeKind,
-          sourceId: asNodeId(sidecarRecord.sourceId),
-          targetId: asNodeId(sidecarRecord.targetId),
-        };
+      const resolved = this.lookupPriorEdge(edgeId, sidecar, nativeById);
+      if (!resolved) {
+        throw new Error(`cannot resolve edge "${edgeId}" for deletion: not found in the namespace sidecar or the dossier's current native edges`);
       }
-      const native = nativeById.get(edgeId);
-      if (native) {
-        return { edgeId, kind: native.kind, sourceId: native.sourceId, targetId: native.targetId };
-      }
-      throw new Error(`cannot resolve edge "${edgeId}" for deletion: not found in the namespace sidecar or the dossier's current native edges`);
+      return resolved;
     });
+  }
+
+  /**
+   * An edge `update` mutation can only change `kind` (endpoints are fixed),
+   * so an upserted edge whose kind differs from what it was stored as before
+   * this write implies a removal of the *old* kind's reference -- otherwise
+   * a native-to-native kind change would leave a stale entry in the
+   * dossier's evidence_ids/resource_ids/related_*_ids (the new kind's
+   * reference gets added by the normal upsert path, but nothing would ever
+   * remove the old one). Returns the old (kind, sourceId, targetId) to
+   * remove for each such edge; a no-op for edges with no prior kind, or
+   * whose kind hasn't changed.
+   */
+  private resolveImpliedKindChangeRemovals(
+    edgesUpserted: GovernedEdge[],
+    sidecar: NamespaceSidecar,
+    nativeById: Map<EdgeId, GovernedEdge>,
+  ): ResolvedEdgeDeletion[] {
+    const removals: ResolvedEdgeDeletion[] = [];
+    for (const edge of edgesUpserted) {
+      const prior = this.lookupPriorEdge(edge.id, sidecar, nativeById);
+      if (prior && prior.kind !== edge.kind) {
+        removals.push(prior);
+      }
+    }
+    return removals;
   }
 
   /**
@@ -359,7 +404,7 @@ export class GitAlgerknownRepository implements Repository {
 
     const nodeProvenance = { ...sidecar.nodeProvenance };
     for (const node of write.nodesUpserted) {
-      nodeProvenance[String(node.id)] = { provenance: node.provenance, revision: node.revision };
+      nodeProvenance[String(node.id)] = { provenance: node.provenance, revision: node.revision, confidence: node.confidence };
     }
     for (const nodeId of write.nodesDeleted) {
       delete nodeProvenance[String(nodeId)];
@@ -522,6 +567,7 @@ export class GitAlgerknownRepository implements Repository {
           actorId: asActorId(`${this.binding.summaryId}:source`),
           actorClass: 'human',
         },
+        confidence: 1,
       };
     };
   }

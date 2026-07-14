@@ -36,7 +36,11 @@ function readDossierFile(repoRoot: string): Dossier {
   return (parse(content) as Summary).dossier!;
 }
 
-function buildCreateFactWrite(namespace: ReturnType<typeof namespaceForBinding>, subject: ReturnType<typeof subjectForBinding>, opts: { previousRevision: number | null; idempotencyKey: string; evidenceId: string }): PreparedWrite {
+function buildCreateFactWrite(
+  namespace: ReturnType<typeof namespaceForBinding>,
+  subject: ReturnType<typeof subjectForBinding>,
+  opts: { previousRevision: number | null; idempotencyKey: string; evidenceId: string; secondEvidenceId?: string; confidence?: number },
+): PreparedWrite {
   const nodeId = asNodeId('fact-new-from-test');
   const revisionId = asRevisionId(`rev-${opts.idempotencyKey}`);
   const provenance = { sources: [{ kind: 'external' as const, id: opts.evidenceId }], railId: 'human-gated', evaluatorVerdicts: [] };
@@ -54,7 +58,7 @@ function buildCreateFactWrite(namespace: ReturnType<typeof namespaceForBinding>,
     namespace,
     subject,
     payload: { statement: 'A new fact created by the repository test.', attributes: { status: 'shipped', safe_phrasings: ['A new fact.'] } },
-    confidence: 1,
+    confidence: opts.confidence ?? 1,
     provenance,
     revision,
   } as unknown as GovernedNode;
@@ -65,6 +69,119 @@ function buildCreateFactWrite(namespace: ReturnType<typeof namespaceForBinding>,
     namespace,
     sourceId: asNodeId(opts.evidenceId),
     targetId: nodeId,
+    provenance,
+    revision,
+  };
+
+  const edgesUpserted = [edge];
+  const edgeDiffs = [{ entityKind: 'edge' as const, entityId: edge.id, changeKind: 'create' as const, forward: [{ path: '$', before: null, after: edge }], inverse: [{ path: '$', before: edge, after: null }] }];
+
+  if (opts.secondEvidenceId) {
+    const secondEdge = {
+      id: buildEdgeId('evidence_for', asNodeId(opts.secondEvidenceId), nodeId),
+      kind: 'evidence_for' as const,
+      namespace,
+      sourceId: asNodeId(opts.secondEvidenceId),
+      targetId: nodeId,
+      provenance,
+      revision,
+    };
+    edgesUpserted.push(secondEdge);
+    edgeDiffs.push({ entityKind: 'edge' as const, entityId: secondEdge.id, changeKind: 'create' as const, forward: [{ path: '$', before: null, after: secondEdge }], inverse: [{ path: '$', before: secondEdge, after: null }] });
+  }
+
+  return {
+    namespace,
+    previousRevision: opts.previousRevision,
+    resultingRevision: revision.namespaceRevision,
+    revisionRecord: {
+      namespace,
+      revisionId,
+      previousRevision: opts.previousRevision,
+      namespaceRevision: revision.namespaceRevision,
+      createdAt: revision.createdAt,
+      actorId: revision.actorId,
+      actorClass: revision.actorClass,
+      diff: [
+        { entityKind: 'node', entityId: nodeId, changeKind: 'create', forward: [{ path: '$', before: null, after: factNode }], inverse: [{ path: '$', before: factNode, after: null }] },
+        ...edgeDiffs,
+      ],
+      idempotencyKey: asIdempotencyKey(opts.idempotencyKey),
+    },
+    nodesUpserted: [factNode],
+    nodesDeleted: [],
+    edgesUpserted,
+    edgesDeleted: [],
+  };
+}
+
+/** Updates only the fact node's confidence, leaving everything else untouched. */
+function buildConfidenceUpdateWrite(
+  namespace: ReturnType<typeof namespaceForBinding>,
+  subject: ReturnType<typeof subjectForBinding>,
+  opts: { previousRevision: number; idempotencyKey: string; newConfidence: number; priorNode: GovernedNode },
+): PreparedWrite {
+  const revisionId = asRevisionId(`rev-${opts.idempotencyKey}`);
+  const revision = {
+    revisionId,
+    namespaceRevision: opts.previousRevision + 1,
+    createdAt: '2026-07-14T00:05:00.000Z',
+    actorId: asActorId('test-actor'),
+    actorClass: 'human' as const,
+  };
+  const updatedNode: GovernedNode = { ...opts.priorNode, confidence: opts.newConfidence, revision } as unknown as GovernedNode;
+
+  return {
+    namespace,
+    previousRevision: opts.previousRevision,
+    resultingRevision: revision.namespaceRevision,
+    revisionRecord: {
+      namespace,
+      revisionId,
+      previousRevision: opts.previousRevision,
+      namespaceRevision: revision.namespaceRevision,
+      createdAt: revision.createdAt,
+      actorId: revision.actorId,
+      actorClass: revision.actorClass,
+      diff: [
+        {
+          entityKind: 'node',
+          entityId: opts.priorNode.id,
+          changeKind: 'update',
+          forward: [{ path: 'confidence', before: opts.priorNode.confidence, after: opts.newConfidence }],
+          inverse: [{ path: 'confidence', before: opts.newConfidence, after: opts.priorNode.confidence }],
+        },
+      ],
+      idempotencyKey: asIdempotencyKey(opts.idempotencyKey),
+    },
+    nodesUpserted: [updatedNode],
+    nodesDeleted: [],
+    edgesUpserted: [],
+    edgesDeleted: [],
+  };
+}
+
+/** Changes a previously-created evidence_for edge's kind to a sidecar-only kind, endpoints unchanged. */
+function buildEdgeKindChangeWrite(
+  namespace: ReturnType<typeof namespaceForBinding>,
+  subject: ReturnType<typeof subjectForBinding>,
+  opts: { previousRevision: number; idempotencyKey: string; priorEdge: { id: ReturnType<typeof buildEdgeId>; sourceId: ReturnType<typeof asNodeId>; targetId: ReturnType<typeof asNodeId> } },
+): PreparedWrite {
+  const revisionId = asRevisionId(`rev-${opts.idempotencyKey}`);
+  const revision = {
+    revisionId,
+    namespaceRevision: opts.previousRevision + 1,
+    createdAt: '2026-07-14T00:10:00.000Z',
+    actorId: asActorId('test-actor'),
+    actorClass: 'human' as const,
+  };
+  const provenance = { sources: [], railId: 'human-gated', evaluatorVerdicts: [] };
+  const updatedEdge = {
+    id: opts.priorEdge.id,
+    kind: 'derived_from' as const,
+    namespace,
+    sourceId: opts.priorEdge.sourceId,
+    targetId: opts.priorEdge.targetId,
     provenance,
     revision,
   };
@@ -82,14 +199,19 @@ function buildCreateFactWrite(namespace: ReturnType<typeof namespaceForBinding>,
       actorId: revision.actorId,
       actorClass: revision.actorClass,
       diff: [
-        { entityKind: 'node', entityId: nodeId, changeKind: 'create', forward: [{ path: '$', before: null, after: factNode }], inverse: [{ path: '$', before: factNode, after: null }] },
-        { entityKind: 'edge', entityId: edge.id, changeKind: 'create', forward: [{ path: '$', before: null, after: edge }], inverse: [{ path: '$', before: edge, after: null }] },
+        {
+          entityKind: 'edge',
+          entityId: opts.priorEdge.id,
+          changeKind: 'update',
+          forward: [{ path: 'kind', before: 'evidence_for', after: 'derived_from' }],
+          inverse: [{ path: 'kind', before: 'derived_from', after: 'evidence_for' }],
+        },
       ],
       idempotencyKey: asIdempotencyKey(opts.idempotencyKey),
     },
-    nodesUpserted: [factNode],
+    nodesUpserted: [],
     nodesDeleted: [],
-    edgesUpserted: [edge],
+    edgesUpserted: [updatedEdge],
     edgesDeleted: [],
   };
 }
@@ -224,6 +346,55 @@ describe('GitAlgerknownRepository', () => {
 
       const write = buildCreateFactWrite(namespace, subject, { previousRevision: null, idempotencyKey: 'idem-dirty', evidenceId });
       await expect(repository.commit(write)).rejects.toThrow(/unmanaged, uncommitted changes/);
+    });
+
+    it('persists a confidence-changing update, not silently reverting it to 1 on the next read', async () => {
+      const dossier = readDossierFile(repoRoot);
+      const evidenceId = dossier.evidence[0]!.id;
+      const created = buildCreateFactWrite(namespace, subject, { previousRevision: null, idempotencyKey: 'idem-conf-1', evidenceId, confidence: 0.6 });
+      await repository.commit(created);
+
+      const priorNode = await repository.getNode(namespace, asNodeId('fact-new-from-test'));
+      expect(priorNode!.confidence).toBe(0.6);
+
+      const updated = buildConfidenceUpdateWrite(namespace, subject, { previousRevision: 1, idempotencyKey: 'idem-conf-2', newConfidence: 0.95, priorNode: priorNode! });
+      await repository.commit(updated);
+
+      const node = await repository.getNode(namespace, asNodeId('fact-new-from-test'));
+      expect(node!.confidence).toBe(0.95);
+
+      // a *fresh* repository instance (re-reading from disk, not any in-memory cache) must see the same thing
+      const freshRepository = new GitAlgerknownRepository({ repoRoot, binding });
+      const freshNode = await freshRepository.getNode(namespace, asNodeId('fact-new-from-test'));
+      expect(freshNode!.confidence).toBe(0.95);
+    });
+
+    it('an edge kind-changing update removes the stale native reference from the dossier', async () => {
+      const dossier = readDossierFile(repoRoot);
+      const evidenceId = dossier.evidence[0]!.id;
+      const secondEvidenceId = dossier.evidence[1]!.id;
+      // Two evidence_for edges so the fact still has >= 1 reference once one is retargeted.
+      const created = buildCreateFactWrite(namespace, subject, { previousRevision: null, idempotencyKey: 'idem-kind-1', evidenceId, secondEvidenceId });
+      await repository.commit(created);
+
+      const changingEdgeId = buildEdgeId('evidence_for', asNodeId(evidenceId), asNodeId('fact-new-from-test'));
+      const priorEdge = await repository.getEdge(namespace, changingEdgeId);
+      expect(priorEdge!.kind).toBe('evidence_for');
+
+      const kindChange = buildEdgeKindChangeWrite(namespace, subject, {
+        previousRevision: 1,
+        idempotencyKey: 'idem-kind-2',
+        priorEdge: { id: changingEdgeId, sourceId: asNodeId(evidenceId), targetId: asNodeId('fact-new-from-test') },
+      });
+      await repository.commit(kindChange);
+
+      const changedEdge = await repository.getEdge(namespace, changingEdgeId);
+      expect(changedEdge!.kind).toBe('derived_from');
+
+      const dossierAfter = readDossierFile(repoRoot);
+      const fact = dossierAfter.facts.find((f) => f.id === 'fact-new-from-test')!;
+      expect(fact.evidence_ids).not.toContain(evidenceId); // stale native reference must be gone
+      expect(fact.evidence_ids).toContain(secondEvidenceId); // the other reference is untouched
     });
   });
 
