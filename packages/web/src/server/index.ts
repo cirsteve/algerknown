@@ -7,7 +7,9 @@ import { linksRouter } from './routes/links.js';
 import { searchRouter } from './routes/search.js';
 import { configRouter } from './routes/config.js';
 import { createGovernanceAuthRouter } from './routes/governance-auth.js';
+import { createGovernanceRouter } from './routes/governance.js';
 import { createGovernanceRuntime } from './auth/index.js';
+import { createGovernanceComposition } from './governance/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -50,53 +52,71 @@ app.use('/api/links', linksRouter);
 app.use('/api/search', searchRouter);
 app.use('/api/config', configRouter);
 
-// Governance auth (Phase 2 single-operator trust profile). Only mounted
-// when GOVERNANCE_REVIEWER_*/GOVERNANCE_PROCESSOR_* are configured; fails
-// closed (throws at startup) rather than mounting a half-configured
-// governance surface.
+// Governance (Phase 2 single-operator trust profile + this cohort's
+// governed HTTP API). Only mounted when GOVERNANCE_REVIEWER_*/
+// GOVERNANCE_PROCESSOR_* are configured; fails closed (throws at startup,
+// crashing the process) rather than mounting a half-configured governance
+// surface. The composition root builds+migrates the durable SQLite proposal
+// store, registers the Algerknown git repositories, constructs the single
+// WriteOrchestrator/DurableProposalService, and runs crash recovery before
+// any governance route is reachable.
 const governanceRuntime = createGovernanceRuntime();
-if (governanceRuntime.config.enabled) {
+async function mountGovernance(): Promise<void> {
+  if (!governanceRuntime.config.enabled) {
+    console.log('Governance disabled: no GOVERNANCE_REVIEWER_*/GOVERNANCE_PROCESSOR_* configured');
+    return;
+  }
   app.use('/api/governance/auth', createGovernanceAuthRouter(governanceRuntime));
   const sweepIntervalMs = 5 * 60 * 1000;
   setInterval(() => governanceRuntime.sessionRegistry.sweepExpired(), sweepIntervalMs).unref();
-} else {
-  console.log('Governance auth disabled: no GOVERNANCE_REVIEWER_*/GOVERNANCE_PROCESSOR_* configured');
+
+  const composition = await createGovernanceComposition({ clock: governanceRuntime.clock });
+  app.use('/api/governance', createGovernanceRouter(governanceRuntime, composition));
 }
 
-// Proxy RAG backend requests
-const RAG_BACKEND_URL = process.env.RAG_BACKEND_URL || 'http://localhost:4735';
-app.all('/rag/*', async (req, res) => {
-  const ragPath = req.url.replace(/^\/rag\//, '');
-  try {
-    const response = await fetch(`${RAG_BACKEND_URL}/${ragPath}`, {
-      method: req.method,
-      headers: { 'Content-Type': 'application/json' },
-      ...(req.method !== 'GET' && req.method !== 'HEAD' ? { body: JSON.stringify(req.body) } : {}),
-    });
-    const data = await response.text();
-    res.status(response.status).type('json').send(data);
-  } catch {
-    res.status(502).json({ error: 'RAG backend unavailable' });
-  }
-});
+async function main(): Promise<void> {
+  await mountGovernance();
 
-// Serve static files from the client build
-const clientDistPath = path.join(__dirname, '../client');
-app.use(express.static(clientDistPath));
+  // Proxy RAG backend requests
+  const RAG_BACKEND_URL = process.env.RAG_BACKEND_URL || 'http://localhost:4735';
+  app.all('/rag/*', async (req, res) => {
+    const ragPath = req.url.replace(/^\/rag\//, '');
+    try {
+      const response = await fetch(`${RAG_BACKEND_URL}/${ragPath}`, {
+        method: req.method,
+        headers: { 'Content-Type': 'application/json' },
+        ...(req.method !== 'GET' && req.method !== 'HEAD' ? { body: JSON.stringify(req.body) } : {}),
+      });
+      const data = await response.text();
+      res.status(response.status).type('json').send(data);
+    } catch {
+      res.status(502).json({ error: 'RAG backend unavailable' });
+    }
+  });
 
-// SPA fallback - serve index.html for all non-API routes
-app.get('*', (_req, res) => {
-  res.sendFile(path.join(clientDistPath, 'index.html'));
-});
+  // Serve static files from the client build
+  const clientDistPath = path.join(__dirname, '../client');
+  app.use(express.static(clientDistPath));
 
-// Error handler
-app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  console.error('Server error:', err);
-  res.status(500).json({ error: err.message || 'Internal server error' });
-});
+  // SPA fallback - serve index.html for all non-API routes
+  app.get('*', (_req, res) => {
+    res.sendFile(path.join(clientDistPath, 'index.html'));
+  });
 
-app.listen(Number(PORT), HOST, () => {
-  console.log(`API server running on http://${HOST}:${PORT}`);
+  // Error handler
+  app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    console.error('Server error:', err);
+    res.status(500).json({ error: err.message || 'Internal server error' });
+  });
+
+  app.listen(Number(PORT), HOST, () => {
+    console.log(`API server running on http://${HOST}:${PORT}`);
+  });
+}
+
+main().catch((err) => {
+  console.error('Fatal startup error:', err);
+  process.exit(1);
 });
 
 export { app };

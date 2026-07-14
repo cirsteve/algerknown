@@ -17,6 +17,7 @@ import { validateCommand } from './commands/validate.js';
 import { webCommand } from './commands/web.js';
 import { indexCommand } from './commands/index-cmd.js';
 import { authCommand } from './commands/auth.js';
+import { reviewCommand } from './commands/review.js';
 
 const program = new Command();
 
@@ -39,5 +40,6 @@ program.addCommand(validateCommand);
 program.addCommand(webCommand);
 program.addCommand(indexCommand);
 program.addCommand(authCommand);
+program.addCommand(reviewCommand);
 
 program.parse();
