@@ -6,7 +6,10 @@ export function sha256Hex(value: string): string {
 
 /**
  * Constant-time equality over two hex-encoded SHA-256 digests. Both inputs
- * are fixed-length (64 hex chars) so there is no length branch to leak.
+ * are expected to be fixed-length (64 hex chars) in normal use, since every
+ * caller passes a sha256Hex() output; the length check is a defensive
+ * guard for misuse (e.g. a malformed input) and rejects before the
+ * constant-time comparison rather than leaking anything through it.
  */
 export function constantTimeHexEqual(a: string, b: string): boolean {
   const bufA = Buffer.from(a, 'hex');

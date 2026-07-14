@@ -51,10 +51,18 @@ function requireNonEmpty(env: NodeJS.ProcessEnv, key: string): string {
   return value.trim();
 }
 
+/**
+ * Enforces a minimum UTF-8 byte length only - this is a length floor, not
+ * an actual entropy measurement (it can't detect a long but predictable
+ * value). Operators are expected to supply a securely random secret, e.g.
+ * via `openssl rand -hex 32`.
+ */
 function requireMinEntropySecret(env: NodeJS.ProcessEnv, key: string): string {
   const value = requireNonEmpty(env, key);
   if (Buffer.byteLength(value, 'utf8') < MIN_SECRET_BYTES) {
-    throw new GovernanceConfigError(`${key} must be at least ${MIN_SECRET_BYTES} bytes of entropy`);
+    throw new GovernanceConfigError(
+      `${key} must be at least ${MIN_SECRET_BYTES} bytes long, generated from a secure random source (e.g. \`openssl rand -hex ${MIN_SECRET_BYTES}\`) - length alone is checked here, not actual randomness`,
+    );
   }
   return value;
 }
@@ -88,7 +96,9 @@ function parseTrustedProxyHosts(raw: string | undefined): string[] {
  * Loads and validates the Phase 2 single-operator trust profile from the
  * environment. Fails closed: if any governance variable is set, every
  * required field must be present and every secret must meet the minimum
- * entropy floor, or startup throws instead of running unauthenticated.
+ * length floor (a proxy for entropy, not a measurement of it - operators
+ * still must supply a securely random secret), or startup throws instead
+ * of running unauthenticated.
  */
 export function loadGovernanceConfig(env: NodeJS.ProcessEnv = process.env): GovernanceConfig {
   const anyConfigured = GOVERNANCE_ENV_KEYS.some((key) => isSet(env[key]));

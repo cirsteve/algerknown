@@ -37,15 +37,15 @@ describe('loadGovernanceConfig', () => {
     expect(() => loadGovernanceConfig({ GOVERNANCE_REVIEWER_ID: 'steve' })).toThrow(GovernanceConfigError);
   });
 
-  it('rejects a reviewer secret below the entropy floor', () => {
+  it('rejects a reviewer secret below the minimum length', () => {
     expect(() => loadGovernanceConfig(baseEnv({ GOVERNANCE_REVIEWER_SECRET: 'too-short' }))).toThrow(
-      /entropy/,
+      /at least 32 bytes long/,
     );
   });
 
-  it('rejects a processor secret below the entropy floor', () => {
+  it('rejects a processor secret below the minimum length', () => {
     expect(() => loadGovernanceConfig(baseEnv({ GOVERNANCE_PROCESSOR_SECRET: 'too-short' }))).toThrow(
-      /entropy/,
+      /at least 32 bytes long/,
     );
   });
 

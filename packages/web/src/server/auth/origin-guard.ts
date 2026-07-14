@@ -18,6 +18,11 @@ function expectedHost(publicOrigin: string): string {
   return new URL(publicOrigin).host.toLowerCase();
 }
 
+/** Strips the "::ffff:" prefix Node reports for IPv4 addresses on a dual-stack socket. */
+function normalizeRemoteAddress(remoteAddress: string): string {
+  return remoteAddress.startsWith('::ffff:') ? remoteAddress.slice('::ffff:'.length) : remoteAddress;
+}
+
 /**
  * Pure same-origin check for a browser-authenticated mutation: exact
  * Origin match, a Host (or, only from an explicitly trusted proxy, a
@@ -38,7 +43,8 @@ export function checkBrowserMutationOrigin(input: OriginCheckInput): OriginCheck
     return { ok: false, reason: 'origin_mismatch' };
   }
 
-  const isTrustedProxy = !!remoteAddress && config.trustedProxyHosts.includes(remoteAddress);
+  const normalizedRemoteAddress = remoteAddress ? normalizeRemoteAddress(remoteAddress) : undefined;
+  const isTrustedProxy = !!normalizedRemoteAddress && config.trustedProxyHosts.includes(normalizedRemoteAddress);
   const effectiveHost = isTrustedProxy && forwardedHostHeader ? forwardedHostHeader : hostHeader;
   if (!effectiveHost || effectiveHost.toLowerCase() !== expectedHost(config.publicOrigin)) {
     return { ok: false, reason: 'host_mismatch' };

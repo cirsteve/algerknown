@@ -30,5 +30,8 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 ENV RAG_HOST=127.0.0.1
 ENV RAG_PORT=4735
 
-# Run the server (shell form so RAG_HOST/RAG_PORT env vars expand)
-CMD uvicorn api:app --host ${RAG_HOST} --port ${RAG_PORT}
+# Run the server. Exec form with `sh -c ... exec` so RAG_HOST/RAG_PORT env
+# vars still expand, but `exec` replaces the shell with uvicorn as PID 1
+# instead of leaving /bin/sh as PID 1 - correct signal handling and
+# graceful shutdown.
+CMD ["/bin/sh", "-c", "exec uvicorn api:app --host ${RAG_HOST} --port ${RAG_PORT}"]
