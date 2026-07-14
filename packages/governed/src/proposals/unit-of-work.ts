@@ -2,7 +2,10 @@ import type { DatabaseType } from '../sqlite/connection.js';
 
 /**
  * Wraps proposal-side bookkeeping (status transition, attestation record,
- * events, reversal, idempotency result) in one exclusive SQLite transaction.
+ * events, reversal, idempotency result) in one SQLite transaction opened
+ * with BEGIN IMMEDIATE, which acquires the write lock up front and is
+ * sufficient here since this unit of work only ever touches proposal
+ * bookkeeping tables after the governed write has already committed.
  * The governed write itself is already atomic via SqliteRepository.commit,
  * which WriteOrchestrator.write() invokes as its own transaction boundary;
  * that fixed orchestrator call sequence is outside this cohort's scope to

@@ -20,6 +20,13 @@ export class SqliteRevisionConflictError extends Error {
   }
 }
 
+export class SqliteNodeSubjectUnresolvedError extends Error {
+  constructor(namespace: string, nodeId: string) {
+    super(`cannot resolve subject for node "${nodeId}" in namespace "${namespace}": no upserted node and no prior current_nodes row`);
+    this.name = 'SqliteNodeSubjectUnresolvedError';
+  }
+}
+
 interface CurrentNodeRow {
   node_id: string;
   type: string;
@@ -303,6 +310,9 @@ export class SqliteRepository implements Repository {
     node: GovernedNode | undefined,
   ): void {
     const subject = node?.subject ?? this.lookupCurrentNodeSubject(namespace, nodeId);
+    if (subject === undefined) {
+      throw new SqliteNodeSubjectUnresolvedError(namespace, nodeId);
+    }
     this.db
       .prepare(
         `INSERT INTO node_revisions
@@ -315,7 +325,7 @@ export class SqliteRepository implements Repository {
         nodeId,
         record.namespaceRevision,
         record.revisionId,
-        subject ?? '',
+        subject,
         node ? 'upsert' : 'delete',
         node ? canonicalStringify(node) : null,
         node ? contentHash(node) : null,

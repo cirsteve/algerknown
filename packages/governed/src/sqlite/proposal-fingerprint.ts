@@ -23,7 +23,7 @@ export function computeProposalFingerprint(input: ProposalFingerprintInput): str
   const sortedObservationIds = [...input.supportingObservationIds].sort();
   const normalizedSources = [...input.sourceReferences]
     .map((s) => ({ kind: s.kind, id: s.id, locator: s.locator ?? null }))
-    .sort((a, b) => `${a.kind}:${a.id}`.localeCompare(`${b.kind}:${b.id}`));
+    .sort((a, b) => `${a.kind}:${a.id}:${a.locator ?? ''}`.localeCompare(`${b.kind}:${b.id}:${b.locator ?? ''}`));
 
   return contentHash({
     targetNamespace: input.targetNamespace,

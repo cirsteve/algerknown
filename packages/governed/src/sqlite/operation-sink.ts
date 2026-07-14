@@ -59,11 +59,19 @@ export class SqliteOperationSink implements OperationSink {
   constructor(private readonly db: DatabaseType) {}
 
   async append(record: OperationRecord): Promise<void> {
-    const existing = this.db.prepare('SELECT 1 FROM operation_events WHERE event_id = ?').get(record.operationId);
-    if (existing) return;
-
     this.db.exec('BEGIN IMMEDIATE');
     try {
+      // Checked inside the transaction, after BEGIN IMMEDIATE has already
+      // acquired the write lock: two concurrent callers can no longer both
+      // observe "not present" and race to insert, which would otherwise
+      // surface a raw UNIQUE-constraint error instead of the promised
+      // idempotent no-op.
+      const existing = this.db.prepare('SELECT 1 FROM operation_events WHERE event_id = ?').get(record.operationId);
+      if (existing) {
+        this.db.exec('COMMIT');
+        return;
+      }
+
       const nextSeqRow = this.db
         .prepare('SELECT COALESCE(MAX(sequence), 0) + 1 AS next FROM operation_events WHERE operation_namespace = ?')
         .get(record.namespace) as { next: number };

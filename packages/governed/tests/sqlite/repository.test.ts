@@ -13,7 +13,7 @@ import {
   type WriteCommand,
 } from '../../src/index.js';
 import { openGovernedDatabase } from '../../src/sqlite/connection.js';
-import { SqliteRepository, SqliteRevisionConflictError } from '../../src/sqlite/repository.js';
+import { SqliteNodeSubjectUnresolvedError, SqliteRepository, SqliteRevisionConflictError } from '../../src/sqlite/repository.js';
 import { createSqliteTestHarness } from './harness.js';
 
 function commandFor(overrides: Partial<WriteCommand> = {}): WriteCommand {
@@ -212,6 +212,44 @@ describe('SqliteRepository via WriteOrchestrator', () => {
 
     expect(await repo.getNamespaceRevision(namespace)).toBe(1);
     expect(await repo.getRevision(namespace, asRevisionId('rev-b'))).toBeUndefined();
+    conn.close();
+  });
+
+  it('fails fast instead of writing an empty subject when a deleted node has no resolvable subject', async () => {
+    const conn = openGovernedDatabase({ filename: ':memory:' });
+    conn.migrate();
+    const repo = new SqliteRepository(conn.db);
+    const namespace = asNamespaceId('memory.community.topic-1');
+    const nodeId = asNodeId('n-orphan');
+
+    // Deliberately violates the normal invariant (a deleted node always has
+    // either an upserted counterpart or a prior current_nodes row) to prove
+    // recordNodeRevision throws instead of silently writing subject = ''.
+    await expect(
+      repo.commit({
+        namespace,
+        previousRevision: null,
+        resultingRevision: 1,
+        revisionRecord: {
+          namespace,
+          revisionId: asRevisionId('rev-a'),
+          previousRevision: null,
+          namespaceRevision: 1,
+          createdAt: '2026-01-01T00:00:00.000Z',
+          actorId: asActorId('actor-1'),
+          actorClass: 'processor',
+          diff: [{ entityKind: 'node', entityId: nodeId, changeKind: 'delete', forward: [], inverse: [] }],
+          idempotencyKey: asIdempotencyKey('idem-a'),
+        },
+        nodesUpserted: [],
+        nodesDeleted: [nodeId],
+        edgesUpserted: [],
+        edgesDeleted: [],
+      }),
+    ).rejects.toThrow(SqliteNodeSubjectUnresolvedError);
+
+    // The whole commit rolled back -- no orphaned namespace bump either.
+    expect(await repo.getNamespaceRevision(namespace)).toBeNull();
     conn.close();
   });
 

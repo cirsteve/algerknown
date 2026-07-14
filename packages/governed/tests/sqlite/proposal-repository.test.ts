@@ -94,6 +94,30 @@ describe('SqliteProposalRepository', () => {
     conn.close();
   });
 
+  it('round-trips a superseded status without collapsing it into rejected', async () => {
+    const { conn, repo } = setup();
+    const command = commandFor();
+    const { mutationHash } = normalizeWriteCommand(command);
+    const proposalId = asProposalId('proposal-1');
+
+    await repo.save({
+      id: proposalId,
+      canonicalMutation: command,
+      mutationHash,
+      targetNamespace: command.namespace,
+      targetSubject: command.subject,
+      expectedTargetRevision: null,
+      supportingObservationIds: [],
+      provenance: { sources: [], railId: 'human', evaluatorVerdicts: [] },
+      version: 1,
+      status: 'superseded',
+      events: [],
+    });
+
+    expect((await repo.get(proposalId))?.status).toBe('superseded');
+    conn.close();
+  });
+
   it('re-saving a proposal is idempotent for already-recorded events', async () => {
     const { conn, repo } = setup();
     const command = commandFor();

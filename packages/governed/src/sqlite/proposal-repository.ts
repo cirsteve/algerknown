@@ -29,7 +29,13 @@ const INTERNAL_TO_PORT_STATUS: Record<InternalProposalStatus, ProposalStatus> = 
   pending: 'pending',
   accepted: 'accepted',
   rejected: 'rejected',
-  expired: 'rejected',
+  // Mirrors PORT_TO_INTERNAL_STATUS.superseded above, so a proposal saved
+  // with port status 'superseded' round-trips back to 'superseded' rather
+  // than being silently collapsed into 'rejected'.
+  expired: 'superseded',
+  // No port status maps to 'deleted' (a tombstone is internal-only), so this
+  // direction has no round-trip case to preserve; 'rejected' is the closest
+  // available terminal-non-accepted status.
   deleted: 'rejected',
 };
 
