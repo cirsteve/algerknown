@@ -45,7 +45,6 @@ export interface RagCandidateLink {
 export interface RagCandidateInput {
   sourceEntryId: string;
   targetSummaryId: string;
-  projectKey: string;
   confidence: number;
   processorVersion: string;
   newLearnings?: RagCandidateLearning[];
@@ -102,7 +101,12 @@ export async function buildCandidateProposeInput(
   const entryPath = core.resolveEntryPath(input.sourceEntryId, deps.algerknownRoot);
   const commit = gitHeadCommit(deps.algerknownRoot);
 
-  const namespace = asNamespaceId(`memory.project.${input.projectKey}`);
+  // The target Summary's own dossier project_key, when it has one, scopes
+  // this to the same project as its governed dossier; otherwise the summary
+  // id itself is a stable per-summary project key. Either way this is
+  // derived server-side from ALGERKNOWN_ROOT, never trusted from the caller.
+  const projectKey = summary.dossier?.project_key ?? input.targetSummaryId;
+  const namespace = asNamespaceId(`memory.project.${projectKey}`);
   const subject = asSubjectId(`algerknown.summary:${input.targetSummaryId}:memory`);
   const anchorId = entryObservationId(input.sourceEntryId);
 

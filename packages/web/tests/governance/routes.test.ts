@@ -82,7 +82,6 @@ describe('governance HTTP API', () => {
       .send({
         sourceEntryId: 'entry-1',
         targetSummaryId: 'demo-dossier',
-        projectKey: 'demo',
         confidence: 0.8,
         processorVersion: '1.0.0',
         newLearnings: [{ insight: 'The demo pipeline is fast.' }],
@@ -109,7 +108,6 @@ describe('governance HTTP API', () => {
       .send({
         sourceEntryId: 'entry-1',
         targetSummaryId: 'demo-dossier',
-        projectKey: 'demo',
         confidence: 0.8,
         processorVersion: '1.0.0',
         newLearnings: [{ insight: 'The demo pipeline is fast.' }],
@@ -134,7 +132,7 @@ describe('governance HTTP API', () => {
   it('rejects a strict-schema violation with 400 before any auth-independent processing', async () => {
     const res = await processorRequest()
       .post('/api/governance/processor/proposals')
-      .send({ sourceEntryId: 'x', targetSummaryId: 'y', projectKey: 'z', confidence: 1, processorVersion: '1', idempotencyKey: 'k', extraField: 'nope' });
+      .send({ sourceEntryId: 'x', targetSummaryId: 'y', confidence: 1, processorVersion: '1', idempotencyKey: 'k', extraField: 'nope' });
     expect(res.status).toBe(400);
   });
 
@@ -151,7 +149,6 @@ describe('governance HTTP API', () => {
     const created = await processorRequest().post('/api/governance/processor/proposals').send({
       sourceEntryId: 'entry-2',
       targetSummaryId: 'demo-dossier',
-      projectKey: 'demo',
       confidence: 0.9,
       processorVersion: '1.0.0',
       newDecisions: [{ decision: 'Use the demo pipeline.' }],
@@ -183,7 +180,6 @@ describe('governance HTTP API', () => {
     const created = await processorRequest().post('/api/governance/processor/proposals').send({
       sourceEntryId: 'entry-3',
       targetSummaryId: 'demo-dossier',
-      projectKey: 'demo',
       confidence: 0.9,
       processorVersion: '1.0.0',
       newOpenQuestions: ['Is this fast enough?'],

@@ -96,7 +96,6 @@ export function createGovernanceRouter(runtime: GovernanceRuntime, composition: 
       | {
           sourceEntryId: string;
           targetSummaryId: string;
-          projectKey: string;
           confidence: number;
           processorVersion: string;
           idempotencyKey: string;
@@ -112,7 +111,6 @@ export function createGovernanceRouter(runtime: GovernanceRuntime, composition: 
       assertOnlyKeys(body, [
         'sourceEntryId',
         'targetSummaryId',
-        'projectKey',
         'confidence',
         'processorVersion',
         'newLearnings',
@@ -124,7 +122,6 @@ export function createGovernanceRouter(runtime: GovernanceRuntime, composition: 
       parsed = {
         sourceEntryId: requireString(body, 'sourceEntryId'),
         targetSummaryId: requireString(body, 'targetSummaryId'),
-        projectKey: requireString(body, 'projectKey'),
         confidence: requireNumber(body, 'confidence'),
         processorVersion: requireString(body, 'processorVersion'),
         idempotencyKey: requireString(body, 'idempotencyKey'),
