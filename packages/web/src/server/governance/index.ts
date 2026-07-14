@@ -9,4 +9,8 @@ export * from './routing-repository.js';
 export * from './git-operation-intents.js';
 export * from './git-operation-recovery.js';
 export * from './review-actions.js';
+export * from './candidate-mapping.js';
+export * from './proposal-queue.js';
+export * from './json-patch.js';
+export * from './request-validation.js';
 export * from './compose.js';
