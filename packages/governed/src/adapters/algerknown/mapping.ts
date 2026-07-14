@@ -15,7 +15,7 @@ import type { GovernedEdge } from '../../domain/edge.js';
 import type { GovernedNode } from '../../domain/node.js';
 import type { Provenance } from '../../domain/provenance.js';
 import type { RevisionMeta } from '../../domain/revision.js';
-import { buildEdgeId, isNativeEdgeKind, parseEdgeId } from './edge-ids.js';
+import { buildEdgeId, isNativeEdgeKind } from './edge-ids.js';
 
 // ---------------------------------------------------------------------------
 // Read direction: Dossier -> governed nodes/edges
@@ -348,6 +348,19 @@ function applyNativeReference(dossier: Dossier, kind: EdgeKind, sourceId: string
 }
 
 /**
+ * A deleted edge's kind and endpoints, resolved by the caller (looked up
+ * against whatever state it was tracking before the delete) since the
+ * governed Repository port's PreparedWrite carries only bare EdgeIds for
+ * deletions -- this mapping module never assumes a particular id scheme.
+ */
+export interface ResolvedEdgeDeletion {
+  edgeId: EdgeId;
+  kind: EdgeKind;
+  sourceId: NodeId;
+  targetId: NodeId;
+}
+
+/**
  * Applies a resolved set of node/edge mutations to a working copy of the
  * dossier. Native edges (evidence_for, about) are folded directly into the
  * relevant *_ids array; derived_from/contradicts/supersedes edges have no
@@ -359,7 +372,7 @@ export function applyGovernedDeltaToDossier(
   nodesUpserted: GovernedNode[],
   nodesDeleted: NodeId[],
   edgesUpserted: GovernedEdge[],
-  edgesDeleted: EdgeId[],
+  edgesDeleted: ResolvedEdgeDeletion[],
 ): Dossier {
   const dossier = structuredClone(currentDossier);
 
@@ -371,10 +384,9 @@ export function applyGovernedDeltaToDossier(
       applyNativeReference(dossier, edge.kind, String(edge.sourceId), String(edge.targetId), true);
     }
   }
-  for (const edgeId of edgesDeleted) {
-    const parsed = parseEdgeId(edgeId);
-    if (isNativeEdgeKind(parsed.kind)) {
-      applyNativeReference(dossier, parsed.kind, String(parsed.sourceId), String(parsed.targetId), false);
+  for (const deletion of edgesDeleted) {
+    if (isNativeEdgeKind(deletion.kind)) {
+      applyNativeReference(dossier, deletion.kind, String(deletion.sourceId), String(deletion.targetId), false);
     }
   }
 

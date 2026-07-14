@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { parseDocument } from 'yaml';
-import { formatErrors, validate, type Summary } from '@algerknown/core';
+import { formatErrors, validate, type Dossier, type Summary } from '@algerknown/core';
 import type { EdgeId, IdempotencyKey, NamespaceId, NodeId, RevisionId } from '../../domain/ids.js';
 import { asActorId, asEdgeId, asNodeId, asRevisionId } from '../../domain/ids.js';
 import type { EdgeKind, GovernedEdge } from '../../domain/edge.js';
@@ -11,8 +11,14 @@ import type { Provenance } from '../../domain/provenance.js';
 import type { RevisionMeta } from '../../domain/revision.js';
 import type { PreparedWrite, Repository, RevisionRecord } from '../../ports/repository.js';
 import { ADAPTER_MAPPING_VERSION, type DossierBinding, namespaceForBinding, subjectForBinding } from './config.js';
-import { isNativeEdgeKind, parseEdgeId } from './edge-ids.js';
-import { applyGovernedDeltaToDossier, mapDossierToGoverned, type AttributionResolver, type RecordAttribution } from './mapping.js';
+import { isNativeEdgeKind } from './edge-ids.js';
+import {
+  applyGovernedDeltaToDossier,
+  mapDossierToGoverned,
+  type AttributionResolver,
+  type RecordAttribution,
+  type ResolvedEdgeDeletion,
+} from './mapping.js';
 import {
   emptySidecar,
   encodeNamespaceForPath,
@@ -228,12 +234,14 @@ export class GitAlgerknownRepository implements Repository {
       );
     }
 
+    const resolvedDeletions = this.resolveEdgeDeletions(write.edgesDeleted, sidecar, currentDossier);
+
     const nextDossier = applyGovernedDeltaToDossier(
       currentDossier,
       write.nodesUpserted,
       write.nodesDeleted,
       write.edgesUpserted,
-      write.edgesDeleted,
+      resolvedDeletions,
     );
 
     const nextSummary: Summary = { ...summary, dossier: nextDossier };
@@ -246,7 +254,7 @@ export class GitAlgerknownRepository implements Repository {
 
     doc.set('dossier', nextDossier);
     const nextDossierContent = doc.toString();
-    const nextSidecar = this.applySidecarDelta(sidecar, write);
+    const nextSidecar = this.applySidecarDelta(sidecar, write, resolvedDeletions);
     const nextSidecarContent = serializeSidecar(nextSidecar);
 
     const files = [
@@ -273,7 +281,48 @@ export class GitAlgerknownRepository implements Repository {
     this.clearRecoveryMarker();
   }
 
-  private applySidecarDelta(sidecar: NamespaceSidecar, write: PreparedWrite): NamespaceSidecar {
+  /**
+   * The governed Repository port carries only bare EdgeIds for deletions, so
+   * this resolves each one's kind/endpoints by lookup against whatever state
+   * it belonged to just before the delete: the sidecar (for derived_from/
+   * contradicts/supersedes) or the dossier's current native edges (for
+   * evidence_for/about). Never assumes a particular edge id scheme.
+   */
+  private resolveEdgeDeletions(edgeIds: EdgeId[], sidecar: NamespaceSidecar, currentDossier: Dossier): ResolvedEdgeDeletion[] {
+    if (edgeIds.length === 0) return [];
+
+    const unusedAttribution: RecordAttribution = {
+      provenance: { sources: [], railId: 'unused', evaluatorVerdicts: [] },
+      revision: {
+        revisionId: asRevisionId('unused'),
+        namespaceRevision: 0,
+        createdAt: '1970-01-01T00:00:00.000Z',
+        actorId: asActorId('unused'),
+        actorClass: 'human',
+      },
+    };
+    const { edges: nativeEdges } = mapDossierToGoverned(currentDossier, this.namespace, this.subject, () => unusedAttribution);
+    const nativeById = new Map(nativeEdges.map((e) => [e.id, e]));
+
+    return edgeIds.map((edgeId) => {
+      const sidecarRecord = sidecar.edges.find((e) => e.id === String(edgeId));
+      if (sidecarRecord) {
+        return {
+          edgeId,
+          kind: sidecarRecord.kind as EdgeKind,
+          sourceId: asNodeId(sidecarRecord.sourceId),
+          targetId: asNodeId(sidecarRecord.targetId),
+        };
+      }
+      const native = nativeById.get(edgeId);
+      if (native) {
+        return { edgeId, kind: native.kind, sourceId: native.sourceId, targetId: native.targetId };
+      }
+      throw new Error(`cannot resolve edge "${edgeId}" for deletion: not found in the namespace sidecar or the dossier's current native edges`);
+    });
+  }
+
+  private applySidecarDelta(sidecar: NamespaceSidecar, write: PreparedWrite, resolvedDeletions: ResolvedEdgeDeletion[]): NamespaceSidecar {
     let edges = [...sidecar.edges];
     for (const edge of write.edgesUpserted) {
       if (isNativeEdgeKind(edge.kind)) continue; // derivable from dossier fields; never persisted here
@@ -289,10 +338,9 @@ export class GitAlgerknownRepository implements Repository {
       if (idx >= 0) edges[idx] = record;
       else edges.push(record);
     }
-    for (const edgeId of write.edgesDeleted) {
-      const parsed = parseEdgeId(edgeId);
-      if (isNativeEdgeKind(parsed.kind)) continue;
-      edges = edges.filter((e) => e.id !== String(edgeId));
+    for (const deletion of resolvedDeletions) {
+      if (isNativeEdgeKind(deletion.kind)) continue;
+      edges = edges.filter((e) => e.id !== String(deletion.edgeId));
     }
 
     const nodeProvenance = { ...sidecar.nodeProvenance };
