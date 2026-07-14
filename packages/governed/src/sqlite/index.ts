@@ -5,3 +5,5 @@ export * from './canonical.js';
 export * from './repository.js';
 export * from './operation-sink.js';
 export * from './usage-counter.js';
+export * from './proposal-fingerprint.js';
+export * from './proposal-repository.js';
