@@ -19,7 +19,6 @@ jobs:
       - run: npm ci
 
       - run: npm run build --workspace=packages/core
-      - run: npm run build --workspace=packages/governed
       - run: npm run build --workspace=packages/cli --workspace=packages/web
 
       - run: npm test
