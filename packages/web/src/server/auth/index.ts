@@ -6,3 +6,6 @@ export * from './cookies.js';
 export * from './origin-guard.js';
 export * from './system-clock.js';
 export * from './governance-runtime.js';
+export * from './reject-identity-fields.js';
+export * from './reviewer-auth.js';
+export * from './processor-auth.js';
