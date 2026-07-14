@@ -11,7 +11,6 @@ import type { Provenance } from '../../domain/provenance.js';
 import type { RevisionMeta } from '../../domain/revision.js';
 import type { PreparedWrite, Repository, RevisionRecord } from '../../ports/repository.js';
 import { ADAPTER_MAPPING_VERSION, type DossierBinding, namespaceForBinding, subjectForBinding } from './config.js';
-import { isNativeEdgeKind } from './edge-ids.js';
 import {
   applyGovernedDeltaToDossier,
   mapDossierToGoverned,
@@ -119,22 +118,29 @@ export class GitAlgerknownRepository implements Repository {
   async getEdge(namespace: NamespaceId, edgeId: EdgeId): Promise<GovernedEdge | undefined> {
     this.assertNamespace(namespace);
     this.recoverIfNeeded();
-    const { edges } = this.mapCurrent();
-    const native = edges.find((e) => e.id === edgeId);
-    if (native) return native;
 
+    // The sidecar's edge id registry is authoritative once a governed write
+    // has touched an edge (it is the only place a caller-chosen id for a
+    // native evidence_for/about relationship is remembered -- the dossier
+    // itself has no concept of edge ids). Only fall back to deriving a fresh
+    // native edge under the adapter's own deterministic id when nothing has
+    // ever registered this id, e.g. a relationship that predates governance.
     const sidecar = this.readSidecar();
     const stored = sidecar.edges.find((e) => e.id === String(edgeId));
-    if (!stored) return undefined;
-    return {
-      id: asEdgeId(stored.id),
-      kind: stored.kind as EdgeKind,
-      namespace: this.namespace,
-      sourceId: asNodeId(stored.sourceId),
-      targetId: asNodeId(stored.targetId),
-      provenance: stored.provenance as Provenance,
-      revision: stored.revision as RevisionMeta,
-    };
+    if (stored) {
+      return {
+        id: asEdgeId(stored.id),
+        kind: stored.kind as EdgeKind,
+        namespace: this.namespace,
+        sourceId: asNodeId(stored.sourceId),
+        targetId: asNodeId(stored.targetId),
+        provenance: stored.provenance as Provenance,
+        revision: stored.revision as RevisionMeta,
+      };
+    }
+
+    const { edges } = this.mapCurrent();
+    return edges.find((e) => e.id === edgeId);
   }
 
   /** Also doubles as the recovery-seam lookup: an external coordinator (e.g. a durable proposal service) can call this directly to check whether an idempotency key already landed, without going through the write orchestrator. */
@@ -322,10 +328,19 @@ export class GitAlgerknownRepository implements Repository {
     });
   }
 
+  /**
+   * The sidecar's edge list doubles as an id registry for every edge a
+   * governed write has ever touched, native or not: the dossier has no
+   * concept of edge ids at all, so a native evidence_for/about edge's
+   * caller-chosen id would otherwise be lost the moment mapDossierToGoverned
+   * re-derives it under the adapter's own deterministic scheme. Whether the
+   * *relationship* also needs a dossier-field mutation (native) or lives
+   * only here (derived_from/contradicts/supersedes) is handled separately
+   * by applyGovernedDeltaToDossier/isNativeEdgeKind.
+   */
   private applySidecarDelta(sidecar: NamespaceSidecar, write: PreparedWrite, resolvedDeletions: ResolvedEdgeDeletion[]): NamespaceSidecar {
     let edges = [...sidecar.edges];
     for (const edge of write.edgesUpserted) {
-      if (isNativeEdgeKind(edge.kind)) continue; // derivable from dossier fields; never persisted here
       const record: SidecarEdgeRecord = {
         id: String(edge.id),
         kind: edge.kind,
@@ -339,7 +354,6 @@ export class GitAlgerknownRepository implements Repository {
       else edges.push(record);
     }
     for (const deletion of resolvedDeletions) {
-      if (isNativeEdgeKind(deletion.kind)) continue;
       edges = edges.filter((e) => e.id !== String(deletion.edgeId));
     }
 
