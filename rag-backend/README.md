@@ -61,7 +61,7 @@ Environment variables (set in root `.env`):
 | `CONTENT_DIR` | Path to content directory | `../content-agn` |
 | `MEMORY_DB_PATH` | jig SqliteStore path (file) | `./memory_db/memory.db` |
 | `TRACER_DB_PATH` | jig SQLite tracer path | `jig_traces.db` |
-| `RAG_HOST` | Server host | `0.0.0.0` |
+| `RAG_HOST` | Server host | `127.0.0.1` (loopback-only by default; see [docs/springfield-deployment.md](../docs/springfield-deployment.md) before changing) |
 | `RAG_PORT` | Server port | `4735` |
 
 `CHROMA_DB_DIR` is still honored as a fallback for `MEMORY_DB_PATH` during the rollout window.

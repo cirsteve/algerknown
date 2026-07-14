@@ -4,7 +4,10 @@ services:
   rag-backend:
     build: .
     ports:
-      - "4735:4735"
+      # Host-published port stays loopback-only; the container listens on
+      # 0.0.0.0 below only because Docker's port publishing can't reach a
+      # process bound to the container's own 127.0.0.1.
+      - "127.0.0.1:4735:4735"
     volumes:
       # Mount content directory (read-write for ingest updates)
       - ../content-agn:/app/content-agn
@@ -14,6 +17,10 @@ services:
       - CONTENT_DIR=/app/content-agn
       - MEMORY_DB_PATH=/app/memory_db/memory.db
       - TRACER_DB_PATH=/app/memory_db/traces.db
+      # Documented override of the image's loopback default (see
+      # docs/springfield-deployment.md) - required for the host port
+      # publish above to reach the container.
+      - RAG_HOST=0.0.0.0
     env_file:
       - .env
     restart: unless-stopped

@@ -16,7 +16,7 @@
     }
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && mkdir -p dist/sqlite/migrations && cp src/sqlite/migrations/*.sql dist/sqlite/migrations/",
     "dev": "tsc --watch",
     "test": "vitest run",
     "lint": "eslint src/"
@@ -32,9 +32,11 @@
     "@algerknown/core": "*",
     "ajv": "^8.12.0",
     "ajv-formats": "^2.1.1",
-    "yaml": "^2.3.4"
+    "yaml": "^2.3.4",
+    "better-sqlite3": "^11.10.0"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20.10.0",
     "typescript": "^5.3.0",
     "vitest": "^1.0.0"

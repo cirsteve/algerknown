@@ -24,5 +24,14 @@ EXPOSE 4735
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:4735/health')" || exit 1
 
-# Run the server
-CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "4735"]
+# Loopback by default. Container-to-container/host-published access needs
+# RAG_HOST=0.0.0.0, set only in the documented docker-compose.yml override
+# (see docs/springfield-deployment.md) - never hardcoded here.
+ENV RAG_HOST=127.0.0.1
+ENV RAG_PORT=4735
+
+# Run the server. Exec form with `sh -c ... exec` so RAG_HOST/RAG_PORT env
+# vars still expand, but `exec` replaces the shell with uvicorn as PID 1
+# instead of leaving /bin/sh as PID 1 - correct signal handling and
+# graceful shutdown.
+CMD ["/bin/sh", "-c", "exec uvicorn api:app --host ${RAG_HOST} --port ${RAG_PORT}"]

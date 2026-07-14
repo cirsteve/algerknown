@@ -43,6 +43,14 @@ const FORBIDDEN_IMPORT_SPECIFIERS = [
   'scout',
 ];
 
+/**
+ * The sqlite/ and proposals/ adapter directories are explicitly authorized to
+ * depend on the SQLite driver (a concrete backend behind the settled ports);
+ * every other forbidden specifier, and every other directory, stays guarded.
+ */
+const SQLITE_DRIVER_SPECIFIERS = ['better-sqlite3', 'sqlite3'];
+const SQLITE_ADAPTER_DIRS = ['sqlite', 'proposals'];
+
 const FORBIDDEN_IDENTIFIERS = [
   'ContextPacket',
   'StateManager',
@@ -59,10 +67,13 @@ function isExempt(label: string): boolean {
   return label === ADAPTER_EXEMPT_DIR || label.startsWith(`${ADAPTER_EXEMPT_DIR}${path.sep}`);
 }
 
-function findForbiddenImport(content: string): string | undefined {
+function findForbiddenImport(content: string, allowSqliteDriver = false): string | undefined {
+  const forbidden = allowSqliteDriver
+    ? FORBIDDEN_IMPORT_SPECIFIERS.filter((spec) => !SQLITE_DRIVER_SPECIFIERS.includes(spec))
+    : FORBIDDEN_IMPORT_SPECIFIERS;
   for (const match of content.matchAll(IMPORT_SPECIFIER_PATTERN)) {
     const specifier = match[1]?.toLowerCase() ?? '';
-    const hit = FORBIDDEN_IMPORT_SPECIFIERS.find((forbidden) => specifier.includes(forbidden.toLowerCase()));
+    const hit = forbidden.find((f) => specifier.includes(f.toLowerCase()));
     if (hit) return hit;
   }
   return undefined;
@@ -74,8 +85,16 @@ function findForbiddenIdentifier(content: string): string | undefined {
 
 describe('scanner self-check (proves the guard actually catches violations)', () => {
   it('flags a forbidden import specifier', () => {
-    expect(findForbiddenImport("import type { Summary } from '@algerknown/core';")).toBe('@algerknown/core');
-    expect(findForbiddenImport("import { ChromaClient } from 'chromadb';")).toBe('chromadb');
+    expect(findForbiddenImport("import type { Summary } from '@algerknown/core';", false)).toBe('@algerknown/core');
+    expect(findForbiddenImport("import { ChromaClient } from 'chromadb';", false)).toBe('chromadb');
+  });
+
+  it('flags better-sqlite3 outside the authorized adapter directories', () => {
+    expect(findForbiddenImport("import Database from 'better-sqlite3';", false)).toBe('better-sqlite3');
+  });
+
+  it('does not flag better-sqlite3 inside the authorized adapter directories', () => {
+    expect(findForbiddenImport("import Database from 'better-sqlite3';", true)).toBeUndefined();
   });
 
   it('flags a forbidden application identifier', () => {
@@ -83,7 +102,7 @@ describe('scanner self-check (proves the guard actually catches violations)', ()
   });
 
   it('does not flag ordinary governed source', () => {
-    expect(findForbiddenImport("import type { NodeId } from '../domain/ids.js';")).toBeUndefined();
+    expect(findForbiddenImport("import type { NodeId } from '../domain/ids.js';", false)).toBeUndefined();
     expect(findForbiddenIdentifier('export interface FactPayload { statement: string }')).toBeUndefined();
   });
 });
@@ -103,10 +122,12 @@ describe('package boundary: @algerknown/governed stays application-independent',
 
   for (const file of files) {
     const label = path.relative(srcRoot, file);
+    const topLevelDir = label.split(path.sep)[0] ?? '';
+    const allowSqliteDriver = SQLITE_ADAPTER_DIRS.includes(topLevelDir);
 
     it(`${label} imports no forbidden module and references no forbidden concept`, () => {
       const content = readFileSync(file, 'utf8');
-      expect(findForbiddenImport(content)).toBeUndefined();
+      expect(findForbiddenImport(content, allowSqliteDriver)).toBeUndefined();
       expect(findForbiddenIdentifier(content)).toBeUndefined();
     });
   }
