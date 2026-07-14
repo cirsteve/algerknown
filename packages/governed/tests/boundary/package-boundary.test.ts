@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -22,10 +22,16 @@ function collectTsFiles(dir: string): string[] {
 const IMPORT_SPECIFIER_PATTERN = /(?:from|require\()\s*['"]([^'"]+)['"]/g;
 
 /**
- * Application-independence is the deliverable: @algerknown/governed must never
- * import the existing dossier representation, Scout, community-application
- * schemas, grading concepts, platform clients, or a concrete backend
- * implementation. Ports abstract all of that away for later cohorts.
+ * Application-independence is the deliverable: @algerknown/governed's domain,
+ * rails, ports, config, write, and read-model modules must never import the
+ * existing dossier representation, Scout, community-application schemas,
+ * grading concepts, platform clients, or a concrete backend implementation.
+ * Ports abstract all of that away for later cohorts.
+ *
+ * The one deliberate exception is src/adapters/algerknown/**: that adapter's
+ * whole job is to translate the existing Algerknown dossier representation
+ * into governed nodes/edges, so it is allowed (and expected) to depend on
+ * @algerknown/core and to reference `Dossier`. See ADAPTER_EXEMPT_DIR below.
  */
 const FORBIDDEN_IMPORT_SPECIFIERS = [
   '@algerknown/core',
@@ -45,6 +51,13 @@ const FORBIDDEN_IDENTIFIERS = [
   'GradingRubric',
   'Dossier',
 ];
+
+/** Relative to srcRoot. The only directory permitted to import @algerknown/core or reference Dossier. */
+const ADAPTER_EXEMPT_DIR = `adapters${path.sep}algerknown`;
+
+function isExempt(label: string): boolean {
+  return label === ADAPTER_EXEMPT_DIR || label.startsWith(`${ADAPTER_EXEMPT_DIR}${path.sep}`);
+}
 
 function findForbiddenImport(content: string): string | undefined {
   for (const match of content.matchAll(IMPORT_SPECIFIER_PATTERN)) {
@@ -76,10 +89,16 @@ describe('scanner self-check (proves the guard actually catches violations)', ()
 });
 
 describe('package boundary: @algerknown/governed stays application-independent', () => {
-  const files = collectTsFiles(srcRoot);
+  const files = collectTsFiles(srcRoot).filter((file) => !isExempt(path.relative(srcRoot, file)));
 
   it('scans a non-trivial number of source files (guards against a vacuous pass)', () => {
     expect(files.length).toBeGreaterThan(20);
+  });
+
+  it('the exemption does not vacuously swallow the whole source tree', () => {
+    const adapterDir = path.join(srcRoot, 'adapters', 'algerknown');
+    if (!existsSync(adapterDir)) return; // exemption is a no-op until the adapter lands
+    expect(collectTsFiles(srcRoot).length).toBeGreaterThan(files.length);
   });
 
   for (const file of files) {
@@ -91,4 +110,25 @@ describe('package boundary: @algerknown/governed stays application-independent',
       expect(findForbiddenIdentifier(content)).toBeUndefined();
     });
   }
+});
+
+describe('package boundary: the algerknown adapter is deliberately exempt', () => {
+  it('is allowed to depend on @algerknown/core and reference Dossier', () => {
+    expect(
+      findForbiddenImport("import type { Dossier, Summary } from '@algerknown/core';"),
+    ).toBe('@algerknown/core');
+    // The exemption is directory-scoped, not a change to the scanner itself --
+    // the scanner still flags the same content; adapters/algerknown files are
+    // simply excluded from the enumeration above.
+  });
+
+  it('every adapters/algerknown/*.ts file that exists is excluded from the application-independence scan', () => {
+    const adapterDir = path.join(srcRoot, 'adapters', 'algerknown');
+    if (!existsSync(adapterDir)) return;
+    const adapterFiles = collectTsFiles(adapterDir);
+    const scannedFiles = collectTsFiles(srcRoot).filter((file) => !isExempt(path.relative(srcRoot, file)));
+    for (const file of adapterFiles) {
+      expect(scannedFiles).not.toContain(file);
+    }
+  });
 });
