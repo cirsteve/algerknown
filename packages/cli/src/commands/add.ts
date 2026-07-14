@@ -16,6 +16,8 @@ import {
   type Entry,
   type Status,
 } from '@algerknown/core';
+import { checkGovernedTarget } from '../governance/boundary-check.js';
+import { reportGovernedRefusal } from '../governance/messages.js';
 
 const STATUS_CHOICES: Status[] = ['active', 'archived', 'reference', 'blocked', 'planned'];
 
@@ -252,6 +254,11 @@ export const addCommand = new Command('add')
           console.error(chalk.red(`  ${err.path}: ${err.message}`));
         }
         process.exit(1);
+      }
+
+      const boundary = checkGovernedTarget(entry.id);
+      if (boundary.governed) {
+        reportGovernedRefusal(entry.id, boundary.namespace);
       }
 
       // Write
