@@ -50,6 +50,17 @@ export function gitShow(repoRoot: string, ref: string, filePath: string): string
   }
 }
 
+/** Author date (ISO 8601) of a commit, used to synthesize read provenance on a repository with no sidecar yet. */
+export function gitCommitDate(repoRoot: string, sha: string): string {
+  return run(repoRoot, ['show', '-s', '--format=%aI', sha]).trim();
+}
+
+/** Stages exactly `paths` into the real index, so `git status` reads clean after materialization. */
+export function gitAdd(repoRoot: string, paths: string[]): void {
+  if (paths.length === 0) return;
+  run(repoRoot, ['add', '--', ...paths]);
+}
+
 export function gitStatusPorcelain(repoRoot: string, paths: string[]): string {
   return run(repoRoot, ['status', '--porcelain', '--', ...paths]);
 }

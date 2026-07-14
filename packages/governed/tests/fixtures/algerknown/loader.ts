@@ -76,6 +76,8 @@ export function seedFixtureRepo(targetDir: string): SeededFixtureRepo {
   execFileSync('git', ['init', '--initial-branch=main', targetDir], { stdio: 'ignore' });
   execFileSync('git', ['-C', targetDir, 'config', 'user.email', 'fixture@algerknown.dev']);
   execFileSync('git', ['-C', targetDir, 'config', 'user.name', 'Algerknown Fixture Seeder']);
+  // Override any global commit.gpgsign so seeding works in sandboxes with no configured signing key.
+  execFileSync('git', ['-C', targetDir, 'config', 'commit.gpgsign', 'false']);
 
   const schemasDir = path.join(targetDir, '.algerknown', 'schemas');
   fs.mkdirSync(schemasDir, { recursive: true });
