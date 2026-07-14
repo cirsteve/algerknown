@@ -48,14 +48,31 @@ function getParent(root: unknown, tokens: string[]): { parent: Record<string, un
   return { parent: current as Record<string, unknown> | unknown[], key: tokens[tokens.length - 1] ?? '' };
 }
 
+/**
+ * "-" (the array append target) is only meaningful as a *write* target for
+ * "add" -- RFC 6902 defines it purely in terms of insertion, not as a
+ * readable "last element" locator. Using it here for test/copy/move reads
+ * would silently read a different element than the caller's path implies.
+ */
 function getValue(root: unknown, pointer: string): unknown {
   const tokens = parsePointer(pointer);
   let current = root;
   for (const token of tokens) {
     if (Array.isArray(current)) {
-      current = current[token === '-' ? current.length - 1 : Number(token)];
+      if (token === '-') {
+        throw new JsonPatchError(`"-" is not a valid read target in path "${pointer}"`);
+      }
+      const index = Number(token);
+      if (!Number.isInteger(index) || index < 0 || index >= current.length) {
+        throw new JsonPatchError(`array index "${token}" out of bounds in path "${pointer}"`);
+      }
+      current = current[index];
     } else if (current && typeof current === 'object') {
-      current = (current as Record<string, unknown>)[token];
+      const record = current as Record<string, unknown>;
+      if (!(token in record)) {
+        throw new JsonPatchError(`path "${pointer}" does not resolve to a value`);
+      }
+      current = record[token];
     } else {
       throw new JsonPatchError(`path "${pointer}" does not resolve to a value`);
     }
@@ -63,6 +80,11 @@ function getValue(root: unknown, pointer: string): unknown {
   return current;
 }
 
+/**
+ * "add" may target index === length (append) or "-" (append shorthand);
+ * "replace" may only target an index that already exists, or it silently
+ * degenerates into an append.
+ */
 function setValue(root: unknown, pointer: string, value: unknown, mode: 'add' | 'replace'): void {
   const tokens = parsePointer(pointer);
   if (tokens.length === 0) {
@@ -70,12 +92,28 @@ function setValue(root: unknown, pointer: string, value: unknown, mode: 'add' | 
   }
   const { parent, key } = getParent(root, tokens);
   if (Array.isArray(parent)) {
-    const index = key === '-' ? parent.length : Number(key);
-    if (Number.isNaN(index) || index < 0 || index > parent.length) {
-      throw new JsonPatchError(`array index "${key}" out of bounds`);
+    if (key === '-') {
+      if (mode !== 'add') {
+        throw new JsonPatchError('"-" is only a valid array target for "add"');
+      }
+      parent.push(value);
+      return;
     }
-    if (mode === 'add') parent.splice(index, 0, value);
-    else parent[index] = value;
+    const index = Number(key);
+    if (!Number.isInteger(index) || index < 0) {
+      throw new JsonPatchError(`array index "${key}" is invalid`);
+    }
+    if (mode === 'add') {
+      if (index > parent.length) {
+        throw new JsonPatchError(`array index "${key}" out of bounds`);
+      }
+      parent.splice(index, 0, value);
+    } else {
+      if (index >= parent.length) {
+        throw new JsonPatchError(`array index "${key}" out of bounds`);
+      }
+      parent[index] = value;
+    }
   } else {
     (parent as Record<string, unknown>)[key] = value;
   }
@@ -103,8 +141,26 @@ function removeValue(root: unknown, pointer: string): unknown {
   return value;
 }
 
+/** Structural JSON equality: object key order never affects the result. */
 function deepEqual(a: unknown, b: unknown): boolean {
-  return JSON.stringify(a) === JSON.stringify(b);
+  if (a === b) return true;
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
+
+  const aIsArray = Array.isArray(a);
+  const bIsArray = Array.isArray(b);
+  if (aIsArray !== bIsArray) return false;
+
+  if (aIsArray && bIsArray) {
+    if (a.length !== b.length) return false;
+    return a.every((item, index) => deepEqual(item, b[index]));
+  }
+
+  const aRecord = a as Record<string, unknown>;
+  const bRecord = b as Record<string, unknown>;
+  const aKeys = Object.keys(aRecord);
+  const bKeys = Object.keys(bRecord);
+  if (aKeys.length !== bKeys.length) return false;
+  return aKeys.every((key) => Object.prototype.hasOwnProperty.call(bRecord, key) && deepEqual(aRecord[key], bRecord[key]));
 }
 
 /** Applies `patch` to a deep clone of `document`, never mutating the input. Throws JsonPatchError on any failure. */

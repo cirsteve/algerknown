@@ -555,6 +555,61 @@ class TestIngestEndpoint:
                 app.state.governance_client = old_governance_client
 
 
+class TestPersistGeneratedCandidates:
+    """Tests for persist_generated_candidates's confidence derivation."""
+
+    @pytest.mark.asyncio
+    async def test_preserves_a_legitimate_zero_match_score(self):
+        """A match_score of exactly 0.0 is a real (if low) confidence value,
+        not an unset one -- `or 0.5` would have silently replaced it."""
+        from api import app, persist_generated_candidates
+
+        captured = {}
+
+        class FakeClient:
+            enabled = True
+
+            async def submit_candidate(self, **kwargs):
+                captured.update(kwargs)
+                return {"proposalId": "p1", "status": "created"}
+
+        old_client = getattr(app.state, "governance_client", None)
+        app.state.governance_client = FakeClient()
+        try:
+            result = await persist_generated_candidates(
+                "job-1",
+                "entry-1",
+                [{"source_entry_id": "entry-1", "target_summary_id": "summary-1", "match_score": 0.0}],
+            )
+            assert captured["confidence"] == 0.0
+            assert result["counts"] == {"generated": 1, "persisted": 1, "suppressed": 0}
+        finally:
+            app.state.governance_client = old_client
+
+    @pytest.mark.asyncio
+    async def test_defaults_confidence_when_match_score_is_absent(self):
+        from api import app, persist_generated_candidates
+
+        captured = {}
+
+        class FakeClient:
+            enabled = True
+
+            async def submit_candidate(self, **kwargs):
+                captured.update(kwargs)
+                return {"proposalId": "p1", "status": "created"}
+
+        old_client = getattr(app.state, "governance_client", None)
+        app.state.governance_client = FakeClient()
+        try:
+            await persist_generated_candidates(
+                "job-1", "entry-1", [{"source_entry_id": "entry-1", "target_summary_id": "summary-1"}]
+            )
+            assert captured["confidence"] == 0.5
+        finally:
+            app.state.governance_client = old_client
+
+
 class TestEntriesWithLastIngested:
     """Tests for the /entries endpoint with last_ingested field."""
 

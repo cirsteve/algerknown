@@ -136,6 +136,12 @@ describe('governance HTTP API', () => {
     expect(res.status).toBe(400);
   });
 
+  it('rejects an invalid queue cursor with 400 instead of 500', async () => {
+    const res = await reviewerRequest().get('/api/governance/proposals?cursor=not-a-valid-cursor');
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('invalid_request');
+  });
+
   it('reviewer can list, inspect, and accept a proposal end to end', async () => {
     fs.mkdirSync(path.join(kb.root, 'entries'), { recursive: true });
     fs.writeFileSync(

@@ -20,7 +20,7 @@ import { rejectClientSuppliedIdentityFields } from '../auth/reject-identity-fiel
 import type { GovernanceComposition } from '../governance/compose.js';
 import { buildCandidateProposeInput, CandidateMappingError } from '../governance/candidate-mapping.js';
 import { acceptProposal, amendProposal, deleteProposal, expireProposal, rejectProposal, revertProposal, ActiveGitOperationError } from '../governance/review-actions.js';
-import { listProposalQueue, getReversal } from '../governance/proposal-queue.js';
+import { listProposalQueue, getReversal, InvalidCursorError } from '../governance/proposal-queue.js';
 import { applyJsonPatch, isJsonPatchOpArray, JsonPatchError } from '../governance/json-patch.js';
 import {
   assertOnlyKeys,
@@ -189,6 +189,10 @@ export function createGovernanceRouter(runtime: GovernanceRuntime, composition: 
         const page = listProposalQueue(db, { status, namespace, subject, cursor, limit });
         res.status(200).json(page);
       } catch (err) {
+        if (err instanceof InvalidCursorError) {
+          sendError(res, 400, 'invalid_request', { message: err.message });
+          return;
+        }
         next(err);
       }
     })();

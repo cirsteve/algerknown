@@ -589,7 +589,7 @@ async def persist_generated_candidates(job_id: str, entry_id: str, candidates: l
             outcome = await client.submit_candidate(
                 source_entry_id=candidate["source_entry_id"],
                 target_summary_id=candidate["target_summary_id"],
-                confidence=float(candidate.get("match_score") or 0.5),
+                confidence=float(candidate["match_score"]) if candidate.get("match_score") is not None else 0.5,
                 idempotency_key=idempotency_key,
                 new_learnings=candidate.get("new_learnings"),
                 new_decisions=candidate.get("new_decisions"),

@@ -53,6 +53,14 @@ export interface RagCandidateInput {
   newLinks?: RagCandidateLink[];
 }
 
+/**
+ * Runs synchronously on the processor request path for every candidate
+ * submission, blocking the event loop for the duration of the git call.
+ * Reviewed and accepted for this single-operator/homelab-scale deployment:
+ * ingest volume is low and a single `git rev-parse` is on the order of a
+ * few milliseconds. If throughput ever grows enough for this to matter,
+ * cache the HEAD lookup for a short TTL or switch to an async exec.
+ */
 function gitHeadCommit(repoRoot: string): string | undefined {
   try {
     return execFileSync('git', ['rev-parse', '--verify', 'HEAD'], { cwd: repoRoot, encoding: 'utf-8' }).trim();

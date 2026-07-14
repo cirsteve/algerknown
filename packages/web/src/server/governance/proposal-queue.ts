@@ -44,15 +44,22 @@ function encodeCursor(cursor: Cursor): string {
   return Buffer.from(JSON.stringify(cursor), 'utf-8').toString('base64url');
 }
 
+export class InvalidCursorError extends Error {
+  constructor() {
+    super('invalid cursor');
+    this.name = 'InvalidCursorError';
+  }
+}
+
 function decodeCursor(value: string): Cursor {
   try {
     const parsed = JSON.parse(Buffer.from(value, 'base64url').toString('utf-8')) as Partial<Cursor>;
     if (typeof parsed.createdAt !== 'string' || typeof parsed.proposalId !== 'string') {
-      throw new Error('malformed cursor');
+      throw new InvalidCursorError();
     }
     return { createdAt: parsed.createdAt, proposalId: parsed.proposalId };
   } catch {
-    throw new Error('invalid cursor');
+    throw new InvalidCursorError();
   }
 }
 
