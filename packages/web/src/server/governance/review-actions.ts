@@ -178,11 +178,18 @@ export async function revertProposal(deps: ReviewActionsDeps, proposalId: Propos
       idempotencyKey: `${input.idempotencyKey}:proposeRevert`,
     });
 
+    // buildRevertCommand (inside proposeRevert) chose its own
+    // expectedNamespaceRevision; the attestation must bind that exact
+    // value, not an assumed one, or the orchestrator's attestation
+    // evaluator rejects it as ATTESTATION_TARGET_REVISION_MISMATCH.
+    const candidateProposal = await deps.proposalService.getProposal(candidate.revertProposalId);
+    const candidateTargetRevision = candidateProposal?.expectedTargetRevision ?? null;
+
     const attestationId = deps.idGenerator.nextAttestationId();
     const event = deps.reviewEventFactory.create(input.reviewContext, {
       proposalId: candidate.revertProposalId,
       proposalVersion: candidate.revertProposalVersion,
-      targetRevision: null,
+      targetRevision: candidateTargetRevision,
       action: 'revert',
       mutationHash: candidate.mutationHash,
       idempotencyKey: asIdempotencyKey(input.idempotencyKey),
@@ -194,7 +201,7 @@ export async function revertProposal(deps: ReviewActionsDeps, proposalId: Propos
       approvedAt: event.actionAt,
       proposalId: candidate.revertProposalId,
       proposalVersion: candidate.revertProposalVersion,
-      targetRevision: null,
+      targetRevision: candidateTargetRevision,
       mutationHash: candidate.mutationHash,
       reviewNote: input.reason,
       channel: event.channel,
