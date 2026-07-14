@@ -33,6 +33,7 @@ import {
   computeAuditDirective,
 } from '../../src/write/evaluators/index.js';
 import { DEFAULT_NODE_SCHEMAS, SchemaRegistry, DEFAULT_CONFIDENCE_POLICY } from '../../src/config/index.js';
+import { HUMAN_POLICY_MODE, HUMAN_GATED_POLICY_MODE } from '../../src/rails/index.js';
 
 function canonicalGlobal(): NamespacePolicyEntry {
   return { pattern: 'canonical.global', class: 'canonical', engine: 'algerknown', policy: 'human' };
@@ -142,7 +143,7 @@ describe('schema-type evaluators', () => {
 
 describe('actor and attestation evaluators', () => {
   it('rejects a processor actor under the human policy', () => {
-    const verdict = evaluateActorClassAllowed('human', 'processor');
+    const verdict = evaluateActorClassAllowed(HUMAN_POLICY_MODE, 'processor');
     expect(verdict.passed).toBe(false);
     expect(verdict.reasonCodes).toContain('ACTOR_CLASS_NOT_PERMITTED_BY_POLICY');
   });
@@ -150,7 +151,7 @@ describe('actor and attestation evaluators', () => {
   it('requires attestation under human-gated policy', async () => {
     const command = baseCommand({ actorClass: 'processor' });
     const verdict = await evaluateAttestationRequirement(
-      'human-gated',
+      HUMAN_GATED_POLICY_MODE,
       command,
       asMutationHash('hash-1'),
       { verify: async () => undefined },
@@ -176,7 +177,7 @@ describe('actor and attestation evaluators', () => {
       events: [],
     };
     const verdict = await evaluateAttestationRequirement(
-      'human',
+      HUMAN_POLICY_MODE,
       command,
       asMutationHash('hash-1'),
       {

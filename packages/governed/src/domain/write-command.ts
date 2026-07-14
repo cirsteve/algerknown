@@ -1,4 +1,4 @@
-import type { ActorId, EdgeId, IdempotencyKey, NamespaceId, NodeId, RevisionId, SubjectId } from './ids.js';
+import type { ActorId, EdgeId, IdempotencyKey, NamespaceId, NodeId, ProcessorId, RevisionId, SubjectId } from './ids.js';
 import type { EdgeKind } from './edge.js';
 import type { NodeType } from './node.js';
 import type { ActorClass, SourceReference } from './provenance.js';
@@ -18,6 +18,7 @@ export type EdgeMutation =
 
 export interface ProvenanceInput {
   sources: SourceReference[];
+  processorId?: ProcessorId;
   processorVersion?: string;
   sourceDerived?: boolean;
 }

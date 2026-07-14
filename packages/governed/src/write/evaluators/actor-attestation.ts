@@ -1,19 +1,20 @@
-import type { PolicyId } from '../../config/namespace-policy.js';
 import type { ActorClass } from '../../domain/provenance.js';
 import type { WriteCommand } from '../../domain/write-command.js';
 import type { MutationHash } from '../../domain/ids.js';
 import type { AttestationVerifier } from '../../ports/attestation-verifier.js';
 import type { ProposalRepository } from '../../ports/proposal-repository.js';
 import type { EvaluatorVerdict } from '../../domain/provenance.js';
+import type { PolicyModeCapabilities } from '../../rails/policy-mode.js';
 import { makeVerdict } from './verdict.js';
 
 /**
- * 'human' accepts only authenticated human-origin writes; 'human-gated' accepts
- * processor-originated writes but still requires attestation (checked
- * separately); 'ai-with-rails' accepts either, gated by the rail evaluators.
+ * Each policy mode declares which actor classes it accepts; 'human' accepts
+ * only authenticated human-origin writes, while 'human-gated' and
+ * 'ai-with-rails' also accept processor-originated writes (gated by
+ * attestation or by the rail evaluators, respectively).
  */
-export function evaluateActorClassAllowed(policy: PolicyId, actorClass: ActorClass): EvaluatorVerdict {
-  if (policy === 'human' && actorClass !== 'human') {
+export function evaluateActorClassAllowed(mode: PolicyModeCapabilities, actorClass: ActorClass): EvaluatorVerdict {
+  if (!mode.acceptedActorClasses.includes(actorClass)) {
     return makeVerdict('actor-attestation', false, ['ACTOR_CLASS_NOT_PERMITTED_BY_POLICY']);
   }
   return makeVerdict('actor-attestation', true);
@@ -25,14 +26,13 @@ export function evaluateActorClassAllowed(policy: PolicyId, actorClass: ActorCla
  * (mutationHash) and proposal version -- presence alone is never sufficient.
  */
 export async function evaluateAttestationRequirement(
-  policy: PolicyId,
+  mode: PolicyModeCapabilities,
   command: WriteCommand,
   mutationHash: MutationHash,
   verifier: AttestationVerifier,
   proposalRepository: ProposalRepository,
 ): Promise<EvaluatorVerdict> {
-  const requiresAttestation = policy === 'human' || policy === 'human-gated';
-  if (!requiresAttestation) {
+  if (!mode.requiresAttestation) {
     return makeVerdict('actor-attestation', true);
   }
 

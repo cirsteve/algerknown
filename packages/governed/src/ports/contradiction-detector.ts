@@ -1,10 +1,23 @@
 import type { NamespaceId, NodeId, SubjectId } from '../domain/ids.js';
-import type { GovernedNode } from '../domain/node.js';
+import type { NodeType } from '../domain/node.js';
+
+/**
+ * A not-yet-applied candidate node. Deliberately lighter than GovernedNode:
+ * at contradiction-check time no revision has been minted yet.
+ */
+export interface ContradictionCandidateNode {
+  id: NodeId;
+  type: NodeType;
+  namespace: NamespaceId;
+  subject: SubjectId;
+  payload: Record<string, unknown>;
+  confidence: number;
+}
 
 export interface ContradictionCandidate {
   namespace: NamespaceId;
   subject: SubjectId;
-  candidateNode: GovernedNode;
+  candidateNode: ContradictionCandidateNode;
 }
 
 export interface ContradictionMatch {

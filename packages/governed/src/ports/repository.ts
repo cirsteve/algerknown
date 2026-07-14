@@ -12,6 +12,7 @@ import type { GovernedEdge } from '../domain/edge.js';
 export interface RevisionRecord {
   namespace: NamespaceId;
   revisionId: RevisionId;
+  previousRevision: number | null;
   namespaceRevision: number;
   createdAt: string;
   actorId: ActorId;
