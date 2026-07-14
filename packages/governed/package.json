@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./adapters/algerknown": {
+      "types": "./dist/adapters/algerknown/index.d.ts",
+      "default": "./dist/adapters/algerknown/index.js"
     }
   },
   "scripts": {
