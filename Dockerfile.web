@@ -25,4 +25,9 @@ COPY --from=build /app/packages/core/dist ./packages/core/dist
 COPY --from=build /app/packages/governed/dist ./packages/governed/dist
 COPY --from=build /app/packages/web/dist ./packages/web/dist
 EXPOSE 2393
+# Loopback by default. Container-to-container/host-published access needs
+# WEB_HOST=0.0.0.0, set only in documented Compose/run configuration
+# alongside a 127.0.0.1-qualified host port mapping (see
+# docs/springfield-deployment.md) - never hardcoded here.
+ENV WEB_HOST=127.0.0.1
 CMD ["node", "packages/web/dist/server/index.js"]

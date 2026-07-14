@@ -29,6 +29,9 @@ for (const envPath of envPaths) {
 
 const app = express();
 const PORT = process.env.PORT || 2393;
+// Loopback by default; see docs/springfield-deployment.md before binding
+// this anywhere else.
+const HOST = process.env.WEB_HOST || '127.0.0.1';
 
 // Middleware
 // No CORS middleware: the SPA and API share one origin, and the browser
@@ -92,8 +95,8 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
   res.status(500).json({ error: err.message || 'Internal server error' });
 });
 
-app.listen(PORT, () => {
-  console.log(`API server running on http://localhost:${PORT}`);
+app.listen(Number(PORT), HOST, () => {
+  console.log(`API server running on http://${HOST}:${PORT}`);
 });
 
 export { app };
