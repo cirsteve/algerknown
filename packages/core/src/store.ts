@@ -8,6 +8,7 @@ import * as path from 'node:path';
 import yaml from 'js-yaml';
 import type { AnyEntry, Summary, Entry, Index } from './types.js';
 import { findRoot, getIndexPath, getSummariesDir, getEntriesDir, getAlgerknownDir } from './config.js';
+import { assertWriteAllowed } from './governed-boundary.js';
 
 /**
  * Read and parse a YAML file
@@ -58,7 +59,8 @@ export function getIndex(root?: string): Index {
 export function saveIndex(index: Index, root?: string): void {
   const kbRoot = root ?? findRoot();
   const indexPath = getIndexPath(kbRoot);
-  
+  assertWriteAllowed(kbRoot, indexPath);
+
   // Add yaml-language-server comment at top
   const content = `# yaml-language-server: $schema=./schemas/index.schema.json\n${yaml.dump(index, {
     indent: 2,
@@ -133,7 +135,8 @@ export function writeEntry(entry: AnyEntry, root?: string): void {
   // Determine file path
   const existingPath = resolveEntryPath(entry.id, kbRoot);
   const entryPath = existingPath ?? getEntryFilePath(entry, kbRoot);
-  
+  assertWriteAllowed(kbRoot, entryPath);
+
   // Add yaml-language-server comment
   const schemaRef = entry.type === 'summary' 
     ? '../.algerknown/schemas/summary.schema.json'
@@ -176,7 +179,8 @@ export function deleteEntry(id: string, root?: string): boolean {
   if (!entryPath || !fs.existsSync(entryPath)) {
     return false;
   }
-  
+  assertWriteAllowed(kbRoot, entryPath);
+
   // Remove file
   fs.unlinkSync(entryPath);
   
