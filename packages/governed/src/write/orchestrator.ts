@@ -437,6 +437,10 @@ export class WriteOrchestrator {
       });
     }
 
+    if (normalized.actorClass === 'processor' && processorId !== undefined) {
+      await this.deps.usageCounter.record(processorId, createdAt);
+    }
+
     const result: AppliedWriteResult = {
       outcome: 'applied',
       previousRevision: currentRevision,

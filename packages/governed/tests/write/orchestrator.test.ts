@@ -5,6 +5,7 @@ import {
   asIdempotencyKey,
   asNamespaceId,
   asNodeId,
+  asProcessorId,
   asProposalId,
   asSubjectId,
   normalizeWriteCommand,
@@ -47,6 +48,22 @@ describe('WriteOrchestrator: AI-with-rails happy path', () => {
 
     const stored = await harness.repository.getNode(asNamespaceId('memory.community.topic-1'), asNodeId('n-1'));
     expect(stored?.payload).toEqual({ description: 'saw a thing' });
+  });
+
+  it('records processor usage on a successful write so volume caps can actually bite', async () => {
+    const harness = createTestHarness();
+    const orchestrator = new WriteOrchestrator(harness);
+    const processorId = asProcessorId('proc-1');
+
+    const before = await harness.usageCounter.countInWindow(processorId, 60_000, harness.clock.now());
+    expect(before).toBe(0);
+
+    await orchestrator.write(
+      commandFor({ provenanceInput: { sources: [{ kind: 'external', id: 'src-1' }], processorId } }),
+    );
+
+    const after = await harness.usageCounter.countInWindow(processorId, 60_000, harness.clock.now());
+    expect(after).toBe(1);
   });
 
   it('replays an identical idempotency key instead of re-applying', async () => {

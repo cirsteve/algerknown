@@ -82,4 +82,25 @@ describe('read-model rebuild', () => {
     expect(first.digest).toBe(second.digest);
     expect(first.finalRevision).toBe(3);
   });
+
+  it('still matches the live projection when rebuilding from a non-zero checkpoint', async () => {
+    // A partial replay starting empty at a mid-history checkpoint could never
+    // legitimately match a full live-projection digest; the coordinator must
+    // always reconstruct full history regardless of the checkpoint given.
+    const harness = createTestHarness();
+    const orchestrator = new WriteOrchestrator(harness);
+    const readModel = new InMemoryReadModel();
+    const coordinator = new InMemoryRebuildCoordinator(harness.repository, readModel);
+
+    await orchestrator.write(commandFor('n-1', 'idem-1'));
+    await orchestrator.write(commandFor('n-2', 'idem-2'));
+    await orchestrator.write(commandFor('n-3', 'idem-3'));
+
+    for (const record of await harness.repository.listRevisionsSince(namespace, 0)) {
+      readModel.ingestRevision(record);
+    }
+
+    const result = await coordinator.rebuild({ namespace, sinceRevision: 1 });
+    expect(result.matchesLiveProjection).toBe(true);
+  });
 });

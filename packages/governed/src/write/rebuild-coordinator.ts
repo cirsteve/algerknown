@@ -4,9 +4,16 @@ import type { RebuildCheckpoint, RebuildCoordinator, RebuildResult } from '../po
 import { applyDiffEntry, createEmptyReplayState, digestReplayState } from './replay.js';
 
 /**
- * Reference RebuildCoordinator: enumerates immutable revisions since the
- * checkpoint, replays their diffs deterministically into a scratch
- * projection, and compares its content digest against the live ReadModel.
+ * Reference RebuildCoordinator: enumerates immutable revisions and replays
+ * their diffs deterministically into a scratch projection, then compares its
+ * content digest against the live ReadModel.
+ *
+ * This in-memory reference has no snapshot/checkpoint state to seed from, so
+ * it always replays the full history from revision 0 regardless of
+ * `checkpoint.sinceRevision` -- a partial replay's digest can never be
+ * validly compared against the live projection's full-history digest. A
+ * persistent-backend coordinator in a later cohort can seed from a stored
+ * snapshot as of the checkpoint instead.
  */
 export class InMemoryRebuildCoordinator implements RebuildCoordinator {
   constructor(
@@ -15,7 +22,7 @@ export class InMemoryRebuildCoordinator implements RebuildCoordinator {
   ) {}
 
   async rebuild(checkpoint: RebuildCheckpoint): Promise<RebuildResult> {
-    const revisions = await this.repository.listRevisionsSince(checkpoint.namespace, checkpoint.sinceRevision);
+    const revisions = await this.repository.listRevisionsSince(checkpoint.namespace, 0);
     const state = createEmptyReplayState();
     let finalRevision = checkpoint.sinceRevision;
 

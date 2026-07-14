@@ -275,6 +275,46 @@ describe('rail matrix: attestation requirement and mismatch handling', () => {
     expect(result.outcome).toBe('rejected');
     if (result.outcome === 'rejected') expect(result.reasonCodes).toContain('ATTESTATION_NOT_FOUND');
   });
+
+  it('rejects an attestation whose reviewed target revision no longer matches the proposal', async () => {
+    const harness = createTestHarness();
+    const orchestrator = new WriteOrchestrator(harness);
+    const command = baseCommand('canonical.project.alpha', 'decision', {
+      actorClass: 'processor',
+      attestation: { attestationId: asAttestationId('att-1') },
+    });
+    const { mutationHash } = normalizeWriteCommand(command);
+    const proposalId = asProposalId('proposal-1');
+    await harness.proposalRepository.save({
+      id: proposalId,
+      canonicalMutation: command,
+      mutationHash,
+      targetNamespace: command.namespace,
+      targetSubject: command.subject,
+      expectedTargetRevision: 3,
+      supportingObservationIds: [],
+      provenance: { sources: [], railId: 'human-gated', evaluatorVerdicts: [] },
+      version: 1,
+      status: 'pending',
+      events: [],
+    });
+    // the reviewer approved this against target revision 2, but the proposal now expects revision 3
+    harness.attestationVerifier.register({
+      id: asAttestationId('att-1'),
+      reviewerId: asActorId('reviewer-1'),
+      approvedAt: '2026-01-01T00:00:00.000Z',
+      proposalId,
+      proposalVersion: 1,
+      targetRevision: 2,
+      mutationHash,
+      channel: 'test',
+      verifierMeta: {},
+    });
+
+    const result = await orchestrator.write(command);
+    expect(result.outcome).toBe('rejected');
+    if (result.outcome === 'rejected') expect(result.reasonCodes).toContain('ATTESTATION_TARGET_REVISION_MISMATCH');
+  });
 });
 
 describe('rail matrix: provenance and support failures', () => {

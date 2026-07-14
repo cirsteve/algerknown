@@ -1,12 +1,11 @@
+import { isDeepStrictEqual } from 'node:util';
 import type { EdgeId, NodeId } from '../domain/ids.js';
 import type { GovernedEdge } from '../domain/edge.js';
 import type { GovernedNode } from '../domain/node.js';
 import type { DiffChangeKind, FieldChange, NodeLevelDiff } from '../domain/revision.js';
 
 function deepEqual(a: unknown, b: unknown): boolean {
-  if (a === b) return true;
-  if (a === undefined || b === undefined || a === null || b === null) return a === b;
-  return JSON.stringify(a) === JSON.stringify(b);
+  return isDeepStrictEqual(a, b);
 }
 
 function diffPayloadFields(

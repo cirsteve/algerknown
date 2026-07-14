@@ -61,6 +61,9 @@ export async function evaluateAttestationRequirement(
   if (attestation.proposalVersion !== proposal.version) {
     return makeVerdict('actor-attestation', false, ['ATTESTATION_VERSION_MISMATCH']);
   }
+  if (attestation.targetRevision !== proposal.expectedTargetRevision) {
+    return makeVerdict('actor-attestation', false, ['ATTESTATION_TARGET_REVISION_MISMATCH']);
+  }
 
   return makeVerdict('actor-attestation', true);
 }
