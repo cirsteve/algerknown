@@ -12,6 +12,7 @@ export type NodeMutation =
 
 export type EdgeMutation =
   | { op: 'create'; edgeId: EdgeId; kind: EdgeKind; sourceId: NodeId; targetId: NodeId }
+  | { op: 'update'; edgeId: EdgeId; kind: EdgeKind }
   | { op: 'delete'; edgeId: EdgeId }
   | { op: 'revert'; edgeId: EdgeId; targetRevisionId: RevisionId };
 
