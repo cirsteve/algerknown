@@ -1,12 +1,13 @@
 import dotenv from 'dotenv';
 import express from 'express';
-import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { entriesRouter } from './routes/entries.js';
 import { linksRouter } from './routes/links.js';
 import { searchRouter } from './routes/search.js';
 import { configRouter } from './routes/config.js';
+import { createGovernanceAuthRouter } from './routes/governance-auth.js';
+import { createGovernanceRuntime } from './auth/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -28,9 +29,14 @@ for (const envPath of envPaths) {
 
 const app = express();
 const PORT = process.env.PORT || 2393;
+// Loopback by default; see docs/springfield-deployment.md before binding
+// this anywhere else.
+const HOST = process.env.WEB_HOST || '127.0.0.1';
 
 // Middleware
-app.use(cors());
+// No CORS middleware: the SPA and API share one origin, and the browser
+// governance trust boundary depends on that being true (see
+// docs/springfield-deployment.md).
 app.use(express.json());
 
 // Health check
@@ -43,6 +49,19 @@ app.use('/api/entries', entriesRouter);
 app.use('/api/links', linksRouter);
 app.use('/api/search', searchRouter);
 app.use('/api/config', configRouter);
+
+// Governance auth (Phase 2 single-operator trust profile). Only mounted
+// when GOVERNANCE_REVIEWER_*/GOVERNANCE_PROCESSOR_* are configured; fails
+// closed (throws at startup) rather than mounting a half-configured
+// governance surface.
+const governanceRuntime = createGovernanceRuntime();
+if (governanceRuntime.config.enabled) {
+  app.use('/api/governance/auth', createGovernanceAuthRouter(governanceRuntime));
+  const sweepIntervalMs = 5 * 60 * 1000;
+  setInterval(() => governanceRuntime.sessionRegistry.sweepExpired(), sweepIntervalMs).unref();
+} else {
+  console.log('Governance auth disabled: no GOVERNANCE_REVIEWER_*/GOVERNANCE_PROCESSOR_* configured');
+}
 
 // Proxy RAG backend requests
 const RAG_BACKEND_URL = process.env.RAG_BACKEND_URL || 'http://localhost:4735';
@@ -76,8 +95,8 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
   res.status(500).json({ error: err.message || 'Internal server error' });
 });
 
-app.listen(PORT, () => {
-  console.log(`API server running on http://localhost:${PORT}`);
+app.listen(Number(PORT), HOST, () => {
+  console.log(`API server running on http://${HOST}:${PORT}`);
 });
 
 export { app };

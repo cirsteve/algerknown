@@ -5,7 +5,6 @@ FastAPI endpoints for query and ingest functionality.
 """
 
 from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Optional
 from contextlib import asynccontextmanager
@@ -166,14 +165,9 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS configuration
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# No CORS middleware: this service is server-to-server only. Browser access
+# goes through the same-origin Node proxy (see docs/springfield-deployment.md)
+# until cohort 6 replaces the mutation routes with governed review actions.
 
 
 # ============ Health Check ============
@@ -964,7 +958,7 @@ def get_entry_history(entry_id: str, limit: int = 50):
 if __name__ == "__main__":
     import uvicorn
     
-    host = os.getenv("RAG_HOST", os.getenv("HOST", "0.0.0.0"))
+    host = os.getenv("RAG_HOST", os.getenv("HOST", "127.0.0.1"))
     port = int(os.getenv("RAG_PORT", os.getenv("PORT", "4735")))
     
     uvicorn.run("api:app", host=host, port=port, reload=True)
