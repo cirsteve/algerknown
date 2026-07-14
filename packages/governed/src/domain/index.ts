@@ -4,3 +4,7 @@ export * from './reason-codes.js';
 export * from './revision.js';
 export * from './node.js';
 export * from './edge.js';
+export * from './attestation.js';
+export * from './write-command.js';
+export * from './write-result.js';
+export * from './proposal.js';
