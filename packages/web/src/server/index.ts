@@ -1,6 +1,5 @@
 import dotenv from 'dotenv';
 import express from 'express';
-import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { entriesRouter } from './routes/entries.js';
@@ -30,7 +29,9 @@ const app = express();
 const PORT = process.env.PORT || 2393;
 
 // Middleware
-app.use(cors());
+// No CORS middleware: the SPA and API share one origin, and the browser
+// governance trust boundary depends on that being true (see
+// docs/springfield-deployment.md).
 app.use(express.json());
 
 // Health check
