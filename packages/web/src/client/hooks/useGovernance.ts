@@ -1,0 +1,122 @@
+import { useCallback } from 'react';
+import useSWR, { mutate as globalMutate } from 'swr';
+import { useGovernanceAuth } from '../auth';
+import {
+  governanceApi,
+  newIdempotencyKey,
+  type JsonPatchOp,
+  type ProposalDetail,
+  type ProposalQueueFilters,
+  type ProposalQueuePage,
+  type NodeHistoryResponse,
+} from '../lib/governanceApi';
+
+const QUEUE_KEY = 'governance:queue';
+const PROPOSAL_KEY = 'governance:proposal';
+const NODE_HISTORY_KEY = 'governance:node-history';
+
+const QUEUE_POLL_MS = 15_000;
+
+function queueKey(filters: ProposalQueueFilters) {
+  return [QUEUE_KEY, filters.status ?? null, filters.namespace ?? null, filters.subject ?? null, filters.cursor ?? null, filters.limit ?? null] as const;
+}
+
+export function useProposalQueue(filters: ProposalQueueFilters) {
+  const { governanceFetch, status } = useGovernanceAuth();
+  const { data, error, isLoading, mutate } = useSWR<ProposalQueuePage>(
+    status === 'unlocked' ? queueKey(filters) : null,
+    () => governanceApi.listProposals(governanceFetch, filters),
+    { refreshInterval: QUEUE_POLL_MS, revalidateOnFocus: false },
+  );
+
+  return { page: data ?? null, error: error ?? null, isLoading, mutate };
+}
+
+export function useProposalDetail(id: string | null, options: { paused?: boolean } = {}) {
+  const { governanceFetch, status } = useGovernanceAuth();
+  const { data, error, isLoading, mutate } = useSWR<ProposalDetail>(
+    id && status === 'unlocked' ? [PROPOSAL_KEY, id] : null,
+    () => governanceApi.getProposal(governanceFetch, id!),
+    { refreshInterval: options.paused ? 0 : QUEUE_POLL_MS, revalidateOnFocus: false },
+  );
+
+  return { proposal: data ?? null, error: error ?? null, isLoading, mutate };
+}
+
+export function useNodeHistory(namespace: string | null, entityId: string | null) {
+  const { governanceFetch, status } = useGovernanceAuth();
+  const { data, error, isLoading } = useSWR<NodeHistoryResponse>(
+    namespace && entityId && status === 'unlocked' ? [NODE_HISTORY_KEY, namespace, entityId] : null,
+    () => governanceApi.getNodeHistory(governanceFetch, namespace!, entityId!),
+    { revalidateOnFocus: false },
+  );
+
+  return { revisions: data?.revisions ?? null, error: error ?? null, isLoading };
+}
+
+/** Invalidates every cached queue page and the given proposal's detail/history after a durable mutation. */
+async function invalidateAfterAction(id: string) {
+  await globalMutate((key) => Array.isArray(key) && (key[0] === QUEUE_KEY || (key[0] === PROPOSAL_KEY && key[1] === id)));
+}
+
+export function useProposalActions(id: string) {
+  const { governanceFetch } = useGovernanceAuth();
+
+  const amend = useCallback(
+    async (input: { expectedVersion: number; patch: JsonPatchOp[]; idempotencyKey: string }) => {
+      const result = await governanceApi.amendProposal(governanceFetch, id, input);
+      await invalidateAfterAction(id);
+      return result;
+    },
+    [governanceFetch, id],
+  );
+
+  const accept = useCallback(
+    async (input: { expectedVersion: number; expectedTargetRevision: number | null; reviewNote: string; idempotencyKey: string }) => {
+      const result = await governanceApi.acceptProposal(governanceFetch, id, input);
+      await invalidateAfterAction(id);
+      return result;
+    },
+    [governanceFetch, id],
+  );
+
+  const reject = useCallback(
+    async (input: { expectedVersion: number; reason: string; idempotencyKey: string }) => {
+      const result = await governanceApi.rejectProposal(governanceFetch, id, input);
+      await invalidateAfterAction(id);
+      return result;
+    },
+    [governanceFetch, id],
+  );
+
+  const expire = useCallback(
+    async (input: { expectedVersion: number; note: string; idempotencyKey: string }) => {
+      const result = await governanceApi.expireProposal(governanceFetch, id, input);
+      await invalidateAfterAction(id);
+      return result;
+    },
+    [governanceFetch, id],
+  );
+
+  const deleteProposal = useCallback(
+    async (input: { expectedVersion: number; reason: string; idempotencyKey: string }) => {
+      const result = await governanceApi.deleteProposal(governanceFetch, id, input);
+      await invalidateAfterAction(id);
+      return result;
+    },
+    [governanceFetch, id],
+  );
+
+  const revert = useCallback(
+    async (input: { reason: string; idempotencyKey: string }) => {
+      const result = await governanceApi.revertProposal(governanceFetch, id, input);
+      await invalidateAfterAction(id);
+      return result;
+    },
+    [governanceFetch, id],
+  );
+
+  return { amend, accept, reject, expire, delete: deleteProposal, revert };
+}
+
+export { newIdempotencyKey };
