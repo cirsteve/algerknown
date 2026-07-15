@@ -107,86 +107,91 @@ function compileSchema(ajv: Ajv2020, schemaPath: string) {
   return ajv.compile(schema);
 }
 
-describe.runIf(CORPUS_DIR !== null)('conformance corpus (content-agn/conformance/v1)', () => {
-  const corpusDir = CORPUS_DIR!;
+// NOTE: describe.runIf()/skipIf() only mark the resulting suite as skipped —
+// vitest still calls the describe callback synchronously during collection
+// to discover its `it()`s. Since the corpus may not exist (CORPUS_DIR would
+// be null), the manifest-loading body below must never run in that case, so
+// this is gated with a plain `if` instead of describe.runIf.
+if (CORPUS_DIR !== null) {
+  const corpusDir = CORPUS_DIR;
   const manifest: Manifest = JSON.parse(fs.readFileSync(path.join(corpusDir, 'manifest.json'), 'utf-8'));
 
   const ajv = new Ajv2020({ allErrors: true, strict: false, validateFormats: true });
   addFormats(ajv);
   const validateIndex = compileSchema(ajv, path.join(corpusDir, manifest.schemas.index));
 
-  it.each(manifest.fixtures)('fixture $id', (fixture) => {
-    const filePath = path.join(corpusDir, fixture.file);
-    const doc = yaml.load(fs.readFileSync(filePath, 'utf-8'));
+  describe('conformance corpus (content-agn/conformance/v1)', () => {
+    it.each(manifest.fixtures)('fixture $id', (fixture) => {
+      const filePath = path.join(corpusDir, fixture.file);
+      const doc = yaml.load(fs.readFileSync(filePath, 'utf-8'));
 
-    if (fixture.kind === 'index') {
-      const valid = validateIndex(doc);
-      expect(valid).toBe(fixture.expected.valid);
-      return;
-    }
-
-    // summary/entry: exercise the full producer pipeline (schema + semantic)
-    // against content-agn's own tracked, deployed schemas.
-    const result = validate(doc as never, corpusDir.replace(/\/conformance\/v1$/, ''));
-    expect(result.valid).toBe(fixture.expected.valid);
-
-    if (!fixture.expected.valid) {
-      const { stage, rules } = classifyRule(result.errors);
-      expect(stage, `fixture ${fixture.id}: expected failingStage`).toBe(fixture.expected.failingStage);
-      expect(rules, `fixture ${fixture.id}: expected rule ${fixture.expected.rule}, got errors: ${JSON.stringify(result.errors)}`).toContain(fixture.expected.rule);
-    }
-  });
-
-  it('normalization vectors', () => {
-    const vectorsPath = path.join(corpusDir, manifest.normalizationVectors);
-    const data = JSON.parse(fs.readFileSync(vectorsPath, 'utf-8')) as { vectors: Array<{ id: string; input: string; expected: string }> };
-    for (const v of data.vectors) {
-      expect(canonicalNormalize(v.input), `vector ${v.id}`).toBe(v.expected);
-    }
-  });
-
-  it('prohibition vectors: regex grammar accept/reject', () => {
-    const vectorsPath = path.join(corpusDir, manifest.prohibitionVectors);
-    const data = JSON.parse(fs.readFileSync(vectorsPath, 'utf-8')) as {
-      regexGrammar: Array<{ id: string; pattern: string; accepted: boolean }>;
-    };
-    for (const v of data.regexGrammar) {
-      let accepted = true;
-      try {
-        parsePortableRegex(v.pattern);
-      } catch (err) {
-        expect(err, `vector ${v.id}`).toBeInstanceOf(PortableRegexError);
-        accepted = false;
+      if (fixture.kind === 'index') {
+        const valid = validateIndex(doc);
+        expect(valid).toBe(fixture.expected.valid);
+        return;
       }
-      expect(accepted, `vector ${v.id}`).toBe(v.accepted);
-    }
-  });
 
-  it('prohibition vectors: matcher verdicts', () => {
-    const vectorsPath = path.join(corpusDir, manifest.prohibitionVectors);
-    const data = JSON.parse(fs.readFileSync(vectorsPath, 'utf-8')) as {
-      matchVectors: Array<{
-        id: string;
-        matcher: { type: 'exact_phrase' | 'normalized_phrase' | 'regex'; pattern: string; flags?: string };
-        subject: string;
-        expected: boolean;
-      }>;
-    };
-    for (const v of data.matchVectors) {
-      const base = { id: 'proh-1', forbidden_phrasings: ['x'], evidence_ids: ['e'] };
-      const proh = (
-        v.matcher.type === 'exact_phrase'
-          ? { ...base, exact_phrase: v.matcher.pattern }
-          : v.matcher.type === 'normalized_phrase'
-            ? { ...base, normalized_phrase: v.matcher.pattern }
-            : { ...base, regex: v.matcher.pattern, ...(v.matcher.flags !== undefined ? { flags: v.matcher.flags } : {}) }
-      ) as unknown as DossierProhibition;
-      expect(matchesProhibition(proh, v.subject), `vector ${v.id}`).toBe(v.expected);
-    }
-  });
-});
+      // summary/entry: exercise the full producer pipeline (schema + semantic)
+      // against content-agn's own tracked, deployed schemas.
+      const result = validate(doc as never, corpusDir.replace(/\/conformance\/v1$/, ''));
+      expect(result.valid).toBe(fixture.expected.valid);
 
-if (CORPUS_DIR === null) {
+      if (!fixture.expected.valid) {
+        const { stage, rules } = classifyRule(result.errors);
+        expect(stage, `fixture ${fixture.id}: expected failingStage`).toBe(fixture.expected.failingStage);
+        expect(rules, `fixture ${fixture.id}: expected rule ${fixture.expected.rule}, got errors: ${JSON.stringify(result.errors)}`).toContain(fixture.expected.rule);
+      }
+    });
+
+    it('normalization vectors', () => {
+      const vectorsPath = path.join(corpusDir, manifest.normalizationVectors);
+      const data = JSON.parse(fs.readFileSync(vectorsPath, 'utf-8')) as { vectors: Array<{ id: string; input: string; expected: string }> };
+      for (const v of data.vectors) {
+        expect(canonicalNormalize(v.input), `vector ${v.id}`).toBe(v.expected);
+      }
+    });
+
+    it('prohibition vectors: regex grammar accept/reject', () => {
+      const vectorsPath = path.join(corpusDir, manifest.prohibitionVectors);
+      const data = JSON.parse(fs.readFileSync(vectorsPath, 'utf-8')) as {
+        regexGrammar: Array<{ id: string; pattern: string; accepted: boolean }>;
+      };
+      for (const v of data.regexGrammar) {
+        let accepted = true;
+        try {
+          parsePortableRegex(v.pattern);
+        } catch (err) {
+          expect(err, `vector ${v.id}`).toBeInstanceOf(PortableRegexError);
+          accepted = false;
+        }
+        expect(accepted, `vector ${v.id}`).toBe(v.accepted);
+      }
+    });
+
+    it('prohibition vectors: matcher verdicts', () => {
+      const vectorsPath = path.join(corpusDir, manifest.prohibitionVectors);
+      const data = JSON.parse(fs.readFileSync(vectorsPath, 'utf-8')) as {
+        matchVectors: Array<{
+          id: string;
+          matcher: { type: 'exact_phrase' | 'normalized_phrase' | 'regex'; pattern: string; flags?: string };
+          subject: string;
+          expected: boolean;
+        }>;
+      };
+      for (const v of data.matchVectors) {
+        const base = { id: 'proh-1', forbidden_phrasings: ['x'], evidence_ids: ['e'] };
+        const proh = (
+          v.matcher.type === 'exact_phrase'
+            ? { ...base, exact_phrase: v.matcher.pattern }
+            : v.matcher.type === 'normalized_phrase'
+              ? { ...base, normalized_phrase: v.matcher.pattern }
+              : { ...base, regex: v.matcher.pattern, ...(v.matcher.flags !== undefined ? { flags: v.matcher.flags } : {}) }
+        ) as unknown as DossierProhibition;
+        expect(matchesProhibition(proh, v.subject), `vector ${v.id}`).toBe(v.expected);
+      }
+    });
+  });
+} else {
   describe('conformance corpus (content-agn/conformance/v1)', () => {
     it.skip('skipped: no content-agn checkout found (set CONFORMANCE_CORPUS_DIR)', () => {});
   });
