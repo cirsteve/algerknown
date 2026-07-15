@@ -74,9 +74,15 @@ export function useAcceptedRevisionIndex(namespace: string | null) {
   return index;
 }
 
-/** Invalidates every cached queue page and the given proposal's detail/history after a durable mutation. */
+/**
+ * Invalidates every cached queue page (including the accepted-revision
+ * index used for history cross-referencing), the given proposal's detail,
+ * and every cached node-history entry after a durable mutation -- accept
+ * and revert can both change what a node's revision history and the
+ * ChangesPage/Entry views backed by it should show.
+ */
 async function invalidateAfterAction(id: string) {
-  await globalMutate((key) => Array.isArray(key) && (key[0] === QUEUE_KEY || (key[0] === PROPOSAL_KEY && key[1] === id)));
+  await globalMutate((key) => Array.isArray(key) && (key[0] === QUEUE_KEY || key[0] === NODE_HISTORY_KEY || (key[0] === PROPOSAL_KEY && key[1] === id)));
 }
 
 export function useProposalActions(id: string) {
