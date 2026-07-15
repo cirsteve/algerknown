@@ -25,6 +25,7 @@ import type { GovernanceComposition } from '../governance/compose.js';
 import { buildCandidateProposeInput, CandidateMappingError } from '../governance/candidate-mapping.js';
 import { acceptProposal, amendProposal, deleteProposal, expireProposal, rejectProposal, revertProposal, ActiveGitOperationError } from '../governance/review-actions.js';
 import { listProposalQueue, getReversal, InvalidCursorError } from '../governance/proposal-queue.js';
+import { RepositoryEngineUnavailableError } from '../governance/routing-repository.js';
 import { applyJsonPatch, isJsonPatchOpArray, JsonPatchError } from '../governance/json-patch.js';
 import {
   assertOnlyKeys,
@@ -55,6 +56,10 @@ function withValidation(res: Response, fn: () => void): void {
 }
 
 async function handleReviewActionError(res: Response, err: unknown): Promise<void> {
+  if (err instanceof RepositoryEngineUnavailableError) {
+    sendError(res, 503, 'repository_unavailable', { message: err.message });
+    return;
+  }
   if (err instanceof ProposalNotFoundError) {
     sendError(res, 404, 'not_found');
     return;

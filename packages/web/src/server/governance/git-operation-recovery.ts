@@ -81,7 +81,15 @@ export async function recoverIncompleteGitOperations(deps: RecoverIncompleteGitO
       continue;
     }
 
-    const attestation = JSON.parse(intent.attestationJson) as Parameters<LocalAttestationVerifier['register']>[0];
+    let attestation: Parameters<LocalAttestationVerifier['register']>[0];
+    try {
+      attestation = JSON.parse(intent.attestationJson) as Parameters<LocalAttestationVerifier['register']>[0];
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      blockIntent(db, intent.operationId, `invalid durable attestation JSON: ${message}`, clock.now());
+      log(`governance recovery: blocked intent ${intent.operationId} on proposal ${proposalId} (invalid durable attestation JSON)`);
+      continue;
+    }
     deps.attestationVerifier.register(attestation);
     try {
       if (intent.action === 'accept') {

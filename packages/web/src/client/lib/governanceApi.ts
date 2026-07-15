@@ -22,6 +22,7 @@ const STABLE_ERROR_CODES = [
   'idempotency_key_reused',
   'rejected',
   'operation_in_progress',
+  'repository_unavailable',
   'invalid_patch',
   'unauthorized',
 ] as const;
