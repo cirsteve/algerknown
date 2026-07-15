@@ -106,8 +106,16 @@ async function main(): Promise<void> {
   // Error handler. The internal message is logged server-side but never
   // returned to the client -- echoing err.message leaks internals (namespace
   // names, configured engines, stack context) to the caller.
-  app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  app.use((err: Error, _req: express.Request, res: express.Response, next: express.NextFunction) => {
     console.error('Server error:', err);
+    // Once the response has started streaming we can no longer set a status or
+    // body; delegate to Express's built-in handler (which aborts the socket)
+    // rather than throwing "Can't set headers after they are sent" and masking
+    // the original error.
+    if (res.headersSent) {
+      next(err);
+      return;
+    }
     res.status(500).json({ error: 'Internal server error' });
   });
 

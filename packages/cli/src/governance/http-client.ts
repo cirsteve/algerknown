@@ -53,14 +53,28 @@ export class GovernanceClient {
   }
 
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
-    const res = await fetch(`${this.baseUrl}${path}`, {
-      method,
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.secret}` },
-      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-      // Without a timeout a wedged or half-open server hangs the command
-      // indefinitely with no feedback.
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
+    let res: Response;
+    try {
+      res = await fetch(`${this.baseUrl}${path}`, {
+        method,
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.secret}` },
+        ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+        // Without a timeout a wedged or half-open server hangs the command
+        // indefinitely with no feedback.
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+    } catch (err) {
+      // fetch rejects (not resolves) on connection failure -- server down,
+      // wrong host/port, DNS -- and when AbortSignal.timeout fires (a
+      // TimeoutError). Surface both as a GovernanceApiError (status 0, "no
+      // HTTP response") so `agn review` prints an actionable message instead
+      // of an opaque TypeError/TimeoutError.
+      const reason =
+        err instanceof Error && err.name === 'TimeoutError'
+          ? `request timed out after ${REQUEST_TIMEOUT_MS}ms`
+          : `could not reach governance API at ${this.baseUrl} (${err instanceof Error ? err.message : String(err)})`;
+      throw new GovernanceApiError(0, { error: reason });
+    }
     const text = await res.text();
     // Parse defensively: a misconfigured URL/port or a reverse-proxy error page
     // returns non-JSON (HTML), which must surface as a GovernanceApiError with
