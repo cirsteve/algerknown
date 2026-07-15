@@ -32,12 +32,19 @@ export interface ProposalsTestHarness {
 export function createProposalsTestHarness(
   filename = ':memory:',
   config: GovernedConfig = DEFAULT_GOVERNED_CONFIG,
+  /**
+   * Distinguishes id sequences across multiple harnesses opened against the
+   * *same* database file (e.g. simulating a close + reopen): the test id
+   * generator's counters otherwise restart from the same values each time,
+   * colliding with ids already persisted from an earlier harness instance.
+   */
+  idPrefix?: string,
 ): ProposalsTestHarness {
   const connection = openGovernedDatabase({ filename });
   connection.migrate();
 
   const clock = createTestClock();
-  const idGenerator = createTestIdGenerator();
+  const idGenerator = createTestIdGenerator(idPrefix);
   const attestationVerifier = new StubAttestationVerifier();
   const contradictionDetector = new ConfigurableContradictionDetector();
 
