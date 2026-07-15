@@ -4,7 +4,7 @@ import { ragApi, checkRagConnection, type IngestResult } from '../lib/ragApi';
 import { api, IndexEntryRef } from '../lib/api';
 import { useJob } from '../hooks/useJob';
 import { useJobsContext } from '../context/JobsContext';
-import { revalidateProposalQueue } from '../hooks/useGovernance';
+import { useRevalidateProposalQueue } from '../hooks/useGovernance';
 import type { DurableProposalStatus } from '../lib/governanceApi';
 import { GovernanceQueue } from '../components/governance/GovernanceQueue';
 import { ProposalFilters } from '../components/governance/ProposalFilters';
@@ -41,6 +41,7 @@ export function IngestPage() {
 
   const { isComplete, isFailed, result, progress, progressDetail, job, error: jobError } = useJob<IngestResult>(currentJobId);
   const { trackJob } = useJobsContext();
+  const revalidateProposalQueue = useRevalidateProposalQueue();
 
   const status = isStatus(searchParams.get(STATUS_PARAM)) ? (searchParams.get(STATUS_PARAM) as DurableProposalStatus) : 'pending';
   const namespace = searchParams.get(NAMESPACE_PARAM) ?? '';

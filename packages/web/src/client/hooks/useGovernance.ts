@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import useSWR, { mutate as globalMutate } from 'swr';
+import useSWR, { useSWRConfig } from 'swr';
 import { useGovernanceAuth } from '../auth';
 import {
   governanceApi,
@@ -74,80 +74,89 @@ export function useAcceptedRevisionIndex(namespace: string | null) {
   return index;
 }
 
+type ScopedMutate = ReturnType<typeof useSWRConfig>['mutate'];
+
 /**
  * Invalidates every cached queue page (including the accepted-revision
  * index used for history cross-referencing), the given proposal's detail,
  * and every cached node-history entry after a durable mutation -- accept
  * and revert can both change what a node's revision history and the
- * ChangesPage/Entry views backed by it should show.
+ * ChangesPage/Entry views backed by it should show. Uses the *contextual*
+ * mutate from useSWRConfig(), not the bare global one, so this correctly
+ * reaches whichever cache is actually active (relevant for tests that scope
+ * an isolated cache per render via <SWRConfig>).
  */
-async function invalidateAfterAction(id: string) {
-  await globalMutate((key) => Array.isArray(key) && (key[0] === QUEUE_KEY || key[0] === NODE_HISTORY_KEY || (key[0] === PROPOSAL_KEY && key[1] === id)));
+async function invalidateAfterAction(mutate: ScopedMutate, id: string) {
+  await mutate((key) => Array.isArray(key) && (key[0] === QUEUE_KEY || key[0] === NODE_HISTORY_KEY || (key[0] === PROPOSAL_KEY && key[1] === id)));
 }
 
 export function useProposalActions(id: string) {
   const { governanceFetch } = useGovernanceAuth();
+  const { mutate } = useSWRConfig();
 
   const amend = useCallback(
     async (input: { expectedVersion: number; patch: JsonPatchOp[]; idempotencyKey: string }) => {
       const result = await governanceApi.amendProposal(governanceFetch, id, input);
-      await invalidateAfterAction(id);
+      await invalidateAfterAction(mutate, id);
       return result;
     },
-    [governanceFetch, id],
+    [governanceFetch, id, mutate],
   );
 
   const accept = useCallback(
     async (input: { expectedVersion: number; expectedTargetRevision: number | null; reviewNote: string; idempotencyKey: string }) => {
       const result = await governanceApi.acceptProposal(governanceFetch, id, input);
-      await invalidateAfterAction(id);
+      await invalidateAfterAction(mutate, id);
       return result;
     },
-    [governanceFetch, id],
+    [governanceFetch, id, mutate],
   );
 
   const reject = useCallback(
     async (input: { expectedVersion: number; reason: string; idempotencyKey: string }) => {
       const result = await governanceApi.rejectProposal(governanceFetch, id, input);
-      await invalidateAfterAction(id);
+      await invalidateAfterAction(mutate, id);
       return result;
     },
-    [governanceFetch, id],
+    [governanceFetch, id, mutate],
   );
 
   const expire = useCallback(
     async (input: { expectedVersion: number; note: string; idempotencyKey: string }) => {
       const result = await governanceApi.expireProposal(governanceFetch, id, input);
-      await invalidateAfterAction(id);
+      await invalidateAfterAction(mutate, id);
       return result;
     },
-    [governanceFetch, id],
+    [governanceFetch, id, mutate],
   );
 
   const deleteProposal = useCallback(
     async (input: { expectedVersion: number; reason: string; idempotencyKey: string }) => {
       const result = await governanceApi.deleteProposal(governanceFetch, id, input);
-      await invalidateAfterAction(id);
+      await invalidateAfterAction(mutate, id);
       return result;
     },
-    [governanceFetch, id],
+    [governanceFetch, id, mutate],
   );
 
   const revert = useCallback(
     async (input: { reason: string; idempotencyKey: string }) => {
       const result = await governanceApi.revertProposal(governanceFetch, id, input);
-      await invalidateAfterAction(id);
+      await invalidateAfterAction(mutate, id);
       return result;
     },
-    [governanceFetch, id],
+    [governanceFetch, id, mutate],
   );
 
   return { amend, accept, reject, expire, delete: deleteProposal, revert };
 }
 
 /** Forces every cached queue page to revalidate now, e.g. right after an ingest job durably persists new proposals. */
-export async function revalidateProposalQueue() {
-  await globalMutate((key) => Array.isArray(key) && key[0] === QUEUE_KEY);
+export function useRevalidateProposalQueue() {
+  const { mutate } = useSWRConfig();
+  return useCallback(async () => {
+    await mutate((key) => Array.isArray(key) && key[0] === QUEUE_KEY);
+  }, [mutate]);
 }
 
 export { newIdempotencyKey };
