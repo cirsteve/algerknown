@@ -142,6 +142,37 @@ describe('EC7: browser cookie/CSRF and processor propose-only trust boundary', (
     expect(String(acceptedEvent.actorId)).toBe('steve');
   });
 
+  // Regression test for a real bug: Chromium (and every other browser) never
+  // sends an Origin header on a same-origin GET, so a middleware that
+  // unconditionally required Origin on every method -- including reads --
+  // silently 403'd the browser review console the instant it tried to load
+  // the proposal queue. Only mutations are forgeable via a session cookie;
+  // reads still need a valid session + CSRF, just not an Origin header.
+  it('loads the browser proposal queue over a session cookie without an Origin header', async () => {
+    kb = seedKnowledgeBase();
+    writeNamespaceBindings(kb.root, [kb.binding]);
+    env = testEnv({ ALGERKNOWN_ROOT: kb.root });
+    composition = await createGovernanceComposition({ env });
+    const { origin } = await buildApp(composition);
+
+    const unlockRes = await request(server).post('/api/governance/auth/unlock').set('Origin', origin).send({ secret: REVIEWER_SECRET });
+    expect(unlockRes.status).toBe(200);
+    const cookie = unlockRes.headers['set-cookie']![0]!;
+    const csrfToken = unlockRes.body.csrfToken as string;
+
+    // No .set('Origin', ...) here at all -- this is what a real same-origin
+    // browser GET looks like.
+    const queueRes = await request(server).get('/api/governance/proposals').set('Cookie', cookie).set('x-algerknown-csrf', csrfToken);
+    expect(queueRes.status).toBe(200);
+    expect(Array.isArray(queueRes.body.items)).toBe(true);
+
+    // A missing session cookie must still be rejected on GET -- the relaxed
+    // Origin check must not have weakened the session/CSRF requirement.
+    const noCookie = await request(server).get('/api/governance/proposals').set('x-algerknown-csrf', csrfToken);
+    expect(noCookie.status).toBe(401);
+    expect(noCookie.body.error).toBe('session_invalid');
+  });
+
   it('a processor bearer credential is denied on reviewer-only routes (propose-only boundary)', async () => {
     kb = seedKnowledgeBase();
     writeNamespaceBindings(kb.root, [kb.binding]);
