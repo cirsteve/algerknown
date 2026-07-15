@@ -7,6 +7,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as core from '@algerknown/core';
 import { entriesRouter } from '../../src/server/routes/entries.js';
 import { linksRouter } from '../../src/server/routes/links.js';
+import { recordSuiteEvidence, trackSuiteFailures } from './evidence-helpers.js';
+
+const suiteHealth = trackSuiteFailures();
+const suiteStart = Date.now();
 
 describe('legacy write routes respect the governed boundary', () => {
   let root: string;
@@ -81,5 +85,16 @@ describe('legacy write routes respect the governed boundary', () => {
     const res = await request(app).post('/api/links').send({ sourceId: 'governed-src', targetId: 'legacy-target', relationship: 'informs' });
     expect(res.status).toBe(409);
     expect(res.body.error).toBe('governed_write_required');
+  });
+
+  it('records ec8-no-write-bypass evidence (runtime-boundary case) once every case above has passed', () => {
+    recordSuiteEvidence(suiteHealth, {
+      checkId: 'ec8-no-write-bypass',
+      caseId: 'runtime-boundary',
+      suite: 'packages/web/tests/governance/legacy-boundary.test.ts',
+      fixture: 'real express app, real core.writeEntry/readEntry, governed_write_required 409 with unchanged file content; complemented by CLI (command-boundary.test.ts) and RAG (write-site-audit.test.ts) static 410/no-writer proofs',
+      backend: 'ts+py',
+      durationMs: Date.now() - suiteStart,
+    });
   });
 });
