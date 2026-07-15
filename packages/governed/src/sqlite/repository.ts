@@ -156,67 +156,87 @@ export class SqliteRepository implements Repository {
   }
 
   async commit(write: PreparedWrite): Promise<void> {
-    const { namespace } = write;
+    this.commitAtomically(write, () => undefined);
+  }
 
+  /**
+   * Apply a prepared governed write and caller-owned bookkeeping in one
+   * SQLite transaction. Proposal acceptance/reversal uses this to make the
+   * namespace revision, proposal transition, attestation, event, and
+   * idempotency record one all-or-nothing commit.
+   */
+  commitAtomically<T>(write: PreparedWrite, finalize: () => T): T {
     this.db.exec('BEGIN IMMEDIATE');
     try {
-      const namespaceRow = this.db.prepare('SELECT current_revision FROM namespaces WHERE namespace = ?').get(namespace) as
-        | { current_revision: number }
-        | undefined;
-      const actualCurrentRevision = namespaceRow ? namespaceRow.current_revision : null;
-      if (actualCurrentRevision !== write.previousRevision) {
-        throw new SqliteRevisionConflictError(namespace, write.previousRevision, actualCurrentRevision);
-      }
+      this.applyPreparedWrite(write);
+      const result = finalize();
+      this.db.exec('COMMIT');
+      return result;
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
+  }
 
-      this.db
-        .prepare(
-          `INSERT INTO namespaces (namespace, current_revision, next_sequence)
+  private applyPreparedWrite(write: PreparedWrite): void {
+    const { namespace } = write;
+    const namespaceRow = this.db.prepare('SELECT current_revision FROM namespaces WHERE namespace = ?').get(namespace) as
+      | { current_revision: number }
+      | undefined;
+    const actualCurrentRevision = namespaceRow ? namespaceRow.current_revision : null;
+    if (actualCurrentRevision !== write.previousRevision) {
+      throw new SqliteRevisionConflictError(namespace, write.previousRevision, actualCurrentRevision);
+    }
+
+    this.db
+      .prepare(
+        `INSERT INTO namespaces (namespace, current_revision, next_sequence)
            VALUES (?, ?, 0)
            ON CONFLICT(namespace) DO UPDATE SET current_revision = excluded.current_revision`,
-        )
-        .run(namespace, write.resultingRevision);
+      )
+      .run(namespace, write.resultingRevision);
 
-      const record = write.revisionRecord;
-      this.db
-        .prepare(
-          `INSERT INTO namespace_revisions
+    const record = write.revisionRecord;
+    this.db
+      .prepare(
+        `INSERT INTO namespace_revisions
              (namespace, namespace_revision, revision_id, previous_revision, created_at, actor_id, actor_class,
               idempotency_key, diff_json, content_hash, audit_directive_json)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        )
-        .run(
-          namespace,
-          record.namespaceRevision,
-          record.revisionId,
-          record.previousRevision,
-          record.createdAt,
-          record.actorId,
-          record.actorClass,
-          record.idempotencyKey,
-          canonicalStringify(record.diff),
-          contentHash(record.diff),
-          record.auditDirective ? canonicalStringify(record.auditDirective) : null,
-        );
+      )
+      .run(
+        namespace,
+        record.namespaceRevision,
+        record.revisionId,
+        record.previousRevision,
+        record.createdAt,
+        record.actorId,
+        record.actorClass,
+        record.idempotencyKey,
+        canonicalStringify(record.diff),
+        contentHash(record.diff),
+        record.auditDirective ? canonicalStringify(record.auditDirective) : null,
+      );
 
-      const upsertedNodesById = new Map(write.nodesUpserted.map((n) => [n.id, n]));
-      const upsertedEdgesById = new Map(write.edgesUpserted.map((e) => [e.id, e]));
+    const upsertedNodesById = new Map(write.nodesUpserted.map((n) => [n.id, n]));
+    const upsertedEdgesById = new Map(write.edgesUpserted.map((e) => [e.id, e]));
 
-      for (const entry of record.diff) {
-        if (entry.entityKind === 'node') {
-          const nodeId = entry.entityId as NodeId;
-          const node = upsertedNodesById.get(nodeId);
-          this.recordNodeRevision(namespace, nodeId, record, node);
-        } else {
-          const edgeId = entry.entityId as EdgeId;
-          const edge = upsertedEdgesById.get(edgeId);
-          this.recordEdgeRevision(namespace, edgeId, record, edge);
-        }
+    for (const entry of record.diff) {
+      if (entry.entityKind === 'node') {
+        const nodeId = entry.entityId as NodeId;
+        const node = upsertedNodesById.get(nodeId);
+        this.recordNodeRevision(namespace, nodeId, record, node);
+      } else {
+        const edgeId = entry.entityId as EdgeId;
+        const edge = upsertedEdgesById.get(edgeId);
+        this.recordEdgeRevision(namespace, edgeId, record, edge);
       }
+    }
 
-      for (const node of write.nodesUpserted) {
-        this.db
-          .prepare(
-            `INSERT INTO current_nodes
+    for (const node of write.nodesUpserted) {
+      this.db
+        .prepare(
+          `INSERT INTO current_nodes
                (namespace, node_id, type, subject, payload_json, confidence, provenance_json, revision_json,
                 content_hash, namespace_revision)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -229,29 +249,29 @@ export class SqliteRepository implements Repository {
                revision_json = excluded.revision_json,
                content_hash = excluded.content_hash,
                namespace_revision = excluded.namespace_revision`,
-          )
-          .run(
-            namespace,
-            node.id,
-            node.type,
-            node.subject,
-            canonicalStringify(node.payload),
-            node.confidence,
-            canonicalStringify(node.provenance),
-            canonicalStringify(node.revision),
-            contentHash(node),
-            record.namespaceRevision,
-          );
-      }
+        )
+        .run(
+          namespace,
+          node.id,
+          node.type,
+          node.subject,
+          canonicalStringify(node.payload),
+          node.confidence,
+          canonicalStringify(node.provenance),
+          canonicalStringify(node.revision),
+          contentHash(node),
+          record.namespaceRevision,
+        );
+    }
 
-      for (const nodeId of write.nodesDeleted) {
-        this.db.prepare('DELETE FROM current_nodes WHERE namespace = ? AND node_id = ?').run(namespace, nodeId);
-      }
+    for (const nodeId of write.nodesDeleted) {
+      this.db.prepare('DELETE FROM current_nodes WHERE namespace = ? AND node_id = ?').run(namespace, nodeId);
+    }
 
-      for (const edge of write.edgesUpserted) {
-        this.db
-          .prepare(
-            `INSERT INTO current_edges
+    for (const edge of write.edgesUpserted) {
+      this.db
+        .prepare(
+          `INSERT INTO current_edges
                (namespace, edge_id, kind, source_id, target_id, provenance_json, revision_json, content_hash,
                 namespace_revision)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -263,43 +283,37 @@ export class SqliteRepository implements Repository {
                revision_json = excluded.revision_json,
                content_hash = excluded.content_hash,
                namespace_revision = excluded.namespace_revision`,
-          )
-          .run(
-            namespace,
-            edge.id,
-            edge.kind,
-            edge.sourceId,
-            edge.targetId,
-            canonicalStringify(edge.provenance),
-            canonicalStringify(edge.revision),
-            contentHash(edge),
-            record.namespaceRevision,
-          );
-      }
+        )
+        .run(
+          namespace,
+          edge.id,
+          edge.kind,
+          edge.sourceId,
+          edge.targetId,
+          canonicalStringify(edge.provenance),
+          canonicalStringify(edge.revision),
+          contentHash(edge),
+          record.namespaceRevision,
+        );
+    }
 
-      for (const edgeId of write.edgesDeleted) {
-        this.db.prepare('DELETE FROM current_edges WHERE namespace = ? AND edge_id = ?').run(namespace, edgeId);
-      }
+    for (const edgeId of write.edgesDeleted) {
+      this.db.prepare('DELETE FROM current_edges WHERE namespace = ? AND edge_id = ?').run(namespace, edgeId);
+    }
 
-      if (record.auditDirective?.sampled) {
-        this.db
-          .prepare(
-            `INSERT INTO audit_samples (sample_id, namespace, namespace_revision, processor_id, sampled_at, reviewed)
+    if (record.auditDirective?.sampled) {
+      this.db
+        .prepare(
+          `INSERT INTO audit_samples (sample_id, namespace, namespace_revision, processor_id, sampled_at, reviewed)
              VALUES (?, ?, ?, ?, ?, 0)`,
-          )
-          .run(
-            randomUUID(),
-            namespace,
-            record.namespaceRevision,
-            record.auditDirective.processorId ?? null,
-            record.createdAt,
-          );
-      }
-
-      this.db.exec('COMMIT');
-    } catch (err) {
-      this.db.exec('ROLLBACK');
-      throw err;
+        )
+        .run(
+          randomUUID(),
+          namespace,
+          record.namespaceRevision,
+          record.auditDirective.processorId ?? null,
+          record.createdAt,
+        );
     }
   }
 

@@ -1,6 +1,7 @@
 import express from 'express';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { asActorId, asIdempotencyKey, asNamespaceId, asNodeId, asProcessorId, asSubjectId } from '@algerknown/governed';
 import { loadGovernanceConfig } from '../../src/server/auth/governance-config.js';
 import { createSessionRegistry } from '../../src/server/auth/session-registry.js';
 import { createUnlockRateLimiter } from '../../src/server/auth/unlock-rate-limiter.js';
@@ -198,6 +199,53 @@ describe('governance HTTP API', () => {
       .send({ expectedVersion: 99, expectedTargetRevision: null, idempotencyKey: 'accept-stale' });
     expect(acceptStale.status).toBe(409);
     expect(acceptStale.body.error).toBe('version_conflict');
+  });
+
+  it('returns a stable 503 when an amendment targets an unavailable repository engine', async () => {
+    const proposed = await composition.proposalService.propose({
+      mutation: {
+        namespace: asNamespaceId('canonical.project.unbound'),
+        subject: asSubjectId('subject-unbound'),
+        nodeMutations: [
+          {
+            op: 'create',
+            nodeId: asNodeId('fact-unbound-1'),
+            nodeType: 'fact',
+            payload: { statement: 'This proposal has no configured dossier binding.' },
+            confidence: 0.9,
+          },
+        ],
+        edgeMutations: [],
+        expectedNamespaceRevision: null,
+        idempotencyKey: asIdempotencyKey('write-unbound-1'),
+        actorId: asActorId('rag-processor'),
+        actorClass: 'processor',
+        provenanceInput: {
+          sources: [{ kind: 'external', id: 'source-unbound-1' }],
+          processorId: asProcessorId('rag-processor'),
+          processorVersion: '1.0.0',
+        },
+      },
+      supportingObservationIds: [],
+      idempotencyKey: 'propose-unbound-1',
+    });
+    if (proposed.outcome !== 'created') throw new Error('expected created proposal');
+
+    const response = await reviewerRequest()
+      .post(`/api/governance/proposals/${proposed.proposal.id}/amend`)
+      .send({
+        expectedVersion: 1,
+        expectedTargetRevision: null,
+        patch: [],
+        note: 'Attempt to refresh the unbound target.',
+        idempotencyKey: 'amend-unbound-1',
+      });
+
+    expect(response.status).toBe(503);
+    expect(response.body).toMatchObject({
+      error: 'repository_unavailable',
+      message: expect.stringContaining('no dossier binding is configured'),
+    });
   });
 
   it('POST /processor/operations records a generic append-only telemetry event, idempotently, without creating a reviewable proposal', async () => {

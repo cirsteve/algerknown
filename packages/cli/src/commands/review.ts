@@ -223,7 +223,7 @@ reviewCommand
 reviewCommand
   .command('amend <id>')
   .description('Amend a pending proposal with an RFC 6902 JSON Patch against its nodeMutations/edgeMutations')
-  .requiredOption('-n, --note <note>', 'Note explaining the amendment (recorded locally in terminal output; the durable amend action carries no note field)')
+  .requiredOption('-n, --note <note>', 'Note explaining the durable amendment')
   .option('--patch-file <path>', 'Path to a JSON file containing the patch operations (reads stdin if omitted)')
   .action(async (id, options) => {
     await withClient(async (client) => {
@@ -236,8 +236,13 @@ reviewCommand
         console.error(chalk.red('Error: patch input is not valid JSON.'));
         process.exit(1);
       }
-      console.log(chalk.dim(`Amendment note: ${options.note}`));
-      const result = await client.amendProposal(id, { expectedVersion: proposal.version as number, patch: patch as unknown[], idempotencyKey: randomUUID() });
+      const result = await client.amendProposal(id, {
+        expectedVersion: proposal.version as number,
+        expectedTargetRevision: proposal.currentTargetRevision as number | null,
+        patch: patch as unknown[],
+        note: options.note,
+        idempotencyKey: randomUUID(),
+      });
       console.log(chalk.green(`✓ Amended proposal ${id} -- now version ${result.version}`));
     });
   });

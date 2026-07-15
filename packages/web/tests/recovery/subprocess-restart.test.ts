@@ -166,7 +166,13 @@ describe('EC6: durable proposal state survives a real subprocess restart', () =>
     const amendRes = await fetch(`${server.baseUrl}/proposals/${amendedId}/amend`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${REVIEWER_SECRET}` },
-      body: JSON.stringify({ expectedVersion: 1, patch: [{ op: 'replace', path: '/nodeMutations/1/confidence', value: 0.55 }], idempotencyKey: 'restart-amend-1' }),
+      body: JSON.stringify({
+        expectedVersion: 1,
+        expectedTargetRevision: null,
+        patch: [{ op: 'replace', path: '/nodeMutations/1/confidence', value: 0.55 }],
+        note: 'Adjust confidence before review.',
+        idempotencyKey: 'restart-amend-1',
+      }),
     });
     expect(amendRes.status).toBe(200);
 
@@ -248,7 +254,7 @@ describe('EC6: durable proposal state survives a real subprocess restart', () =>
       durationMs: Date.now() - suiteStart,
       detail: {
         note:
-          'git-operation-intent failpoint recovery (dangling accept intent resolved on restart) is exercised in-process in e2e-invariants.test.ts, not across a real OS process boundary: LocalAttestationVerifier is deliberately non-persistent (single-operator trust profile never writes attestations to disk in replayable form), so a crash strictly before the write itself lands cannot re-verify its attestation in a fresh process and is safely marked blocked rather than silently replayed -- see recoverIncompleteGitOperations for the already-accepted-but-dangling-intent and hash-mismatch cases this suite proves.',
+          'git-operation-intent recovery is exercised with a fresh governance composition in e2e-invariants.test.ts: the durable intent carries the exact server-minted attestation, so restart can safely replay a crash before git apply, finalize an already-landed commit idempotently, and block a mutation-hash mismatch without a second write.',
       },
     });
   });

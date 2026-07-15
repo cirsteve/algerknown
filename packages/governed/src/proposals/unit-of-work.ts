@@ -5,17 +5,15 @@ import type { DatabaseType } from '../sqlite/connection.js';
  * events, reversal, idempotency result) in one SQLite transaction opened
  * with BEGIN IMMEDIATE, which acquires the write lock up front and is
  * sufficient here since this unit of work only ever touches proposal
- * bookkeeping tables after the governed write has already committed.
- * The governed write itself is already atomic via SqliteRepository.commit,
- * which WriteOrchestrator.write() invokes as its own transaction boundary;
- * that fixed orchestrator call sequence is outside this cohort's scope to
- * restructure, so this unit of work covers everything the adapter controls
- * after the write resolves, applied as a single all-or-nothing step.
+ * bookkeeping tables. When invoked inside SqliteRepository.commitAtomically,
+ * it joins the existing transaction so target state and lifecycle state are
+ * committed or rolled back together.
  */
 export class SqliteUnitOfWork {
   constructor(private readonly db: DatabaseType) {}
 
   run<T>(fn: () => T): T {
+    if (this.db.inTransaction) return fn();
     this.db.exec('BEGIN IMMEDIATE');
     try {
       const result = fn();

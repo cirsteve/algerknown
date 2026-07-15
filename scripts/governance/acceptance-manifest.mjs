@@ -20,7 +20,7 @@ export const REQUIRED_CHECKS = [
     kind: 'exit-criterion',
     title: 'Structural rails',
     description:
-      'The generic synthetic rail fixture table, run through the public WriteOrchestrator, declares exactly one of rejected/routed_to_proposal for every type x namespace x mutation-variant case, with full category coverage.',
+      'The generic synthetic rail fixture table, run through the public WriteOrchestrator with an injected deterministic contradiction detector, declares exactly one of rejected/routed_to_proposal for every type x namespace x mutation-variant case, with full category coverage. Production semantic contradiction discovery remains a Phase 3 integration.',
   },
   {
     id: 'ec2-lifecycle-attribution-reversal',

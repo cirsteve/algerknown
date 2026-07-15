@@ -3,8 +3,8 @@ import type { NamespacePolicyEntry, NamespaceTableConfig } from './namespace-pol
 export const DEFAULT_NAMESPACE_ENTRIES: NamespacePolicyEntry[] = [
   { pattern: 'canonical.global', class: 'canonical', engine: 'algerknown', policy: 'human' },
   { pattern: 'canonical.project.*', class: 'canonical', engine: 'algerknown', policy: 'human-gated' },
-  { pattern: 'memory.global', class: 'memory', engine: 'algerknown', policy: 'human-gated' },
-  { pattern: 'memory.project.*', class: 'memory', engine: 'algerknown', policy: 'human-gated' },
+  { pattern: 'memory.global', class: 'memory', engine: 'sqlite', policy: 'human-gated' },
+  { pattern: 'memory.project.*', class: 'memory', engine: 'sqlite', policy: 'human-gated' },
   { pattern: 'memory.community.*', class: 'memory', engine: 'sqlite', policy: 'ai-with-rails' },
   { pattern: 'memory.relationship.*', class: 'memory', engine: 'sqlite', policy: 'ai-with-rails' },
   { pattern: 'operation.*', class: 'operation', engine: 'sqlite', policy: 'ai-with-rails', appendOnly: true },

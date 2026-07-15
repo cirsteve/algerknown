@@ -95,7 +95,13 @@ export function useProposalActions(id: string) {
   const { mutate } = useSWRConfig();
 
   const amend = useCallback(
-    async (input: { expectedVersion: number; patch: JsonPatchOp[]; idempotencyKey: string }) => {
+    async (input: {
+      expectedVersion: number;
+      expectedTargetRevision: number | null;
+      patch: JsonPatchOp[];
+      note: string;
+      idempotencyKey: string;
+    }) => {
       const result = await governanceApi.amendProposal(governanceFetch, id, input);
       await invalidateAfterAction(mutate, id);
       return result;

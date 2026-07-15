@@ -98,18 +98,13 @@ export function ProposalDetail({ id, onDirtyChange }: ProposalDetailProps) {
           currentTargetRevision={proposal.currentTargetRevision}
           onReloadCurrent={() => mutate()}
           onCreateRefreshAmendment={async (note) => {
-            // POST /proposals/:id/amend only accepts a patch over
-            // nodeMutations/edgeMutations -- expectedNamespaceRevision is
-            // not an amendable path on the current API, so this empty-patch
-            // amendment persists the reviewer's acknowledgement as a new
-            // version (itself durable history) but cannot yet actually
-            // re-anchor expectedTargetRevision to the new current revision.
-            // The proposal will still show stale afterward; full recovery
-            // requires the amend endpoint to expose that field, or
-            // rejecting/expiring this proposal so the pipeline regenerates
-            // a fresh one against the current revision.
-            void note;
-            await actions.amend({ expectedVersion: proposal.version, patch: [], idempotencyKey: newIdempotencyKey() });
+            await actions.amend({
+              expectedVersion: proposal.version,
+              expectedTargetRevision: proposal.currentTargetRevision,
+              patch: [],
+              note,
+              idempotencyKey: newIdempotencyKey(),
+            });
             await mutate();
           }}
         />

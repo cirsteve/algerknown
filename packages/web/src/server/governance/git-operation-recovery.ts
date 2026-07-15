@@ -1,11 +1,13 @@
 import type { AcceptInput, Clock, DatabaseType, DurableProposalService, RevertInput } from '@algerknown/governed';
 import { asProposalId } from '@algerknown/governed';
+import type { LocalAttestationVerifier } from './attestation-verifier.js';
 import { blockIntent, completeIntent, listIncompleteIntents } from './git-operation-intents.js';
 
 export interface RecoverIncompleteGitOperationsDeps {
   db: DatabaseType;
   proposalService: DurableProposalService;
   clock: Clock;
+  attestationVerifier: LocalAttestationVerifier;
   log?: (message: string) => void;
 }
 
@@ -39,11 +41,31 @@ export async function recoverIncompleteGitOperations(deps: RecoverIncompleteGitO
       continue;
     }
 
-    if (proposal.status !== 'pending') {
+    const alreadyFinalized = intent.action === 'accept' ? proposal.status === 'accepted' : proposal.reverted;
+    if (alreadyFinalized) {
       // The write and the SQLite finalize both already happened; only our
       // own intent-completion update was left dangling.
-      completeIntent(db, intent.operationId, proposal.resultingRevision, clock.now());
+      const resultingRevision =
+        intent.action === 'accept'
+          ? proposal.resultingRevision
+          : (db
+              .prepare(`SELECT new_revision AS newRevision FROM reversals WHERE proposal_id = ? ORDER BY created_at DESC LIMIT 1`)
+              .get(proposalId) as { newRevision: number } | undefined)?.newRevision ?? null;
+      if (resultingRevision === null) {
+        blockIntent(db, intent.operationId, `${intent.action} is finalized but its resulting revision is missing`, clock.now());
+        continue;
+      }
+      completeIntent(db, intent.operationId, resultingRevision, clock.now());
       log(`governance recovery: intent ${intent.operationId} already finalized (proposal ${proposalId} status=${proposal.status})`);
+      continue;
+    }
+
+    if (intent.action === 'accept' && proposal.status !== 'pending') {
+      blockIntent(db, intent.operationId, `accept recovery found proposal in non-pending status "${proposal.status}"`, clock.now());
+      continue;
+    }
+    if (intent.action === 'revert' && proposal.status !== 'accepted') {
+      blockIntent(db, intent.operationId, `revert recovery found proposal in status "${proposal.status}"`, clock.now());
       continue;
     }
 
@@ -54,6 +76,21 @@ export async function recoverIncompleteGitOperations(deps: RecoverIncompleteGitO
       continue;
     }
 
+    if (!intent.attestationJson) {
+      blockIntent(db, intent.operationId, 'operation intent has no durable attestation to verify after restart', clock.now());
+      continue;
+    }
+
+    let attestation: Parameters<LocalAttestationVerifier['register']>[0];
+    try {
+      attestation = JSON.parse(intent.attestationJson) as Parameters<LocalAttestationVerifier['register']>[0];
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      blockIntent(db, intent.operationId, `invalid durable attestation JSON: ${message}`, clock.now());
+      log(`governance recovery: blocked intent ${intent.operationId} on proposal ${proposalId} (invalid durable attestation JSON)`);
+      continue;
+    }
+    deps.attestationVerifier.register(attestation);
     try {
       if (intent.action === 'accept') {
         const input = JSON.parse(intent.reviewInputJson) as AcceptInput;
@@ -77,6 +114,8 @@ export async function recoverIncompleteGitOperations(deps: RecoverIncompleteGitO
     } catch (err) {
       blockIntent(db, intent.operationId, `recovery replay threw: ${(err as Error).message}`, clock.now());
       log(`governance recovery: blocked intent ${intent.operationId} on proposal ${proposalId} (${(err as Error).message})`);
+    } finally {
+      deps.attestationVerifier.discard(attestation.id);
     }
   }
 }

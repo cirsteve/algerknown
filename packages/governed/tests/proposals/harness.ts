@@ -69,6 +69,10 @@ export function createProposalsTestHarness(
     clock,
     idGenerator,
     repository: deps.repository,
+    atomicProposalWrite: {
+      supports: () => true,
+      commit: (write, finalize) => deps.repository.commitAtomically(write, finalize),
+    },
   });
 
   return {

@@ -78,6 +78,7 @@ export async function createGovernanceComposition(opts: CreateGovernanceComposit
   const proposalRepository = new SqliteProposalRepository(connection.db);
   const operationSink = new SqliteOperationSink(connection.db);
   const usageCounter = new SqliteUsageCounter(connection.db);
+  const namespaceMatcher = new NamespaceMatcher(DEFAULT_GOVERNED_CONFIG.namespaceTable);
 
   const gitRepositoriesByNamespace = new Map<string, GitAlgerknownRepository>();
   for (const binding of bindings) {
@@ -88,12 +89,11 @@ export async function createGovernanceComposition(opts: CreateGovernanceComposit
     gitRepositoriesByNamespace.set(namespace, new GitAlgerknownRepository({ repoRoot: config.algerknownRoot, binding }));
   }
 
-  const repository = createRoutingRepository(new Map(gitRepositoriesByNamespace), sqliteRepository);
+  const repository = createRoutingRepository(namespaceMatcher, new Map(gitRepositoriesByNamespace), sqliteRepository);
   const attestationVerifier = createLocalAttestationVerifier();
   const processor = createStaticProcessor(config.processorId, config.processorVersion);
   const contradictionDetector = createNoOpContradictionDetector();
   const idGenerator = createUuidIdGenerator();
-  const namespaceMatcher = new NamespaceMatcher(DEFAULT_GOVERNED_CONFIG.namespaceTable);
   const reviewEventFactory = createReviewEventFactory({ clock });
 
   // fact/observation/resource/prohibition use the schema variants the git
@@ -125,6 +125,10 @@ export async function createGovernanceComposition(opts: CreateGovernanceComposit
     clock,
     idGenerator,
     repository,
+    atomicProposalWrite: {
+      supports: (namespace) => namespaceMatcher.resolve(namespace).engine === 'sqlite',
+      commit: (write, finalize) => sqliteRepository.commitAtomically(write, finalize),
+    },
   });
 
   const reviewActionsDeps: ReviewActionsDeps = {
@@ -139,7 +143,7 @@ export async function createGovernanceComposition(opts: CreateGovernanceComposit
   };
 
   log(`recovering incomplete git operation intents (${bindings.length} bound namespace(s))`);
-  await recoverIncompleteGitOperations({ db: connection.db, proposalService, clock, log });
+  await recoverIncompleteGitOperations({ db: connection.db, proposalService, attestationVerifier, clock, log });
 
   return {
     config,

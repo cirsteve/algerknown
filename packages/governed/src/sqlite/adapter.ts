@@ -74,6 +74,10 @@ export function createSqliteGovernedAdapter(sqliteConfig: GovernedSqliteConfig, 
     clock: deps.clock,
     idGenerator: deps.idGenerator,
     repository,
+    atomicProposalWrite: {
+      supports: () => true,
+      commit: (write, finalize) => repository.commitAtomically(write, finalize),
+    },
   });
 
   return { connection, repository, proposalRepository, operationSink, usageCounter, orchestrator, proposalService };

@@ -43,6 +43,25 @@ describe('governanceApi', () => {
     expect(err.details).toMatchObject({ expectedVersion: 1, actualVersion: 2 });
   });
 
+  it('surfaces repository_unavailable as a stable typed error', async () => {
+    server.use(
+      http.post('/api/governance/proposals/:id/amend', () =>
+        HttpResponse.json({ error: 'repository_unavailable', message: 'no dossier binding is configured' }, { status: 503 }),
+      ),
+    );
+    const err = await governanceApi
+      .amendProposal(fetcher, PENDING_PROPOSAL_ID, {
+        expectedVersion: 1,
+        expectedTargetRevision: 3,
+        patch: [],
+        note: 'Refresh target.',
+        idempotencyKey: newIdempotencyKey(),
+      })
+      .catch((e) => e);
+    expect(err).toBeInstanceOf(GovernanceApiError);
+    expect(err).toMatchObject({ code: 'repository_unavailable', status: 503 });
+  });
+
   it('generates a fresh random idempotency key each call', () => {
     const a = newIdempotencyKey();
     const b = newIdempotencyKey();

@@ -30,6 +30,13 @@ tell "not yet built" apart from "out of scope."
   configuration (e.g. an every-2 audit policy in
   `audit-sampling-durability.test.ts`), but production defaults are
   unchanged -- evidence-based policy tuning is explicitly Phase 3 work.
+- **Production semantic contradiction discovery.** The governed orchestrator
+  and synthetic rail suite enforce contradiction-to-proposal when a
+  `ContradictionDetector` returns a higher-confidence match. The web
+  composition's detector is intentionally a no-op; provider selection,
+  corpus validation, and production recall/precision measurement are
+  deferred to Phase 3. Phase 2 therefore closes the structural route, not
+  semantic discovery quality.
 - **ContextPacket.** No Phase 2 deliverable assembles, consumes, or depends
   on a ContextPacket.
 - **Posture/thread/judge work.** Any agent posture, conversation-thread
@@ -41,8 +48,14 @@ tell "not yet built" apart from "out of scope."
 
 ## What Phase 2 *does* close (see the acceptance doc for evidence)
 
+- The default engine table stores `canonical.*` namespaces through explicit
+  Algerknown dossier bindings and stores every `memory.*` namespace in the
+  governed SQLite database. Repository routing consumes that declaration and
+  fails closed when an Algerknown namespace has no binding; it no longer
+  silently substitutes SQLite for a configured git/YAML engine.
 - Every structural rail (type x namespace matrix, attestation, provenance,
-  schema, confidence/volume, append-only, reversible diffs).
+  schema, confidence/volume, append-only, reversible diffs), including the
+  contradiction-to-proposal route under an injected deterministic detector.
 - The full proposal lifecycle (propose/inspect/amend/accept/reject/
   expire/tombstone/revert) with attribution and reversal guarantees.
 - SQLite and Algerknown conformance through one shared, backend-neutral

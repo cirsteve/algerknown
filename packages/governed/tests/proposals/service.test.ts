@@ -121,12 +121,16 @@ describe('DurableProposalService: amend', () => {
         nodeMutations: [{ op: 'create', nodeId: asNodeId('n-1'), nodeType: 'fact', payload: { statement: 'the sky is blue-ish' }, confidence: 0.9 }],
       }),
       supportingObservationIds: [],
+      actorId: asActorId('reviewer-1'),
+      channel: 'cli',
+      note: 'Clarify the phrasing.',
       idempotencyKey: 'amend-1',
     });
 
     expect(amended.version).toBe(2);
     const inspection = await harness.service.inspect(created.proposal.id);
     expect(inspection.events.map((e) => e.kind)).toEqual(['proposed', 'amended']);
+    expect(inspection.events[1]).toMatchObject({ actorId: 'reviewer-1', channel: 'cli', note: 'Clarify the phrasing.' });
     expect(inspection.currentVersion.canonicalMutation.nodeMutations[0]).toMatchObject({ payload: { statement: 'the sky is blue-ish' } });
     harness.connection.close();
   });
@@ -183,6 +187,52 @@ describe('DurableProposalService: accept', () => {
 
     const attestationRow = harness.connection.db.prepare('SELECT * FROM attestations WHERE proposal_id = ?').get(created.proposal.id);
     expect(attestationRow).toBeTruthy();
+    harness.connection.close();
+  });
+
+  it('rolls back the namespace write when proposal finalization fails', async () => {
+    const harness = createProposalsTestHarness();
+    const command = factMutation();
+    const created = await harness.service.propose({ mutation: command, supportingObservationIds: [], idempotencyKey: 'propose-1' });
+    if (created.outcome !== 'created') throw new Error('unreachable');
+
+    const { mutationHash } = normalizeWriteCommand(command);
+    await registerAttestationFor(harness, {
+      attestationId: 'att-1',
+      proposalId: created.proposal.id,
+      proposalVersion: 1,
+      mutationHash,
+      targetRevision: null,
+    });
+
+    harness.connection.db.exec(`
+      CREATE TRIGGER fail_attestation_finalize
+      BEFORE INSERT ON attestations
+      BEGIN
+        SELECT RAISE(ABORT, 'injected proposal-finalization failure');
+      END;
+    `);
+
+    await expect(
+      harness.service.accept(created.proposal.id, {
+        expectedVersion: 1,
+        expectedTargetRevision: null,
+        attestationId: asAttestationId('att-1'),
+        actorId: asActorId('reviewer-1'),
+        channel: 'test',
+        idempotencyKey: 'accept-1',
+      }),
+    ).rejects.toThrow('injected proposal-finalization failure');
+
+    expect(await harness.repository.getNamespaceRevision(CANONICAL_NAMESPACE)).toBeNull();
+    expect(await harness.repository.getNode(CANONICAL_NAMESPACE, asNodeId('n-1'))).toBeUndefined();
+    expect((await harness.service.getProposal(created.proposal.id))?.status).toBe('pending');
+    expect(
+      harness.connection.db
+        .prepare(`SELECT COUNT(*) AS count FROM idempotency_records WHERE scope = 'proposal.accept'`)
+        .get(),
+    ).toEqual({ count: 0 });
+    expect((await harness.service.inspect(created.proposal.id)).events.map((event) => event.kind)).toEqual(['proposed']);
     harness.connection.close();
   });
 

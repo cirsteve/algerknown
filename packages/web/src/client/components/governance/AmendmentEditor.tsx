@@ -75,12 +75,13 @@ export function AmendmentEditor({ proposal, onDirtyChange }: AmendmentEditorProp
     setSaving(true);
     setError(null);
     try {
-      // POST /proposals/:id/amend currently accepts only expectedVersion,
-      // patch, and idempotencyKey -- there is no request field for a note.
-      // The note is still required here (a deliberate accountability gate
-      // matching the reviewed decision) but is not yet persisted
-      // server-side; the amendment's provenance is the version diff itself.
-      await actions.amend({ expectedVersion: proposal.version, patch, idempotencyKey });
+      await actions.amend({
+        expectedVersion: proposal.version,
+        expectedTargetRevision: proposal.currentTargetRevision,
+        patch,
+        note: note.trim(),
+        idempotencyKey,
+      });
       setDraft(null);
       setNote('');
     } catch (err) {

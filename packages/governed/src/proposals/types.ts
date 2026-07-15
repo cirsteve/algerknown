@@ -80,6 +80,9 @@ export interface AmendInput {
   expectedVersion: number;
   mutation: WriteCommand;
   supportingObservationIds: NodeId[];
+  actorId?: ActorId;
+  channel?: string;
+  note?: string;
   idempotencyKey: string;
 }
 
