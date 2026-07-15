@@ -10,18 +10,23 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { AnyEntry, ValidationResult, ValidationError, Summary, Dossier, DossierEvidence, DossierFact, DossierResource, DossierProhibition, DossierKnownGap } from './types.js';
 import { findRoot, getSchemasDir } from './config.js';
+import { canonicalNormalize } from './unicode/normalize.js';
+import { parsePortableRegex } from './regex/portable-regex.js';
 
 // Singleton AJV instance (lazy-loaded per root)
 let ajvInstance: Ajv2020 | null = null;
 let loadedRoot: string | null = null;
 
-// Patterns for recognising genuinely immutable references.
-// Accepts: 40-char hex git SHA, sha256:hex digest, DOI, versioned arXiv id, or Wayback Machine snapshot URL.
-const IMMUTABLE_REF_PATTERN =
-  /^(?:[0-9a-f]{40}|sha256:[0-9a-f]{64}|10\.\d{4,}\/\S+|[0-9]{4}\.\d{4,5}v\d+|https:\/\/web\.archive\.org\/web\/\d{14}\/)/i;
+// Canonical base for resolving cross-schema $refs (e.g. entry.schema.json's
+// `$ref: "summary.schema.json#/$defs/status"`). Schemas are registered under
+// this absolute-URI key regardless of their own declared `$id`, so a
+// versioned deployed schema (content-agn's `$id: .../summary.v1.schema.json`)
+// still resolves relative refs from unversioned sibling schemas correctly.
+const SCHEMA_BASE_URL = 'https://algerknown.dev/schemas/';
 
-// Permitted regex flags
-const PERMITTED_FLAGS = new Set(['i', 'm', 's']);
+function schemaKeyForFile(file: string): string {
+  return `${SCHEMA_BASE_URL}${file}`;
+}
 
 /**
  * Load all schemas from the .algerknown/schemas directory
@@ -48,8 +53,9 @@ function loadSchemas(root: string): Ajv2020 {
     const schemaContent = fs.readFileSync(schemaPath, 'utf-8');
     const schema = JSON.parse(schemaContent);
 
-    // Add schema with its filename as the key for $ref resolution
-    ajv.addSchema(schema, file);
+    // Add schema keyed by its canonical (unversioned) URL for $ref resolution,
+    // independent of whatever `$id` the schema itself declares.
+    ajv.addSchema(schema, schemaKeyForFile(file));
   }
 
   return ajv;
@@ -79,10 +85,6 @@ export function resetValidator(): void {
 // ---------------------------------------------------------------------------
 // Dossier semantic validation
 // ---------------------------------------------------------------------------
-
-function normPhrase(s: string): string {
-  return s.toLowerCase().replace(/\s+/g, ' ').trim();
-}
 
 function canonicalUrl(raw: string): string {
   try {
@@ -121,13 +123,7 @@ function validateDossier(dossier: Dossier, basePath: string): ValidationError[] 
       allIds.set(ev.id, `${p}/id`);
     }
     evidenceIds.add(ev.id);
-
-    if (!IMMUTABLE_REF_PATTERN.test(ev.immutable_ref)) {
-      errors.push({
-        path: `${p}/immutable_ref`,
-        message: `immutable_ref "${ev.immutable_ref}" does not satisfy immutability requirements (must be a 40-char git SHA, sha256: digest, DOI, versioned arXiv id, or Wayback Machine snapshot URL)`,
-      });
-    }
+    // immutable_ref grammar is enforced structurally by the JSON schema pattern.
   }
 
   // --- Facts ---
@@ -145,7 +141,7 @@ function validateDossier(dossier: Dossier, basePath: string): ValidationError[] 
     factIds.add(fact.id);
 
     for (let j = 0; j < fact.safe_phrasings.length; j++) {
-      const norm = normPhrase(fact.safe_phrasings[j]);
+      const norm = canonicalNormalize(fact.safe_phrasings[j]);
       if (seenSafePhrasings.has(norm)) {
         errors.push({
           path: `${p}/safe_phrasings/${j}`,
@@ -210,40 +206,22 @@ function validateDossier(dossier: Dossier, basePath: string): ValidationError[] 
       allIds.set(proh.id, `${p}/id`);
     }
 
-    // Exactly one matcher must be present
-    const matchers = ['exact_phrase', 'normalized_phrase', 'regex'] as const;
-    const prohObj = proh as unknown as Record<string, unknown>;
-    const presentMatchers = matchers.filter(m => prohObj[m] !== undefined);
-    if (presentMatchers.length !== 1) {
-      errors.push({
-        path: p,
-        message: `Prohibition must have exactly one matcher (exact_phrase, normalized_phrase, or regex); found: ${presentMatchers.length === 0 ? 'none' : presentMatchers.join(', ')}`,
-      });
-    }
-
-    // Regex-specific checks
-    if ('regex' in proh && proh.regex !== undefined) {
-      const flags = (proh as { flags?: string }).flags ?? '';
-      for (const ch of flags) {
-        if (!PERMITTED_FLAGS.has(ch)) {
-          errors.push({
-            path: `${p}/flags`,
-            message: `Unsupported regex flag "${ch}"; only i, m, s are permitted`,
-          });
-        }
-      }
+    // Matcher exclusivity and flags coupling are enforced structurally by the
+    // schema's oneOf branches. The portable-regex grammar itself is not
+    // expressible in JSON Schema, so it is validated here.
+    if (proh.regex !== undefined) {
       try {
-        new RegExp(proh.regex, flags);
+        parsePortableRegex(proh.regex);
       } catch (err) {
         errors.push({
           path: `${p}/regex`,
-          message: `Regex compilation failed: ${(err as Error).message}`,
+          message: `Portable regex rejected: ${(err as Error).message}`,
         });
       }
     }
 
     for (let j = 0; j < proh.forbidden_phrasings.length; j++) {
-      const norm = normPhrase(proh.forbidden_phrasings[j]);
+      const norm = canonicalNormalize(proh.forbidden_phrasings[j]);
       if (seenForbiddenPhrasings.has(norm)) {
         errors.push({
           path: `${p}/forbidden_phrasings/${j}`,
@@ -332,7 +310,7 @@ export function validate(entry: AnyEntry, root?: string): ValidationResult {
     ? 'summary.schema.json'
     : 'entry.schema.json';
 
-  const validateFn = ajv.getSchema(schemaFile);
+  const validateFn = ajv.getSchema(schemaKeyForFile(schemaFile));
 
   if (!validateFn) {
     return {

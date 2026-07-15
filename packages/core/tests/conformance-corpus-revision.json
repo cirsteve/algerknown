@@ -1,0 +1,5 @@
+{
+  "$comment": "Pins the exact cirsteve/algerknown-content commit CI checks out to run the shared conformance corpus. See docs/dossier-contract.md. Update this file's `sha` (and, if applicable, `repository`) whenever content-agn's contract/corpus is intentionally revised, in the same PR that depends on the new corpus content.",
+  "repository": "cirsteve/algerknown-content",
+  "sha": "358049cd656e727161b48158b59ea6fe6803a255"
+}
