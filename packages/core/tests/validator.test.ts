@@ -7,7 +7,7 @@
  * portable-regex + Unicode-normalization + prohibition-matching modules.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterAll } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -176,6 +176,11 @@ function summaryWithProhibition(id: string, prohibition: DossierProhibition): Su
 describe('Dossier prohibition matcher contract', () => {
   const KB_DIR = makeTempDir('algerknown-matcher-contract');
   init(KB_DIR);
+
+  afterAll(() => {
+    fs.rmSync(KB_DIR, { recursive: true });
+    resetValidator();
+  });
 
   it('rejects a prohibition with no matcher present', () => {
     const result = validate(
@@ -369,6 +374,7 @@ describe('portable regex grammar', () => {
     ['\\uFFFF'],
     ['\\cA'],
     ['(?(1)yes|no)'],
+    ['a\\-b'], // "-" is only a valid escape inside a character class
   ])('rejects %s', (pattern) => {
     expect(() => parsePortableRegex(pattern)).toThrow(PortableRegexError);
   });
@@ -387,6 +393,7 @@ describe('portable regex grammar', () => {
     ['a+?'],
     ['^anchored$'],
     ['\\.escaped\\*punct'],
+    ['[a\\-z]+'], // "-" escaped inside a class is a literal, not a range operator
   ])('accepts %s', (pattern) => {
     expect(() => parsePortableRegex(pattern)).not.toThrow();
   });

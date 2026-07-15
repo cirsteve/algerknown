@@ -132,8 +132,11 @@ if (CORPUS_DIR !== null) {
       }
 
       // summary/entry: exercise the full producer pipeline (schema + semantic)
-      // against content-agn's own tracked, deployed schemas.
-      const result = validate(doc as never, corpusDir.replace(/\/conformance\/v1$/, ''));
+      // against content-agn's own tracked, deployed schemas. corpusDir is
+      // <content-agn root>/conformance/v1 — strip those two path segments
+      // with path.dirname (portable) rather than a POSIX-only "/" regex.
+      const contentAgnRoot = path.dirname(path.dirname(corpusDir));
+      const result = validate(doc as never, contentAgnRoot);
       expect(result.valid).toBe(fixture.expected.valid);
 
       if (!fixture.expected.valid) {

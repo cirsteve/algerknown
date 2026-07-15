@@ -250,7 +250,7 @@ class Parser {
       throw new PortableRegexError('Dangling escape at end of pattern', backslashPos);
     }
     const next = this.advance();
-    if (!allowed.has(next) && !(allowed === ESCAPABLE_PUNCTUATION && CLASS_ESCAPABLE_EXTRA.has(next))) {
+    if (!allowed.has(next)) {
       throw new PortableRegexError(
         `Unsupported escape "\\${next}" — only regex punctuation may be escaped in the portable grammar`,
         backslashPos
