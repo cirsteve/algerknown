@@ -1,7 +1,7 @@
 import { NamespaceMatcher } from '../config/namespace-matcher.js';
 import { SchemaRegistry } from '../config/schema-registry.js';
 import type { GovernedConfig } from '../config/governed-config.js';
-import type { Repository, RevisionRecord } from '../ports/repository.js';
+import type { PreparedWrite, Repository, RevisionRecord } from '../ports/repository.js';
 import type { ProposalRepository } from '../ports/proposal-repository.js';
 import type { OperationSink } from '../ports/operation-sink.js';
 import type { Processor } from '../ports/processor.js';
@@ -55,6 +55,16 @@ export interface WriteOrchestratorDeps {
   idGenerator: IdGenerator;
   /** Defaults to the three built-in modes; pass a superset to register additional custom policies. */
   policyModes?: PolicyModeRegistry;
+}
+
+export interface WriteOptions {
+  /**
+   * Override only the final persistence call. SQLite proposal lifecycle code
+   * uses this to commit the already-governed PreparedWrite and proposal-side
+   * bookkeeping in one database transaction. Every evaluator still runs in
+   * the normal orchestrator pipeline before this callback is reached.
+   */
+  commit?: (write: PreparedWrite) => void | Promise<void>;
 }
 
 function rejected(reasonCodes: ReasonCode[], verdicts: EvaluatorVerdict[]): WriteResult {
@@ -114,7 +124,7 @@ export class WriteOrchestrator {
     this.policyModes = deps.policyModes;
   }
 
-  async write(command: WriteCommand): Promise<WriteResult> {
+  async write(command: WriteCommand, options: WriteOptions = {}): Promise<WriteResult> {
     const verdicts: EvaluatorVerdict[] = [];
 
     // Step 1: normalize and hash.
@@ -428,7 +438,7 @@ export class WriteOrchestrator {
     // against different content, reported the same way the early check
     // would have reported it had timing allowed.
     try {
-      await this.deps.repository.commit({
+      const preparedWrite: PreparedWrite = {
         namespace: normalized.namespace,
         previousRevision: currentRevision,
         resultingRevision,
@@ -437,7 +447,8 @@ export class WriteOrchestrator {
         nodesDeleted,
         edgesUpserted,
         edgesDeleted,
-      });
+      };
+      await (options.commit ? options.commit(preparedWrite) : this.deps.repository.commit(preparedWrite));
     } catch (err) {
       const raceWinner = await this.deps.repository.findByIdempotencyKey(normalized.namespace, normalized.idempotencyKey);
       if (raceWinner) {

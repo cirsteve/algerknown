@@ -25,8 +25,12 @@ describe('NamespaceMatcher over the default table', () => {
   });
 
   it('resolves memory.global distinctly from memory.project.*', () => {
-    expect(matcher.resolve(asNamespaceId('memory.global')).pattern).toBe('memory.global');
-    expect(matcher.resolve(asNamespaceId('memory.project.foo')).pattern).toBe('memory.project.*');
+    const global = matcher.resolve(asNamespaceId('memory.global'));
+    const project = matcher.resolve(asNamespaceId('memory.project.foo'));
+    expect(global.pattern).toBe('memory.global');
+    expect(global.engine).toBe('sqlite');
+    expect(project.pattern).toBe('memory.project.*');
+    expect(project.engine).toBe('sqlite');
   });
 
   it('routes community and relationship memory namespaces to sqlite AI-with-rails', () => {

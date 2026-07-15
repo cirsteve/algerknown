@@ -8,21 +8,36 @@ import type {
   RevisionId,
   RevisionRecord,
 } from '@algerknown/governed';
+import type { NamespaceMatcher } from '@algerknown/governed';
+
+export class RepositoryEngineUnavailableError extends Error {
+  constructor(namespace: NamespaceId, engine: string, detail?: string) {
+    super(`no repository is available for namespace "${namespace}" configured with engine "${engine}"${detail ? `: ${detail}` : ''}`);
+    this.name = 'RepositoryEngineUnavailableError';
+  }
+}
 
 /**
  * The single Repository instance WriteOrchestrator is constructed with.
- * Every method dispatches by namespace to the Algerknown/git repository
- * bound to that namespace, falling back to the shared SQLite repository for
- * every namespace without a git binding (memory.*, operation.*, and any
- * canonical.* namespace this deployment has not bound to a dossier).
- * WriteOrchestrator has no per-namespace repository-selection logic of its
- * own -- see NamespaceMatcher/NamespacePolicyEntry.engine, which is
- * validated but never consumed for routing -- so this composition-root
- * concern is the only place that engine assignment is actually enforced.
+ * Every method resolves the namespace's declarative engine first. SQLite
+ * namespaces share one repository; Algerknown namespaces must have an
+ * explicit dossier binding. Unknown engines and unbound Algerknown
+ * namespaces fail closed instead of silently falling back to SQLite.
  */
-export function createRoutingRepository(gitRepositoriesByNamespace: Map<string, Repository>, sqliteRepository: Repository): Repository {
+export function createRoutingRepository(
+  namespaceMatcher: NamespaceMatcher,
+  gitRepositoriesByNamespace: Map<string, Repository>,
+  sqliteRepository: Repository,
+): Repository {
   function resolve(namespace: NamespaceId): Repository {
-    return gitRepositoriesByNamespace.get(String(namespace)) ?? sqliteRepository;
+    const engine = String(namespaceMatcher.resolve(namespace).engine);
+    if (engine === 'sqlite') return sqliteRepository;
+    if (engine === 'algerknown') {
+      const repository = gitRepositoriesByNamespace.get(String(namespace));
+      if (repository) return repository;
+      throw new RepositoryEngineUnavailableError(namespace, engine, 'no dossier binding is configured');
+    }
+    throw new RepositoryEngineUnavailableError(namespace, engine);
   }
 
   return {

@@ -57,8 +57,16 @@ describe('AmendmentEditor', () => {
     await userEvent.click(saveButton);
 
     await waitFor(() => expect(capturedBody).toBeDefined());
-    const body = capturedBody as { expectedVersion: number; patch: unknown[]; idempotencyKey: string };
+    const body = capturedBody as {
+      expectedVersion: number;
+      expectedTargetRevision: number | null;
+      patch: unknown[];
+      note: string;
+      idempotencyKey: string;
+    };
     expect(body.expectedVersion).toBe(1);
+    expect(body.expectedTargetRevision).toBe(pendingProposalDetail.currentTargetRevision);
+    expect(body.note).toBe('Tightened the wording.');
     expect(body.idempotencyKey).toBeTruthy();
     expect(body.patch).toEqual(
       expect.arrayContaining([
@@ -66,9 +74,6 @@ describe('AmendmentEditor', () => {
         { op: 'replace', path: '/nodeMutations/0/payload/description', value: 'Edited insight text.' },
       ]),
     );
-    // No "note" field ever leaves the browser -- amend has no such request field.
-    expect(body).not.toHaveProperty('note');
-
     expect(await screen.findByRole('button', { name: 'Edit / remove items' })).toBeInTheDocument();
   });
 });

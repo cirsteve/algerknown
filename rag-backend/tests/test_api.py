@@ -363,7 +363,8 @@ class TestIngestEndpoint:
             finally:
                 api.CONTENT_DIR = old_content_dir
 
-    def test_ingest_returns_202(self):
+    @patch("api.run_ingest_job", new_callable=AsyncMock)
+    def test_ingest_returns_202(self, mock_run_ingest_job):
         """Should return 202 with a job_id for a valid entry."""
         from fastapi.testclient import TestClient
         from api import app
@@ -393,6 +394,7 @@ class TestIngestEndpoint:
                     data = response.json()
                     assert "job_id" in data
                     assert data["status"] == "pending"
+                    mock_run_ingest_job.assert_called_once()
             finally:
                 api.CONTENT_DIR = old_content_dir
 

@@ -38,11 +38,17 @@ function assertOnlyAllowedKeys(body: Record<string, unknown>, allowed: string[])
 }
 
 describe('governance API request contract', () => {
-  it('amend sends only expectedVersion, patch, idempotencyKey', async () => {
+  it('amend sends only expectedVersion, expectedTargetRevision, patch, note, and idempotencyKey', async () => {
     const body = await captureBody('amend', () =>
-      governanceApi.amendProposal(fetcher, PENDING_PROPOSAL_ID, { expectedVersion: 1, patch: [{ op: 'remove', path: '/nodeMutations/0' }], idempotencyKey: newIdempotencyKey() }),
+      governanceApi.amendProposal(fetcher, PENDING_PROPOSAL_ID, {
+        expectedVersion: 1,
+        expectedTargetRevision: 3,
+        patch: [{ op: 'remove', path: '/nodeMutations/0' }],
+        note: 'Remove unsupported observation.',
+        idempotencyKey: newIdempotencyKey(),
+      }),
     );
-    assertOnlyAllowedKeys(body, ['expectedVersion', 'patch', 'idempotencyKey']);
+    assertOnlyAllowedKeys(body, ['expectedVersion', 'expectedTargetRevision', 'patch', 'note', 'idempotencyKey']);
   });
 
   it('accept sends only expectedVersion, expectedTargetRevision, reviewNote, idempotencyKey', async () => {

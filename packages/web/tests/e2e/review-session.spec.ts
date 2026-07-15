@@ -118,7 +118,8 @@ test('recorded Algerknown governance review session', async ({ page }) => {
   await page.getByRole('button', { name: 'Create refresh amendment' }).click();
   await page.getByPlaceholder('Required note for this refresh amendment').fill('Refreshing against the current revision after the conflicting accept.');
   await page.getByRole('button', { name: 'Persist refresh amendment' }).click();
-  record('stale-conflict-refresh', `Persisted a refresh amendment against proposal ${manifest.proposals.staleSecond}.`);
+  await expect(page.getByText('target revision is stale')).not.toBeVisible({ timeout: 15_000 });
+  record('stale-conflict-refresh', `Persisted a refresh amendment against proposal ${manifest.proposals.staleSecond}; the refreshed version is no longer stale.`);
 
   // -- 9. History + revert on the earlier accepted proposal.
   await page.goto(`/ingest?tab=pending&proposal=${manifest.proposals.historyRevert}`);

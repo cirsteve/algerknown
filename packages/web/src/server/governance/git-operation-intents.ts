@@ -1,20 +1,20 @@
-import type { AcceptInput, DatabaseType, ProposalId, RevertInput } from '@algerknown/governed';
+import type { AcceptInput, Attestation, DatabaseType, ProposalId, RevertInput } from '@algerknown/governed';
 
 /**
  * Recoverable coordination for review actions (accept/revert) that mutate a
- * git-backed target. @algerknown/governed's DurableProposalService already
- * finalizes SQLite proposal bookkeeping atomically via SqliteUnitOfWork, but
- * that finalize is a *separate* transaction from the governed write itself
- * (WriteOrchestrator.write -> Repository.commit). For a git target, a crash
+ * git-backed target. SQLite-backed targets commit the governed revision and
+ * proposal bookkeeping in one local transaction; git and SQLite cannot
+ * share that transaction. For a git target, a crash
  * between "the git commit landed" and "the proposal was marked accepted"
  * would otherwise leave the proposal pending forever while the dossier has
  * already changed. This table records the operation's intent durably in the
- * same SQLite database *before* the write is attempted, so a startup scan
- * can detect and resolve any operation that never reached its finalize step.
+ * same SQLite database *before* the write is attempted, including the exact
+ * server-minted attestation, so a startup scan can verify and resolve any
+ * operation that never reached its finalize step.
  *
- * This table is owned entirely by the web composition root -- it is not part
- * of @algerknown/governed's own schema/migrations, since that package is out
- * of scope for this cohort to modify.
+ * This table is owned by the web composition root rather than the generic
+ * governed adapter: it coordinates two concrete backends and is initialized
+ * (including additive upgrades) when that composition starts.
  */
 export type GitOperationIntentAction = 'accept' | 'revert';
 export type GitOperationIntentStatus = 'started' | 'completed' | 'blocked';
@@ -27,6 +27,7 @@ export interface GitOperationIntentRow {
   commandIdempotencyKey: string;
   expectedMutationHash: string;
   reviewInputJson: string;
+  attestationJson: string | null;
   status: GitOperationIntentStatus;
   createdAt: string;
   completedAt: string | null;
@@ -44,6 +45,7 @@ export function ensureGitOperationIntentsTable(db: DatabaseType): void {
       command_idempotency_key TEXT NOT NULL,
       expected_mutation_hash TEXT NOT NULL,
       review_input_json TEXT NOT NULL,
+      attestation_json TEXT,
       status TEXT NOT NULL,
       created_at TEXT NOT NULL,
       completed_at TEXT,
@@ -52,6 +54,10 @@ export function ensureGitOperationIntentsTable(db: DatabaseType): void {
     );
     CREATE INDEX IF NOT EXISTS idx_web_git_operation_intents_proposal ON web_git_operation_intents (proposal_id, status);
   `);
+  const columns = db.prepare(`PRAGMA table_info(web_git_operation_intents)`).all() as { name: string }[];
+  if (!columns.some((column) => column.name === 'attestation_json')) {
+    db.exec(`ALTER TABLE web_git_operation_intents ADD COLUMN attestation_json TEXT`);
+  }
 }
 
 function rowToIntent(row: Record<string, unknown>): GitOperationIntentRow {
@@ -63,6 +69,7 @@ function rowToIntent(row: Record<string, unknown>): GitOperationIntentRow {
     commandIdempotencyKey: row.command_idempotency_key as string,
     expectedMutationHash: row.expected_mutation_hash as string,
     reviewInputJson: row.review_input_json as string,
+    attestationJson: (row.attestation_json as string | null) ?? null,
     status: row.status as GitOperationIntentStatus,
     createdAt: row.created_at as string,
     completedAt: (row.completed_at as string | null) ?? null,
@@ -94,14 +101,16 @@ export interface CreateIntentInput {
   commandIdempotencyKey: string;
   expectedMutationHash: string;
   reviewInput: AcceptInput | RevertInput;
+  attestation?: Attestation;
   createdAt: string;
 }
 
 export function createIntent(db: DatabaseType, input: CreateIntentInput): void {
   db.prepare(
     `INSERT INTO web_git_operation_intents
-       (operation_id, proposal_id, action, namespace, command_idempotency_key, expected_mutation_hash, review_input_json, status, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 'started', ?)`,
+       (operation_id, proposal_id, action, namespace, command_idempotency_key, expected_mutation_hash, review_input_json,
+        attestation_json, status, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'started', ?)`,
   ).run(
     input.operationId,
     input.proposalId,
@@ -110,6 +119,7 @@ export function createIntent(db: DatabaseType, input: CreateIntentInput): void {
     input.commandIdempotencyKey,
     input.expectedMutationHash,
     JSON.stringify(input.reviewInput),
+    input.attestation ? JSON.stringify(input.attestation) : null,
     input.createdAt,
   );
 }

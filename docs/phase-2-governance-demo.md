@@ -111,13 +111,10 @@ Ctrl-C.
    namespace, both expecting revision 0. Accepting the first advances the
    namespace to revision 1; opening the second now shows the conflict
    banner ("target revision is stale"). The reviewer persists a refresh
-   amendment acknowledging it. Note: the current amend endpoint has no
-   field to re-anchor `expectedTargetRevision`, so the refresh amendment is
-   durably recorded but the proposal still shows stale afterward -- full
-   recovery requires rejecting/expiring it so the pipeline regenerates a
-   fresh proposal against the current revision. The demo shows the refresh
-   step honestly, including this known gap, rather than pretending it
-   resolves.
+   amendment acknowledging it. The server verifies the supplied current
+   target revision, persists it into the new proposal version, and reloads
+   the authoritative diff. The proposal is no longer stale, but acceptance
+   still requires a separate explicit review action.
 8. **History.** Accept a third (unrelated) proposal and follow its event
    history, confirming the acceptance event and its note are recorded.
 9. **Revert.** Revert that same accepted proposal with a required reason --

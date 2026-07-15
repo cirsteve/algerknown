@@ -344,15 +344,32 @@ export function createGovernanceRouter(runtime: GovernanceRuntime, composition: 
         const proposalId = asProposalId(req.params.id!);
         withValidation(res, () => {
           const body = assertPlainObject(req.body);
-          assertOnlyKeys(body, ['expectedVersion', 'patch', 'idempotencyKey']);
+          assertOnlyKeys(body, ['expectedVersion', 'expectedTargetRevision', 'patch', 'note', 'idempotencyKey']);
           requireNumber(body, 'expectedVersion');
+          requireNullableNumber(body, 'expectedTargetRevision');
+          requireString(body, 'note');
           requireString(body, 'idempotencyKey');
+          if (!(body.note as string).trim()) throw new RequestValidationError('"note" must be non-empty');
           if (!isJsonPatchOpArray(body.patch)) throw new RequestValidationError('"patch" must be an array of RFC 6902 operations');
         });
         if (res.headersSent) return;
 
-        const body = req.body as { expectedVersion: number; patch: unknown; idempotencyKey: string };
+        const body = req.body as {
+          expectedVersion: number;
+          expectedTargetRevision: number | null;
+          patch: unknown;
+          note: string;
+          idempotencyKey: string;
+        };
         const inspection = await proposalService.inspect(proposalId, body.expectedVersion).catch(() => proposalService.inspect(proposalId));
+        const currentTargetRevision = await repository.getNamespaceRevision(inspection.proposal.targetNamespace);
+        if (body.expectedTargetRevision !== currentTargetRevision) {
+          sendError(res, 409, 'target_revision_conflict', {
+            expectedRevision: body.expectedTargetRevision,
+            actualRevision: currentTargetRevision,
+          });
+          return;
+        }
         const current = inspection.currentVersion.canonicalMutation as WriteCommand;
         const editableView = { nodeMutations: current.nodeMutations, edgeMutations: current.edgeMutations };
         let patched: typeof editableView;
@@ -366,13 +383,21 @@ export function createGovernanceRouter(runtime: GovernanceRuntime, composition: 
           throw err;
         }
 
-        const mutation: WriteCommand = { ...current, nodeMutations: patched.nodeMutations, edgeMutations: patched.edgeMutations };
+        const mutation: WriteCommand = {
+          ...current,
+          nodeMutations: patched.nodeMutations,
+          edgeMutations: patched.edgeMutations,
+          expectedNamespaceRevision: body.expectedTargetRevision,
+        };
         const updated = await amendProposal(reviewActionsDeps, proposalId, {
           reviewContext: res.locals.reviewContext!,
           input: {
             expectedVersion: body.expectedVersion,
             mutation,
             supportingObservationIds: inspection.currentVersion.supportingObservationIds,
+            actorId: res.locals.reviewContext!.reviewerId,
+            channel: res.locals.reviewContext!.channel,
+            note: body.note.trim(),
             idempotencyKey: body.idempotencyKey,
           },
         });

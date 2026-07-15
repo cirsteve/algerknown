@@ -17,11 +17,19 @@ and is shape-locked by `packages/governed/tests/acceptance/manifest.test.ts`
 (exactly 8 exit-criterion + 5 invariant entries, unique ids) so it cannot be
 quietly narrowed.
 
+One production capability is deliberately not claimed by this report:
+semantic contradiction *discovery*. The rail suite injects deterministic
+contradiction matches and proves that a higher-confidence contradiction is
+routed to a durable proposal with a `contradicts` edge. The shipped web
+composition still uses `createNoOpContradictionDetector`; selecting and
+validating a production detector is deferred to Phase 3. Thus EC1 proves the
+structural gate and route, not real-world semantic recall.
+
 ## Exit criteria
 
 | # | Exit criterion | Check id | Required case(s) | Primary evidence source |
 |---|---|---|---|---|
-| 1 | Structural rails | `ec1-structural-rails` | `default` | `packages/governed/tests/write/rail-matrix.test.ts` |
+| 1 | Structural rails (including contradiction routing with an injected deterministic detector) | `ec1-structural-rails` | `default` | `packages/governed/tests/write/rail-matrix.test.ts` |
 | 2 | Lifecycle transitions, attribution & reversal | `ec2-lifecycle-attribution-reversal` | `default` | `packages/governed/tests/proposals/lifecycle-scenario.test.ts` |
 | 3 | SQLite & Algerknown conformance | `ec3-backend-conformance` | `sqlite`, `algerknown` | `packages/governed/tests/conformance/sqlite.conformance.test.ts`, `algerknown-git.conformance.test.ts` |
 | 4 | Pinned dossier update & reversal | `ec4-pinned-dossier-update` | `default` | `packages/web/tests/governance/pinned-dossier-update.test.ts` |

@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import express from 'express';
 import request from 'supertest';
 import { describe, it, expect, afterEach } from 'vitest';
-import { asActorId, asEdgeId, asIdempotencyKey, asNodeId, asProcessorId, type WriteCommand } from '@algerknown/governed';
+import { asActorId, asAttestationId, asEdgeId, asIdempotencyKey, asNodeId, asProcessorId, type WriteCommand } from '@algerknown/governed';
 import { namespaceForBinding, subjectForBinding } from '@algerknown/governed/adapters/algerknown';
 import { loadGovernanceConfig } from '../../src/server/auth/governance-config.js';
 import { createSessionRegistry } from '../../src/server/auth/session-registry.js';
@@ -52,11 +52,9 @@ function proposeCommand(kb: SeededKnowledgeBase, nodeId: string, edgeId: string,
 }
 
 /**
- * memory.project.* matches the human-gated policy pattern but has no git
- * binding in this fixture, so it physically routes to SqliteRepository
- * (see RoutingRepository) even though its policy requires attestation just
- * like a dossier namespace -- this is the same namespace shape
- * candidate-mapping.ts targets for RAG-generated content.
+ * memory.project.* is declaratively SQLite-backed while retaining the
+ * human-gated policy, so it requires the same attestation semantics as a
+ * dossier namespace without pretending it has a git/YAML representation.
  */
 function sqliteProposeCommand(nodeId: string, edgeId: string): WriteCommand {
   return {
@@ -239,7 +237,7 @@ describe('governance e2e invariants', () => {
     writeNamespaceBindings(kb.root, [kb.binding]);
     env = testEnv({ ALGERKNOWN_ROOT: kb.root });
     composition = await createGovernanceComposition({ env });
-    const { db, proposalService, idGenerator, clock } = composition.reviewActionsDeps;
+    const { db, proposalService, idGenerator, clock, attestationVerifier } = composition.reviewActionsDeps;
 
     const proposeOutcome = await proposalService.propose({
       mutation: proposeCommand(kb, 'fact-crash-1', 'edge-crash-1'),
@@ -277,10 +275,76 @@ describe('governance e2e invariants', () => {
       createdAt: clock.now(),
     });
 
-    await recoverIncompleteGitOperations({ db, proposalService, clock });
+    await recoverIncompleteGitOperations({ db, proposalService, attestationVerifier, clock });
 
     const row = db.prepare(`SELECT status FROM web_git_operation_intents WHERE proposal_id = ?`).get(proposalId) as { status: string } | undefined;
     expect(row?.status).toBe('completed');
+  });
+
+  it('replays a pending git accept after restart using the durable attestation intent', async () => {
+    kb = seedKnowledgeBase();
+    writeNamespaceBindings(kb.root, [kb.binding]);
+    env = testEnv({ ALGERKNOWN_ROOT: kb.root });
+    composition = await createGovernanceComposition({ env });
+    const { db, proposalService, idGenerator, clock } = composition.reviewActionsDeps;
+
+    const proposed = await proposalService.propose({
+      mutation: proposeCommand(kb, 'fact-crash-before-write-1', 'edge-crash-before-write-1'),
+      supportingObservationIds: [],
+      idempotencyKey: 'propose-crash-before-write-1',
+    });
+    if (proposed.outcome !== 'created') throw new Error('expected created');
+    const proposalId = proposed.proposal.id;
+    const inspection = await proposalService.inspect(proposalId);
+    const attestationId = asAttestationId('att-crash-before-write-1');
+    const reviewInput = {
+      expectedVersion: 1,
+      expectedTargetRevision: null,
+      attestationId,
+      actorId: asActorId('reviewer-1'),
+      channel: 'cli',
+      reviewNote: 'Approved before the process stopped.',
+      idempotencyKey: 'accept-crash-before-write-1',
+    };
+    const attestation = {
+      id: attestationId,
+      reviewerId: asActorId('reviewer-1'),
+      approvedAt: clock.now(),
+      proposalId,
+      proposalVersion: 1,
+      targetRevision: null,
+      mutationHash: inspection.currentVersion.mutationHash,
+      reviewNote: reviewInput.reviewNote,
+      channel: 'cli',
+      verifierMeta: {},
+    };
+    const commitsBefore = gitCommitCount(kb.root);
+
+    createIntent(db, {
+      operationId: idGenerator.nextOperationId(),
+      proposalId,
+      action: 'accept',
+      namespace: String(proposed.proposal.targetNamespace),
+      commandIdempotencyKey: String((inspection.currentVersion.canonicalMutation as WriteCommand).idempotencyKey),
+      expectedMutationHash: String(inspection.currentVersion.mutationHash),
+      reviewInput,
+      attestation,
+      createdAt: clock.now(),
+    });
+
+    composition.close();
+    composition = await createGovernanceComposition({ env });
+
+    expect((await composition.proposalService.getProposal(proposalId))?.status).toBe('accepted');
+    expect(gitCommitCount(kb.root)).toBe(commitsBefore + 1);
+    const attestationRow = composition.reviewActionsDeps.db
+      .prepare(`SELECT reviewer_id, review_note FROM attestations WHERE attestation_id = ?`)
+      .get(attestationId) as { reviewer_id: string; review_note: string | null } | undefined;
+    expect(attestationRow).toEqual({ reviewer_id: 'reviewer-1', review_note: reviewInput.reviewNote });
+    const intentRow = composition.reviewActionsDeps.db
+      .prepare(`SELECT status FROM web_git_operation_intents WHERE proposal_id = ?`)
+      .get(proposalId) as { status: string } | undefined;
+    expect(intentRow?.status).toBe('completed');
   });
 
   it('blocks a dangling git operation intent whose mutation hash no longer matches, with no second write', async () => {
@@ -288,7 +352,7 @@ describe('governance e2e invariants', () => {
     writeNamespaceBindings(kb.root, [kb.binding]);
     env = testEnv({ ALGERKNOWN_ROOT: kb.root });
     composition = await createGovernanceComposition({ env });
-    const { db, proposalService, idGenerator, clock } = composition.reviewActionsDeps;
+    const { db, proposalService, idGenerator, clock, attestationVerifier } = composition.reviewActionsDeps;
 
     const proposeOutcome = await proposalService.propose({
       mutation: proposeCommand(kb, 'fact-hashmismatch-1', 'edge-hashmismatch-1'),
@@ -317,7 +381,7 @@ describe('governance e2e invariants', () => {
       createdAt: clock.now(),
     });
 
-    await recoverIncompleteGitOperations({ db, proposalService, clock });
+    await recoverIncompleteGitOperations({ db, proposalService, attestationVerifier, clock });
 
     const row = db.prepare(`SELECT status, note FROM web_git_operation_intents WHERE proposal_id = ?`).get(proposalId) as
       | { status: string; note: string | null }

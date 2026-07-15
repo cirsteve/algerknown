@@ -43,7 +43,14 @@ describe('conflict recovery: create refresh amendment', () => {
     await userEvent.type(screen.getByPlaceholderText(/Required note/i), 'Acknowledging the namespace moved on.');
     await userEvent.click(submit);
 
-    await waitFor(() => expect(amendBody).toMatchObject({ expectedVersion: 1, patch: [] }));
+    await waitFor(() =>
+      expect(amendBody).toMatchObject({
+        expectedVersion: 1,
+        expectedTargetRevision: 9,
+        patch: [],
+        note: 'Acknowledging the namespace moved on.',
+      }),
+    );
     expect((amendBody as Record<string, unknown>).idempotencyKey).toBeTruthy();
   });
 });

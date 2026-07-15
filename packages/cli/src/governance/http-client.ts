@@ -82,7 +82,10 @@ export class GovernanceClient {
     return this.request('GET', `/nodes/${encodeURIComponent(nodeId)}/history?namespace=${encodeURIComponent(namespace)}`);
   }
 
-  amendProposal(id: string, body: { expectedVersion: number; patch: unknown[]; idempotencyKey: string }): Promise<Record<string, unknown>> {
+  amendProposal(
+    id: string,
+    body: { expectedVersion: number; expectedTargetRevision: number | null; patch: unknown[]; note: string; idempotencyKey: string },
+  ): Promise<Record<string, unknown>> {
     return this.request('POST', `/proposals/${encodeURIComponent(id)}/amend`, body);
   }
 

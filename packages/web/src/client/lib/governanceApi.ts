@@ -273,7 +273,11 @@ export const governanceApi = {
   getNodeHistory: (fetcher: GovernanceFetcher, namespace: string, entityId: string) =>
     requestJson<NodeHistoryResponse>(fetcher, `/api/governance/nodes/${encodeURIComponent(entityId)}/history${qs({ namespace })}`),
 
-  amendProposal: (fetcher: GovernanceFetcher, id: string, input: { expectedVersion: number; patch: JsonPatchOp[]; idempotencyKey: string }) =>
+  amendProposal: (
+    fetcher: GovernanceFetcher,
+    id: string,
+    input: { expectedVersion: number; expectedTargetRevision: number | null; patch: JsonPatchOp[]; note: string; idempotencyKey: string },
+  ) =>
     requestJson<AmendResult>(fetcher, `/api/governance/proposals/${encodeURIComponent(id)}/amend`, {
       method: 'POST',
       body: JSON.stringify(input),

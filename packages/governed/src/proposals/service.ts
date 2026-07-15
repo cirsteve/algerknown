@@ -50,9 +50,16 @@ import type { WriteCommand } from '../domain/write-command.js';
 import { normalizeWriteCommand } from '../write/normalize.js';
 import type { WriteOrchestrator } from '../write/orchestrator.js';
 import type { AttestationVerifier } from '../ports/attestation-verifier.js';
+import type { Attestation } from '../domain/attestation.js';
 import type { Clock } from '../ports/clock.js';
 import type { IdGenerator } from '../ports/id-generator.js';
-import type { Repository } from '../ports/repository.js';
+import type { PreparedWrite, Repository } from '../ports/repository.js';
+import type { AppliedWriteResult } from '../domain/write-result.js';
+
+export interface AtomicProposalWrite {
+  supports(namespace: NamespaceId): boolean;
+  commit<T>(write: PreparedWrite, finalize: () => T): T;
+}
 
 export interface DurableProposalServiceDeps {
   db: DatabaseType;
@@ -68,6 +75,12 @@ export interface DurableProposalServiceDeps {
    * those sqlite tables).
    */
   repository: Repository;
+  /**
+   * Optional same-database commit boundary. When present for a namespace,
+   * accept/revert persist the PreparedWrite and all proposal-side records in
+   * one SQLite transaction instead of finalizing after the target commit.
+   */
+  atomicProposalWrite?: AtomicProposalWrite;
 }
 
 interface ProposalRow {
@@ -199,6 +212,17 @@ function provenanceFromInput(input: WriteCommand['provenanceInput'], railId: str
   };
 }
 
+function appliedFromPrepared(write: PreparedWrite): AppliedWriteResult {
+  const result: AppliedWriteResult = {
+    outcome: 'applied',
+    previousRevision: write.previousRevision,
+    resultingRevision: write.resultingRevision,
+    diff: write.revisionRecord.diff,
+  };
+  if (write.revisionRecord.auditDirective) result.auditDirective = write.revisionRecord.auditDirective;
+  return result;
+}
+
 /**
  * Restart-safe proposal lifecycle (propose/inspect/amend/accept/reject/
  * expire/delete/revert) on top of the same durable `proposals` tables that
@@ -216,6 +240,7 @@ export class DurableProposalService {
   private readonly clock: Clock;
   private readonly idGenerator: IdGenerator;
   private readonly repository: Repository;
+  private readonly atomicProposalWrite: AtomicProposalWrite | undefined;
   private readonly unitOfWork: SqliteUnitOfWork;
 
   constructor(deps: DurableProposalServiceDeps) {
@@ -225,6 +250,7 @@ export class DurableProposalService {
     this.clock = deps.clock;
     this.idGenerator = deps.idGenerator;
     this.repository = deps.repository;
+    this.atomicProposalWrite = deps.atomicProposalWrite;
     this.unitOfWork = new SqliteUnitOfWork(deps.db);
   }
 
@@ -344,6 +370,9 @@ export class DurableProposalService {
       expectedVersion: input.expectedVersion,
       mutation: normalized,
       supportingObservationIds: [...input.supportingObservationIds].sort(),
+      actorId: input.actorId ?? null,
+      channel: input.channel ?? null,
+      note: input.note?.trim() ?? null,
     });
     const idem = this.checkIdempotency<{ proposalId: string }>('proposal.amend', input.idempotencyKey, requestHash);
     if (idem) return (await this.getProposal(asProposalId(idem.proposalId)))!;
@@ -386,7 +415,16 @@ export class DurableProposalService {
         )
         .run(newVersion, mutationHash, fingerprint, normalized.expectedNamespaceRevision, at, proposalId);
 
-      this.insertEvent({ eventId: this.idGenerator.nextEventId(), proposalId, kind: 'amended', at, proposalVersion: newVersion });
+      this.insertEvent({
+        eventId: this.idGenerator.nextEventId(),
+        proposalId,
+        kind: 'amended',
+        at,
+        proposalVersion: newVersion,
+        ...(input.actorId ? { actorId: input.actorId } : {}),
+        ...(input.channel ? { channel: input.channel } : {}),
+        ...(input.note?.trim() ? { note: input.note.trim() } : {}),
+      });
 
       const updated = rowToProposal(this.getProposalRow(proposalId)!);
       this.recordIdempotency('proposal.amend', input.idempotencyKey, requestHash, { proposalId }, at);
@@ -452,7 +490,17 @@ export class DurableProposalService {
       attestation: { attestationId: input.attestationId },
     };
 
-    const writeResult = await this.orchestrator.write(command);
+    let atomicOutcome: AcceptOutcome | undefined;
+    const atomicWrite = this.atomicProposalWrite?.supports(command.namespace) ? this.atomicProposalWrite : undefined;
+    const writeResult = atomicWrite
+      ? await this.orchestrator.write(command, {
+          commit: (write) => {
+            atomicOutcome = atomicWrite.commit(write, () =>
+              this.finalizeAccept(proposalId, row, input, attestation, requestHash, at, appliedFromPrepared(write)),
+            );
+          },
+        })
+      : await this.orchestrator.write(command);
     const applied =
       writeResult.outcome === 'applied'
         ? writeResult
@@ -474,11 +522,25 @@ export class DurableProposalService {
       });
     }
 
+    if (atomicOutcome) return atomicOutcome;
+
     if (!applied) {
       const reasonCodes = writeResult.outcome === 'rejected' || writeResult.outcome === 'routed_to_proposal' ? writeResult.reasonCodes : [];
       throw new ProposalValidationError(`accept of proposal "${proposalId}" was not applied: ${writeResult.outcome} (${reasonCodes.join(', ')})`);
     }
 
+    return this.finalizeAccept(proposalId, row, input, attestation, requestHash, at, applied);
+  }
+
+  private finalizeAccept(
+    proposalId: ProposalId,
+    row: ProposalRow,
+    input: AcceptInput,
+    attestation: Attestation,
+    requestHash: string,
+    at: string,
+    applied: AppliedWriteResult,
+  ): AcceptOutcome {
     const result: AcceptOutcome = { outcome: 'accepted', resultingRevision: applied.resultingRevision };
     return this.unitOfWork.run(() => {
       // Claimed first, inside the same transaction as every other
@@ -707,6 +769,7 @@ export class DurableProposalService {
     if (row.resulting_revision === null) throw new ProposalValidationError(`proposal "${proposalId}" has no applied revision to revert`);
 
     let command: WriteCommand;
+    let revertAttestation: Attestation | undefined;
     if (input.revertCandidateId) {
       const candidateRow = this.mustGetProposalRow(input.revertCandidateId);
       if (candidateRow.status !== 'pending') {
@@ -725,13 +788,24 @@ export class DurableProposalService {
       if (!attestation) {
         throw new ProposalAttestationError(`no verifiable attestation "${input.attestationId}" for revert candidate "${input.revertCandidateId}"`);
       }
+      revertAttestation = attestation;
       command = { ...candidateVersion.canonicalMutation, attestation: { attestationId: input.attestationId } };
     } else {
       command = await this.buildRevertCommand(row, input.actorId, input.actorClass, input.idempotencyKey);
     }
 
     const at = this.clock.now();
-    const writeResult = await this.orchestrator.write(command);
+    let atomicOutcome: RevertOutcome | undefined;
+    const atomicWrite = this.atomicProposalWrite?.supports(command.namespace) ? this.atomicProposalWrite : undefined;
+    const writeResult = atomicWrite
+      ? await this.orchestrator.write(command, {
+          commit: (write) => {
+            atomicOutcome = atomicWrite.commit(write, () =>
+              this.finalizeRevert(proposalId, row, input, reason, requestHash, at, appliedFromPrepared(write), revertAttestation),
+            );
+          },
+        })
+      : await this.orchestrator.write(command);
     const applied =
       writeResult.outcome === 'applied'
         ? writeResult
@@ -743,11 +817,26 @@ export class DurableProposalService {
       return { outcome: 'target_revision_conflict', expectedRevision: writeResult.expectedRevision, actualRevision: writeResult.actualRevision };
     }
 
+    if (atomicOutcome) return atomicOutcome;
+
     if (!applied) {
       const reasonCodes = writeResult.outcome === 'rejected' || writeResult.outcome === 'routed_to_proposal' ? writeResult.reasonCodes : [];
       throw new ProposalValidationError(`revert of proposal "${proposalId}" was not applied: ${writeResult.outcome} (${reasonCodes.join(', ')})`);
     }
 
+    return this.finalizeRevert(proposalId, row, input, reason, requestHash, at, applied, revertAttestation);
+  }
+
+  private finalizeRevert(
+    proposalId: ProposalId,
+    row: ProposalRow,
+    input: RevertInput,
+    reason: string,
+    requestHash: string,
+    at: string,
+    applied: AppliedWriteResult,
+    attestation: Attestation | undefined,
+  ): RevertOutcome {
     const result: RevertOutcome = { outcome: 'reverted', newRevision: applied.resultingRevision };
     return this.unitOfWork.run(() => {
       // Claimed first, inside the same transaction as every other
@@ -778,6 +867,27 @@ export class DurableProposalService {
           channel: input.channel,
           detail: { revertOf: proposalId },
         });
+      }
+      if (attestation) {
+        this.db
+          .prepare(
+            `INSERT OR IGNORE INTO attestations
+               (attestation_id, proposal_id, proposal_version, reviewer_id, approved_at, target_revision, mutation_hash,
+                review_note, channel, verifier_meta_json)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .run(
+            attestation.id,
+            attestation.proposalId,
+            attestation.proposalVersion,
+            attestation.reviewerId,
+            attestation.approvedAt,
+            attestation.targetRevision,
+            attestation.mutationHash,
+            attestation.reviewNote ?? null,
+            attestation.channel,
+            canonicalStringify(attestation.verifierMeta),
+          );
       }
       this.db
         .prepare(

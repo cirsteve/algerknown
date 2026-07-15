@@ -1,10 +1,10 @@
 import type { ContradictionDetector, ContradictionMatch } from '@algerknown/governed';
 
 /**
- * No contradiction-detection model is in scope for this cohort; every
- * candidate is treated as non-contradicting so writes proceed through the
- * remaining rails instead of being silently routed to a proposal by a rule
- * this cohort never implemented.
+ * Production semantic contradiction discovery is explicitly deferred to
+ * Phase 3. Phase 2 proves the structural route with injected deterministic
+ * detectors, but this composition treats candidates as non-contradicting
+ * until a real provider is selected and validated.
  */
 export function createNoOpContradictionDetector(): ContradictionDetector {
   return {

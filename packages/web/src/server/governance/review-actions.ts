@@ -17,6 +17,7 @@ import type {
   RevertOutcome,
   ReviewEventFactory,
   WriteCommand,
+  Attestation,
 } from '@algerknown/governed';
 import { ProposalNotFoundError, asAttestationId, asIdempotencyKey, asMutationHash, resolvePolicyMode } from '@algerknown/governed';
 import type { AttestationId, ProposalId as GovernedProposalId } from '@algerknown/governed';
@@ -104,7 +105,7 @@ export async function acceptProposal(deps: ReviewActionsDeps, proposalId: Propos
     reviewNote: input.reviewNote,
   });
 
-  deps.attestationVerifier.register({
+  const attestation: Attestation = {
     id: attestationId,
     reviewerId: event.reviewerId,
     approvedAt: event.actionAt,
@@ -115,7 +116,8 @@ export async function acceptProposal(deps: ReviewActionsDeps, proposalId: Propos
     reviewNote: input.reviewNote,
     channel: event.channel,
     verifierMeta: {},
-  });
+  };
+  deps.attestationVerifier.register(attestation);
 
   const acceptInput: AcceptInput = {
     expectedVersion: input.expectedVersion,
@@ -143,6 +145,7 @@ export async function acceptProposal(deps: ReviewActionsDeps, proposalId: Propos
       commandIdempotencyKey,
       expectedMutationHash: String(mutationHash),
       reviewInput: acceptInput,
+      attestation,
       createdAt: deps.clock.now(),
     });
 
@@ -177,6 +180,7 @@ export async function revertProposal(deps: ReviewActionsDeps, proposalId: Propos
 
   let revertInput: RevertInput;
   let revertAttestationId: string | undefined;
+  let revertAttestation: Attestation | undefined;
 
   if (policyMode.requiresAttestation) {
     const candidate = await deps.proposalService.proposeRevert(proposalId, {
@@ -209,7 +213,7 @@ export async function revertProposal(deps: ReviewActionsDeps, proposalId: Propos
       idempotencyKey: asIdempotencyKey(input.idempotencyKey),
       reviewNote: input.reason,
     });
-    deps.attestationVerifier.register({
+    const attestation: Attestation = {
       id: attestationId,
       reviewerId: event.reviewerId,
       approvedAt: event.actionAt,
@@ -220,7 +224,8 @@ export async function revertProposal(deps: ReviewActionsDeps, proposalId: Propos
       reviewNote: input.reason,
       channel: event.channel,
       verifierMeta: {},
-    });
+    };
+    deps.attestationVerifier.register(attestation);
 
     revertInput = {
       actorId: event.reviewerId,
@@ -232,6 +237,7 @@ export async function revertProposal(deps: ReviewActionsDeps, proposalId: Propos
       attestationId,
     };
     revertAttestationId = attestationId;
+    revertAttestation = attestation;
   } else {
     const event = deps.reviewEventFactory.create(input.reviewContext, {
       proposalId,
@@ -265,6 +271,7 @@ export async function revertProposal(deps: ReviewActionsDeps, proposalId: Propos
       commandIdempotencyKey: input.idempotencyKey,
       expectedMutationHash: String(proposal.mutationHash),
       reviewInput: revertInput,
+      ...(revertAttestation ? { attestation: revertAttestation } : {}),
       createdAt: deps.clock.now(),
     });
 
