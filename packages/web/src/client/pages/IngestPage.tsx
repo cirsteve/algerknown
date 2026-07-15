@@ -1,12 +1,32 @@
-import { useState, useEffect } from 'react';
-import { Link, useLocation, useSearchParams } from 'react-router-dom';
-import { ragApi, ProposalData, checkRagConnection, type IngestResult } from '../lib/ragApi';
+import { useEffect, useState } from 'react';
+import { useLocation, useSearchParams } from 'react-router-dom';
+import { ragApi, checkRagConnection, type IngestResult } from '../lib/ragApi';
 import { api, IndexEntryRef } from '../lib/api';
 import { useJob } from '../hooks/useJob';
 import { useJobsContext } from '../context/JobsContext';
+import { revalidateProposalQueue } from '../hooks/useGovernance';
+import type { DurableProposalStatus } from '../lib/governanceApi';
+import { GovernanceQueue } from '../components/governance/GovernanceQueue';
+import { ProposalFilters } from '../components/governance/ProposalFilters';
+import { ProposalDetail } from '../components/governance/ProposalDetail';
 
-type IngestState = 'idle' | 'selecting' | 'ingesting' | 'reviewing' | 'applying';
+type IngestState = 'idle' | 'selecting' | 'ingesting';
 
+const STATUS_PARAM = 'tab';
+const NAMESPACE_PARAM = 'namespace';
+const PROPOSAL_PARAM = 'proposal';
+const CURSOR_PARAM = 'cursor';
+
+function isStatus(value: string | null): value is DurableProposalStatus {
+  return value === 'pending' || value === 'accepted' || value === 'rejected' || value === 'expired';
+}
+
+/**
+ * Ingest & Review: entry selection + compute-only job progress on top, the
+ * durable proposal queue and detail underneath. JobStore/job.result never
+ * carries proposal content -- only the durable proposal ids and counts a
+ * completed ingest job returns are used to focus the just-created records.
+ */
 export function IngestPage() {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -14,53 +34,74 @@ export function IngestPage() {
   const [ragConnected, setRagConnected] = useState<boolean | null>(null);
   const [entries, setEntries] = useState<IndexEntryRef[]>([]);
   const [selectedEntry, setSelectedEntry] = useState<string | null>(null);
-  const [proposals, setProposals] = useState<ProposalData[]>([]);
-  const [approvedProposals, setApprovedProposals] = useState<Set<number>>(new Set());
-  const [editingProposal, setEditingProposal] = useState<number | null>(null);
-  const [editedProposals, setEditedProposals] = useState<Map<number, ProposalData>>(new Map());
-  const [applyResults, setApplyResults] = useState<Array<{ proposal: ProposalData; success: boolean; error?: string }>>([]);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
+  const [namespaceOptions, setNamespaceOptions] = useState<string[]>([]);
+  const [detailDirty, setDetailDirty] = useState(false);
 
   const { isComplete, isFailed, result, progress, progressDetail, job, error: jobError } = useJob<IngestResult>(currentJobId);
   const { trackJob } = useJobsContext();
 
-  // Resume proposal review from ?job= param (e.g. navigating from Jobs dashboard)
+  const status = isStatus(searchParams.get(STATUS_PARAM)) ? (searchParams.get(STATUS_PARAM) as DurableProposalStatus) : 'pending';
+  const namespace = searchParams.get(NAMESPACE_PARAM) ?? '';
+  const selectedProposalId = searchParams.get(PROPOSAL_PARAM);
+  const cursor = searchParams.get(CURSOR_PARAM) ?? undefined;
+
+  function updateParams(next: Record<string, string | null>) {
+    if (detailDirty && next[PROPOSAL_PARAM] !== undefined && next[PROPOSAL_PARAM] !== selectedProposalId) {
+      if (!window.confirm('Discard unsaved amendment edits and switch proposals?')) return;
+      setDetailDirty(false);
+    }
+    setSearchParams(
+      (prev) => {
+        const merged = new URLSearchParams(prev);
+        for (const [key, value] of Object.entries(next)) {
+          if (value === null) merged.delete(key);
+          else merged.set(key, value);
+        }
+        return merged;
+      },
+      { replace: true },
+    );
+  }
+
+  function focusProposals(proposalIds: string[]) {
+    if (proposalIds.length === 0) return;
+    updateParams({ [STATUS_PARAM]: 'pending', [PROPOSAL_PARAM]: proposalIds[0]!, [CURSOR_PARAM]: null });
+    void revalidateProposalQueue();
+  }
+
+  // Resume compute progress from ?job= (e.g. navigating from the Jobs dashboard).
   const resumeJobId = searchParams.get('job');
   useEffect(() => {
     if (!resumeJobId) return;
 
-    ragApi.getJob<IngestResult>(resumeJobId)
-      .then(job => {
-        if (job.status === 'complete' && job.result?.proposals?.length) {
-          setProposals(job.result.proposals as ProposalData[]);
-          setState('reviewing');
-        } else if (job.status === 'running' || job.status === 'pending') {
+    ragApi
+      .getJob<IngestResult>(resumeJobId)
+      .then((resumedJob) => {
+        if (resumedJob.status === 'running' || resumedJob.status === 'pending') {
           setCurrentJobId(resumeJobId);
           setState('ingesting');
-        } else if (job.status === 'failed') {
-          setError(job.error || 'Ingest failed');
-        } else {
-          setError('Job has no proposals to review');
+        } else if (resumedJob.status === 'complete') {
+          focusProposals(resumedJob.result?.proposal_ids ?? []);
+        } else if (resumedJob.status === 'failed') {
+          setError(resumedJob.error || 'Ingest failed');
         }
-        // Clear param only after successful rehydration
-        setSearchParams({}, { replace: true });
+        updateParams({ job: null });
       })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Could not load job'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resumeJobId]);
 
-  // Refetch entries every time page is loaded/navigated to
   useEffect(() => {
     checkConnection();
     loadEntries();
   }, [location.key]);
 
-  // Handle ingest job completion
   useEffect(() => {
     if (isComplete && result) {
-      setProposals(result.proposals as ProposalData[]);
-      setState('reviewing');
+      focusProposals(result.proposal_ids);
+      setState('idle');
       setCurrentJobId(null);
     }
     if (isFailed && job) {
@@ -68,16 +109,16 @@ export function IngestPage() {
       setState('selecting');
       setCurrentJobId(null);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isComplete, isFailed]);
 
-  // Handle polling/network errors (job expired, backend down)
   useEffect(() => {
     if (jobError && currentJobId) {
       setError(jobError.message || 'Lost connection to job');
       setState('selecting');
       setCurrentJobId(null);
     }
-  }, [jobError]);
+  }, [jobError, currentJobId]);
 
   const checkConnection = async () => {
     const connResult = await checkRagConnection();
@@ -87,7 +128,7 @@ export function IngestPage() {
   const loadEntries = async () => {
     try {
       const allEntries = await api.getEntries();
-      setEntries(allEntries.filter(e => e.type === 'entry'));
+      setEntries(allEntries.filter((e) => e.type === 'entry'));
     } catch (err) {
       console.error('Failed to load entries:', err);
     }
@@ -95,14 +136,11 @@ export function IngestPage() {
 
   const handleIngest = async () => {
     if (!selectedEntry) return;
-
     setState('ingesting');
     setError(null);
-
     try {
-      const entry = entries.find(e => e.id === selectedEntry);
+      const entry = entries.find((e) => e.id === selectedEntry);
       if (!entry) throw new Error('Entry not found');
-
       const response = await ragApi.ingest(entry.path);
       setCurrentJobId(response.job_id);
       trackJob(response.job_id, 'ingest');
@@ -112,559 +150,108 @@ export function IngestPage() {
     }
   };
 
-  const toggleProposal = (index: number) => {
-    setApprovedProposals(prev => {
-      const next = new Set(prev);
-      if (next.has(index)) {
-        next.delete(index);
-      } else {
-        next.add(index);
-      }
-      return next;
-    });
-  };
-
-  const getProposalData = (index: number): ProposalData => {
-    return editedProposals.get(index) ?? proposals[index];
-  };
-
-  const startEditing = (index: number) => {
-    if (!editedProposals.has(index)) {
-      setEditedProposals(prev => new Map(prev).set(index, JSON.parse(JSON.stringify(proposals[index]))));
-    }
-    setEditingProposal(index);
-  };
-
-  const cancelEditing = () => {
-    if (editingProposal !== null) {
-      setEditedProposals(prev => {
-        const next = new Map(prev);
-        next.delete(editingProposal);
-        return next;
-      });
-    }
-    setEditingProposal(null);
-  };
-
-  const saveEditing = () => {
-    setEditingProposal(null);
-  };
-
-  const updateProposal = (index: number, updates: Partial<ProposalData>) => {
-    setEditedProposals(prev => {
-      const current = prev.get(index) ?? JSON.parse(JSON.stringify(proposals[index]));
-      return new Map(prev).set(index, { ...current, ...updates });
-    });
-  };
-
-  const handleApplyApproved = async () => {
-    if (approvedProposals.size === 0) return;
-
-    setState('applying');
-    setLoading(true);
-    setApplyResults([]);
-
-    const results: typeof applyResults = [];
-
-    for (const index of Array.from(approvedProposals).sort()) {
-      const proposal = getProposalData(index);
-      try {
-        const response = await ragApi.approve(proposal);
-        results.push({
-          proposal,
-          success: response.success,
-          error: response.error,
-        });
-      } catch (err) {
-        results.push({
-          proposal,
-          success: false,
-          error: err instanceof Error ? err.message : 'Unknown error',
-        });
-      }
-    }
-
-    setApplyResults(results);
-    setLoading(false);
-  };
-
-  const handleReset = () => {
-    setState('idle');
-    setSelectedEntry(null);
-    setProposals([]);
-    setApprovedProposals(new Set());
-    setEditingProposal(null);
-    setEditedProposals(new Map());
-    setApplyResults([]);
-    setError(null);
-    setCurrentJobId(null);
-    loadEntries();
-  };
-
-  const renderProposal = (_proposal: ProposalData, index: number) => {
-    const isApproved = approvedProposals.has(index);
-    const isEditing = editingProposal === index;
-    const displayData = getProposalData(index);
-    const hasEdits = editedProposals.has(index);
-
-    const updateLearning = (learningIndex: number, field: 'insight' | 'context', value: string) => {
-      const current = getProposalData(index);
-      const learnings = [...(current.new_learnings || [])];
-      learnings[learningIndex] = { ...learnings[learningIndex], [field]: value };
-      updateProposal(index, { new_learnings: learnings });
-    };
-
-    const removeLearning = (learningIndex: number) => {
-      const current = getProposalData(index);
-      const learnings = [...(current.new_learnings || [])];
-      learnings.splice(learningIndex, 1);
-      updateProposal(index, { new_learnings: learnings });
-    };
-
-    const updateDecision = (decisionIndex: number, field: 'decision' | 'rationale', value: string) => {
-      const current = getProposalData(index);
-      const decisions = [...(current.new_decisions || [])];
-      decisions[decisionIndex] = { ...decisions[decisionIndex], [field]: value };
-      updateProposal(index, { new_decisions: decisions });
-    };
-
-    const removeDecision = (decisionIndex: number) => {
-      const current = getProposalData(index);
-      const decisions = [...(current.new_decisions || [])];
-      decisions.splice(decisionIndex, 1);
-      updateProposal(index, { new_decisions: decisions });
-    };
-
-    const updateQuestion = (questionIndex: number, value: string) => {
-      const current = getProposalData(index);
-      const questions = [...(current.new_open_questions || [])];
-      questions[questionIndex] = value;
-      updateProposal(index, { new_open_questions: questions });
-    };
-
-    const removeQuestion = (questionIndex: number) => {
-      const current = getProposalData(index);
-      const questions = [...(current.new_open_questions || [])];
-      questions.splice(questionIndex, 1);
-      updateProposal(index, { new_open_questions: questions });
-    };
-
-    const updateLink = (linkIndex: number, field: 'id' | 'relationship', value: string) => {
-      const current = getProposalData(index);
-      const links = [...(current.new_links || [])];
-      links[linkIndex] = { ...links[linkIndex], [field]: value };
-      updateProposal(index, { new_links: links });
-    };
-
-    const removeLink = (linkIndex: number) => {
-      const current = getProposalData(index);
-      const links = [...(current.new_links || [])];
-      links.splice(linkIndex, 1);
-      updateProposal(index, { new_links: links });
-    };
-
-    return (
-      <div
-        key={index}
-        className={`border rounded-lg p-4 transition-colors ${
-          isApproved
-            ? 'border-green-500 bg-green-900/20'
-            : isEditing
-            ? 'border-sky-500 bg-sky-900/20'
-            : 'border-slate-600 bg-slate-800'
-        }`}
-      >
-        <div className="flex items-start justify-between mb-3">
-          <div>
-            <Link
-              to={`/entries/${displayData.target_summary_id}`}
-              className="font-medium text-sky-400 hover:text-sky-300"
-            >
-              {displayData.target_summary_id}
-            </Link>
-            <div className="text-xs text-slate-500 mt-1">
-              Match: {((displayData.match_score || 0) * 100).toFixed(0)}% ({displayData.match_reason})
-              {hasEdits && <span className="ml-2 text-amber-400">(edited)</span>}
-            </div>
-          </div>
-          <div className="flex gap-2">
-            {isEditing ? (
-              <>
-                <button
-                  onClick={saveEditing}
-                  className="px-3 py-1 rounded text-sm font-medium bg-sky-600 hover:bg-sky-500 text-white"
-                >
-                  Done
-                </button>
-                <button
-                  onClick={cancelEditing}
-                  className="px-3 py-1 rounded text-sm font-medium bg-slate-700 hover:bg-slate-600 text-slate-300"
-                >
-                  Cancel
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  onClick={() => startEditing(index)}
-                  className="px-3 py-1 rounded text-sm font-medium bg-slate-700 hover:bg-slate-600 text-slate-300"
-                >
-                  Edit
-                </button>
-                <button
-                  onClick={() => toggleProposal(index)}
-                  className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
-                    isApproved
-                      ? 'bg-green-600 hover:bg-green-500 text-white'
-                      : 'bg-slate-700 hover:bg-slate-600 text-slate-300'
-                  }`}
-                >
-                  {isApproved ? '✓ Approved' : 'Approve'}
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-
-        {displayData.rationale && (
-          <p className="text-sm text-slate-400 mb-3 italic">
-            "{displayData.rationale}"
-          </p>
-        )}
-
-        {displayData.new_learnings && displayData.new_learnings.length > 0 && (
-          <div className="mb-3">
-            <div className="text-xs font-medium text-slate-500 mb-1">New Learnings:</div>
-            {displayData.new_learnings.map((learning, i) => (
-              <div key={i} className="text-sm bg-slate-900/50 rounded p-2 mb-1">
-                {isEditing ? (
-                  <div className="space-y-2">
-                    <div className="flex gap-2">
-                      <textarea
-                        value={learning.insight}
-                        onChange={e => updateLearning(i, 'insight', e.target.value)}
-                        className="flex-1 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-slate-200 text-sm"
-                        rows={2}
-                      />
-                      <button
-                        onClick={() => removeLearning(i)}
-                        className="text-red-400 hover:text-red-300 text-sm px-2"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                    <input
-                      type="text"
-                      value={learning.context || ''}
-                      onChange={e => updateLearning(i, 'context', e.target.value)}
-                      placeholder="Context (optional)"
-                      className="w-full bg-slate-800 border border-slate-600 rounded px-2 py-1 text-slate-400 text-xs"
-                    />
-                  </div>
-                ) : (
-                  <>
-                    <div className="text-slate-200">{learning.insight}</div>
-                    {learning.context && (
-                      <div className="text-xs text-slate-500 mt-1">{learning.context}</div>
-                    )}
-                  </>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {displayData.new_decisions && displayData.new_decisions.length > 0 && (
-          <div className="mb-3">
-            <div className="text-xs font-medium text-slate-500 mb-1">New Decisions:</div>
-            {displayData.new_decisions.map((decision, i) => (
-              <div key={i} className="text-sm bg-slate-900/50 rounded p-2 mb-1">
-                {isEditing ? (
-                  <div className="space-y-2">
-                    <div className="flex gap-2">
-                      <textarea
-                        value={decision.decision}
-                        onChange={e => updateDecision(i, 'decision', e.target.value)}
-                        className="flex-1 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-slate-200 text-sm"
-                        rows={2}
-                      />
-                      <button
-                        onClick={() => removeDecision(i)}
-                        className="text-red-400 hover:text-red-300 text-sm px-2"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                    <input
-                      type="text"
-                      value={decision.rationale || ''}
-                      onChange={e => updateDecision(i, 'rationale', e.target.value)}
-                      placeholder="Rationale (optional)"
-                      className="w-full bg-slate-800 border border-slate-600 rounded px-2 py-1 text-slate-400 text-xs"
-                    />
-                  </div>
-                ) : (
-                  <>
-                    <div className="text-slate-200">{decision.decision}</div>
-                    {decision.rationale && (
-                      <div className="text-xs text-slate-500 mt-1">{decision.rationale}</div>
-                    )}
-                  </>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {displayData.new_open_questions && displayData.new_open_questions.length > 0 && (
-          <div className="mb-3">
-            <div className="text-xs font-medium text-slate-500 mb-1">New Questions:</div>
-            {displayData.new_open_questions.map((q, i) => (
-              <div key={i} className="text-sm text-slate-300 bg-slate-900/50 rounded p-2 mb-1">
-                {isEditing ? (
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={q}
-                      onChange={e => updateQuestion(i, e.target.value)}
-                      className="flex-1 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-slate-200 text-sm"
-                    />
-                    <button
-                      onClick={() => removeQuestion(i)}
-                      className="text-red-400 hover:text-red-300 text-sm px-2"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                ) : (
-                  q
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {displayData.new_links && displayData.new_links.length > 0 && (
-          <div>
-            <div className="text-xs font-medium text-slate-500 mb-1">New Links:</div>
-            {displayData.new_links.map((link, i) => (
-              <div key={i} className="text-sm text-slate-300">
-                {isEditing ? (
-                  <div className="flex gap-2 mb-1">
-                    <input
-                      type="text"
-                      value={link.id}
-                      onChange={e => updateLink(i, 'id', e.target.value)}
-                      placeholder="Link ID"
-                      className="w-1/3 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-slate-200 text-sm"
-                    />
-                    <input
-                      type="text"
-                      value={link.relationship}
-                      onChange={e => updateLink(i, 'relationship', e.target.value)}
-                      placeholder="Relationship"
-                      className="flex-1 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-slate-200 text-sm"
-                    />
-                    <button
-                      onClick={() => removeLink(i)}
-                      className="text-red-400 hover:text-red-300 text-sm px-2"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                ) : (
-                  <>→ {link.id} ({link.relationship})</>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  };
-
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-100">Ingest</h1>
-          <p className="text-sm text-slate-400 mt-1">
-            Add new entries and update related summaries
-          </p>
+          <h1 className="text-2xl font-bold text-slate-100">Ingest &amp; Review</h1>
+          <p className="text-sm text-slate-400 mt-1">Generate proposals from an entry, then review and act on the durable proposal queue below.</p>
         </div>
         <div className="flex items-center gap-2">
-          <div
-            className={`w-2 h-2 rounded-full ${
-              ragConnected === null
-                ? 'bg-yellow-500'
-                : ragConnected
-                ? 'bg-green-500'
-                : 'bg-red-500'
-            }`}
-          />
-          <span className="text-sm text-slate-400">
-            {ragConnected === null
-              ? 'Checking RAG...'
-              : ragConnected
-              ? 'RAG Online'
-              : 'RAG Offline'}
-          </span>
+          <div className={`w-2 h-2 rounded-full ${ragConnected === null ? 'bg-yellow-500' : ragConnected ? 'bg-green-500' : 'bg-red-500'}`} />
+          <span className="text-sm text-slate-400">{ragConnected === null ? 'Checking RAG...' : ragConnected ? 'RAG Online' : 'RAG Offline'}</span>
         </div>
       </div>
 
-      {/* Error display */}
       {error && (
-        <div className="bg-red-900/50 border border-red-500 rounded-lg p-4 text-red-200">
-          {error}
-        </div>
-      )}
-
-      {/* Step: Select Entry */}
-      {(state === 'idle' || state === 'selecting') && (
-        <div className="bg-slate-800 rounded-lg p-6">
-          <h2 className="text-lg font-medium text-slate-100 mb-4">
-            1. Select an entry to ingest
-          </h2>
-
-          <select
-            value={selectedEntry || ''}
-            onChange={(e) => setSelectedEntry(e.target.value || null)}
-            className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-slate-100 mb-4"
-          >
-            <option value="">Select an entry...</option>
-            {entries.map(entry => (
-              <option key={entry.id} value={entry.id}>
-                {entry.id}{entry.last_ingested ? ` (ingested: ${entry.last_ingested})` : ' (never ingested)'}
-              </option>
-            ))}
-          </select>
-
-          <button
-            onClick={() => { setState('selecting'); handleIngest(); }}
-            disabled={!selectedEntry || !ragConnected}
-            className="bg-sky-500 hover:bg-sky-400 disabled:bg-slate-600 disabled:cursor-not-allowed px-6 py-3 rounded-lg font-medium transition-colors"
-          >
-            Ingest Entry
+        <div className="bg-red-900/50 border border-red-500 rounded-lg p-4 text-red-200 flex items-center justify-between">
+          <span>{error}</span>
+          <button onClick={() => setError(null)} className="text-red-300 hover:text-red-100 text-sm">
+            Dismiss
           </button>
         </div>
       )}
 
-      {/* Step: Ingesting (async job in progress) */}
-      {state === 'ingesting' && (
-        <div className="bg-slate-800 rounded-lg p-6">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 bg-sky-500 rounded-full animate-pulse" />
-              <div className="w-3 h-3 bg-sky-500 rounded-full animate-pulse delay-75" />
-              <div className="w-3 h-3 bg-sky-500 rounded-full animate-pulse delay-150" />
+      <div className="bg-slate-800 rounded-lg p-6">
+        <h2 className="text-lg font-medium text-slate-100 mb-4">Generate proposals</h2>
+        {state === 'ingesting' ? (
+          <div>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 bg-sky-500 rounded-full animate-pulse" />
+                <div className="w-3 h-3 bg-sky-500 rounded-full animate-pulse delay-75" />
+                <div className="w-3 h-3 bg-sky-500 rounded-full animate-pulse delay-150" />
+              </div>
+              <span className="text-slate-300">{progress || 'Starting...'}</span>
             </div>
-            <span className="text-slate-300">
-              {progress || 'Starting...'}
-            </span>
+            {progressDetail && progressDetail.total_steps > 0 && (
+              <div className="w-full bg-slate-700 rounded-full h-2">
+                <div
+                  className="bg-sky-500 h-2 rounded-full transition-all duration-500"
+                  style={{ width: `${(progressDetail.current_step / progressDetail.total_steps) * 100}%` }}
+                />
+              </div>
+            )}
           </div>
-          {progressDetail && progressDetail.total_steps > 0 && (
-            <div className="w-full bg-slate-700 rounded-full h-2">
-              <div
-                className="bg-sky-500 h-2 rounded-full transition-all duration-500"
-                style={{ width: `${(progressDetail.current_step / progressDetail.total_steps) * 100}%` }}
-              />
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Step: Review Proposals */}
-      {state === 'reviewing' && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-medium text-slate-100">
-              2. Review Proposals ({proposals.length} found)
-            </h2>
-            <div className="flex gap-2">
-              <button
-                onClick={handleReset}
-                className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm"
-              >
-                Start Over
-              </button>
-              <button
-                onClick={handleApplyApproved}
-                disabled={approvedProposals.size === 0 || loading}
-                className="px-4 py-2 bg-green-600 hover:bg-green-500 disabled:bg-slate-600 disabled:cursor-not-allowed rounded-lg text-sm font-medium"
-              >
-                Apply {approvedProposals.size} Approved
-              </button>
-            </div>
-          </div>
-
-          {proposals.length === 0 ? (
-            <div className="bg-slate-800 rounded-lg p-6 text-center text-slate-400">
-              No update proposals generated. The entry may not relate to existing summaries.
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {proposals.map((proposal, index) => renderProposal(proposal, index))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Step: Applying */}
-      {state === 'applying' && loading && (
-        <div className="bg-slate-800 rounded-lg p-6 text-center">
-          <div className="flex items-center justify-center gap-2 mb-4">
-            <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse" />
-            <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse delay-75" />
-            <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse delay-150" />
-          </div>
-          <p className="text-slate-300">Applying approved proposals...</p>
-        </div>
-      )}
-
-      {/* Step: Results */}
-      {state === 'applying' && !loading && applyResults.length > 0 && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-medium text-slate-100">
-              3. Results
-            </h2>
-            <button
-              onClick={handleReset}
-              className="px-4 py-2 bg-sky-500 hover:bg-sky-400 rounded-lg text-sm font-medium"
+        ) : (
+          <div className="flex items-center gap-4">
+            <select
+              value={selectedEntry || ''}
+              onChange={(e) => setSelectedEntry(e.target.value || null)}
+              className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-slate-100"
             >
-              Ingest Another
+              <option value="">Select an entry...</option>
+              {entries.map((entry) => (
+                <option key={entry.id} value={entry.id}>
+                  {entry.id}
+                  {entry.last_ingested ? ` (ingested: ${entry.last_ingested})` : ' (never ingested)'}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={() => {
+                setState('selecting');
+                handleIngest();
+              }}
+              disabled={!selectedEntry || !ragConnected}
+              className="bg-sky-500 hover:bg-sky-400 disabled:bg-slate-600 disabled:cursor-not-allowed px-6 py-3 rounded-lg font-medium transition-colors whitespace-nowrap"
+            >
+              Ingest Entry
             </button>
           </div>
+        )}
+      </div>
 
-          <div className="space-y-2">
-            {applyResults.map((applyResult, index) => (
-              <div
-                key={index}
-                className={`flex items-center justify-between p-4 rounded-lg ${
-                  applyResult.success
-                    ? 'bg-green-900/30 border border-green-700'
-                    : 'bg-red-900/30 border border-red-700'
-                }`}
-              >
-                <div>
-                  <span className="font-medium">
-                    {applyResult.proposal.target_summary_id}
-                  </span>
-                  {applyResult.error && (
-                    <span className="text-sm text-red-400 ml-2">
-                      {applyResult.error}
-                    </span>
-                  )}
-                </div>
-                <span className={applyResult.success ? 'text-green-400' : 'text-red-400'}>
-                  {applyResult.success ? '✓ Applied' : '✗ Failed'}
-                </span>
-              </div>
-            ))}
+      <div>
+        <h2 className="text-lg font-medium text-slate-100 mb-4">Durable proposal queue</h2>
+        <ProposalFilters
+          status={status}
+          onStatusChange={(next) => updateParams({ [STATUS_PARAM]: next, [CURSOR_PARAM]: null })}
+          namespace={namespace}
+          onNamespaceChange={(next) => updateParams({ [NAMESPACE_PARAM]: next || null, [CURSOR_PARAM]: null })}
+          namespaceOptions={namespaceOptions}
+        />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-4">
+          <GovernanceQueue
+            status={status}
+            namespace={namespace}
+            cursor={cursor}
+            selectedId={selectedProposalId}
+            onSelect={(id) => updateParams({ [PROPOSAL_PARAM]: id })}
+            onCursorChange={(next) => updateParams({ [CURSOR_PARAM]: next ?? null })}
+            onNamespacesObserved={(observed) =>
+              setNamespaceOptions((prev) => Array.from(new Set([...prev, ...observed])).sort())
+            }
+          />
+          <div>
+            {selectedProposalId ? (
+              <ProposalDetail id={selectedProposalId} onDirtyChange={setDetailDirty} />
+            ) : (
+              <div className="bg-slate-800 rounded-lg p-6 text-center text-slate-500">Select a proposal to inspect it.</div>
+            )}
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }

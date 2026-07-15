@@ -119,4 +119,9 @@ export function useProposalActions(id: string) {
   return { amend, accept, reject, expire, delete: deleteProposal, revert };
 }
 
+/** Forces every cached queue page to revalidate now, e.g. right after an ingest job durably persists new proposals. */
+export async function revalidateProposalQueue() {
+  await globalMutate((key) => Array.isArray(key) && key[0] === QUEUE_KEY);
+}
+
 export { newIdempotencyKey };
