@@ -410,3 +410,48 @@ describe('canonicalNormalize', () => {
     expect(canonicalNormalize(once)).toBe(once);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Versioned $id cross-schema $ref resolution
+//
+// content-agn's published/deployed schemas carry a versioned $id
+// (.../summary.v1.schema.json) distinct from Algerknown's package $id, but
+// entry.schema.json (byte-identical to Algerknown's own asset, unversioned)
+// still references it via the relative `"summary.schema.json#/$defs/status"`
+// $ref. loadSchemas() must resolve this regardless of the deployed summary
+// schema's own declared $id.
+// ---------------------------------------------------------------------------
+
+describe('cross-schema $ref resolution with a versioned deployed $id', () => {
+  it('resolves entry.schema.json -> summary.schema.json#/$defs/status even when summary.schema.json declares a versioned $id', () => {
+    const dir = makeTempDir('algerknown-versioned-id');
+    try {
+      init(dir);
+      resetValidator();
+
+      const summarySchemaPath = path.join(dir, '.algerknown', 'schemas', 'summary.schema.json');
+      const summarySchema = JSON.parse(fs.readFileSync(summarySchemaPath, 'utf-8'));
+      expect(summarySchema.$id).toBe('https://algerknown.dev/schemas/summary.schema.json');
+      summarySchema.$id = 'https://algerknown.dev/schemas/summary.v1.schema.json';
+      fs.writeFileSync(summarySchemaPath, JSON.stringify(summarySchema, null, 2), 'utf-8');
+
+      const validEntry = {
+        id: '2026-01-01-test-entry',
+        type: 'entry' as const,
+        date: '2026-01-01',
+        topic: 'Versioned $id test',
+        status: 'active' as const,
+      };
+      const validResult = validate(validEntry, dir);
+      expect(validResult.valid).toBe(true);
+
+      const invalidEntry = { ...validEntry, status: 'not-a-real-status' as unknown as 'active' };
+      const invalidResult = validate(invalidEntry, dir);
+      expect(invalidResult.valid).toBe(false);
+      expect(invalidResult.errors.some(e => e.path.includes('status'))).toBe(true);
+    } finally {
+      fs.rmSync(dir, { recursive: true });
+      resetValidator();
+    }
+  });
+});

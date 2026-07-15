@@ -17,6 +17,17 @@ import { parsePortableRegex } from './regex/portable-regex.js';
 let ajvInstance: Ajv2020 | null = null;
 let loadedRoot: string | null = null;
 
+// Canonical base for resolving cross-schema $refs (e.g. entry.schema.json's
+// `$ref: "summary.schema.json#/$defs/status"`). Schemas are registered under
+// this absolute-URI key regardless of their own declared `$id`, so a
+// versioned deployed schema (content-agn's `$id: .../summary.v1.schema.json`)
+// still resolves relative refs from unversioned sibling schemas correctly.
+const SCHEMA_BASE_URL = 'https://algerknown.dev/schemas/';
+
+function schemaKeyForFile(file: string): string {
+  return `${SCHEMA_BASE_URL}${file}`;
+}
+
 /**
  * Load all schemas from the .algerknown/schemas directory
  */
@@ -42,8 +53,9 @@ function loadSchemas(root: string): Ajv2020 {
     const schemaContent = fs.readFileSync(schemaPath, 'utf-8');
     const schema = JSON.parse(schemaContent);
 
-    // Add schema with its filename as the key for $ref resolution
-    ajv.addSchema(schema, file);
+    // Add schema keyed by its canonical (unversioned) URL for $ref resolution,
+    // independent of whatever `$id` the schema itself declares.
+    ajv.addSchema(schema, schemaKeyForFile(file));
   }
 
   return ajv;
@@ -298,7 +310,7 @@ export function validate(entry: AnyEntry, root?: string): ValidationResult {
     ? 'summary.schema.json'
     : 'entry.schema.json';
 
-  const validateFn = ajv.getSchema(schemaFile);
+  const validateFn = ajv.getSchema(schemaKeyForFile(schemaFile));
 
   if (!validateFn) {
     return {
