@@ -100,17 +100,15 @@ termination is deliberately added (Caddy, nginx, or Tailscale Serve), use
 the SSH tunnel approach above instead of setting
 `GOVERNANCE_PRIVATE_DEPLOYMENT=true`.
 
-## The legacy `/approve` route
+## The legacy `/approve` route (retired)
 
-`rag-backend`'s `POST /approve` (and the direct-write path behind it) is a
-transitional holdover from before this trust profile existed. It is
-**explicitly not part of the governed trust surface**: it has no reviewer-
-session semantics, and loopback binding plus the removal of wildcard CORS
-are the only things limiting its exposure. It is not proxied to a browser
-origin other than through the Node server's `/rag/*` proxy, and cohort 6
-removes both the route and the direct writer behind it once mutations are
-integrated through governed review actions. Phase 2 security is **not**
-complete while this route remains.
+`rag-backend`'s `POST /approve` and `POST /preview` — and the direct YAML
+writer (`writer.apply_update`) behind them — have been **retired**. Both
+routes now return `410 Gone`, `writer.py` no longer holds any write path, and
+`packages/web/tests/governance/write-site-audit.test.ts` statically enforces
+that no ungoverned write site reappears. All mutations flow through governed
+review actions; there is no direct-write path left to limit by loopback
+binding. This closes the Phase 2 gap this section previously tracked.
 
 ## Threat model
 

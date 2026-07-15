@@ -22,6 +22,12 @@ export const execCommandRunner: CommandRunner = (command, args, input) =>
     });
     child.on('error', reject);
     child.on('close', (code) => resolve({ code: code ?? 1, stdout, stderr }));
+    // A keychain child (e.g. `secret-tool` with a locked keyring) can exit
+    // before draining stdin, which raises EPIPE on this stream. Without a
+    // handler that becomes an uncaught exception that crashes the whole CLI;
+    // swallow it so the real failure surfaces via the child's exit code and
+    // captured stderr in the 'close' handler above.
+    child.stdin.on('error', () => {});
     if (input !== undefined) {
       child.stdin.write(input);
     }

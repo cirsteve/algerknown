@@ -63,6 +63,8 @@ Environment variables (set in root `.env`):
 | `TRACER_DB_PATH` | jig SQLite tracer path | `jig_traces.db` |
 | `RAG_HOST` | Server host | `127.0.0.1` (loopback-only by default; see [docs/springfield-deployment.md](../docs/springfield-deployment.md) before changing) |
 | `RAG_PORT` | Server port | `4735` |
+| `GOVERNANCE_API_URL` | Governed write API base for persisting ingest proposals | `http://127.0.0.1:2393/api/governance` (the container loopback default cannot reach an out-of-container governance service — set this to the reachable host, e.g. `http://willie:2393/api/governance`) |
+| `GOVERNANCE_PROCESSOR_SECRET` | Processor bearer secret for proposal/operation submission | Unset (when absent, generated ingest candidates are **skipped**, not persisted) |
 
 `CHROMA_DB_DIR` is still honored as a fallback for `MEMORY_DB_PATH` during the rollout window.
 

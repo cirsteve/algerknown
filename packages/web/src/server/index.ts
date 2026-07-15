@@ -103,10 +103,12 @@ async function main(): Promise<void> {
     res.sendFile(path.join(clientDistPath, 'index.html'));
   });
 
-  // Error handler
+  // Error handler. The internal message is logged server-side but never
+  // returned to the client -- echoing err.message leaks internals (namespace
+  // names, configured engines, stack context) to the caller.
   app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     console.error('Server error:', err);
-    res.status(500).json({ error: err.message || 'Internal server error' });
+    res.status(500).json({ error: 'Internal server error' });
   });
 
   app.listen(Number(PORT), HOST, () => {

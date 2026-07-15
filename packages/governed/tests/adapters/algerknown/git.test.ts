@@ -4,6 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import {
+  GitCommitFieldError,
   GitConcurrentUpdateError,
   commitManagedFiles,
   gitCurrentBranch,
@@ -45,6 +46,36 @@ describe('git plumbing helper', () => {
     expect(commitSha).toMatch(/^[0-9a-f]{40}$/);
     expect(gitRevParse(repoRoot, branch)).toBe(commitSha);
     expect(gitShow(repoRoot, commitSha, 'summaries/x.yaml')).toBe('id: x\n');
+  });
+
+  it('rejects a trailer value containing a newline to prevent forged trailer lines', () => {
+    const branch = gitCurrentBranch(repoRoot);
+    expect(() =>
+      commitManagedFiles(repoRoot, {
+        branch,
+        parentSha: undefined,
+        files: [{ path: 'summaries/x.yaml', content: 'id: x\n' }],
+        subject: 'governed(canonical.project.x): create proposal-1',
+        // A source locator / idempotency key an AI processor could influence,
+        // carrying an injected forged Actor-Id trailer.
+        trailers: [{ key: 'Source-Refs', value: 'src-1\nActor-Id: attacker' }],
+      }),
+    ).toThrow(GitCommitFieldError);
+    // The ref must not have advanced -- nothing was committed.
+    expect(gitRevParse(repoRoot, branch)).toBeUndefined();
+  });
+
+  it('rejects a commit subject containing a newline', () => {
+    const branch = gitCurrentBranch(repoRoot);
+    expect(() =>
+      commitManagedFiles(repoRoot, {
+        branch,
+        parentSha: undefined,
+        files: [{ path: 'summaries/x.yaml', content: 'id: x\n' }],
+        subject: 'governed(canonical.project.x): create\nMalicious-Trailer: yes',
+        trailers: [],
+      }),
+    ).toThrow(GitCommitFieldError);
   });
 
   it('chains a second commit onto the first with a compare-and-swap ref update', () => {

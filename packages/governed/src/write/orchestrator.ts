@@ -220,7 +220,7 @@ export class WriteOrchestrator {
       verdicts.push(placementVerdict);
       if (!placementVerdict.passed) return rejected(placementVerdict.reasonCodes, verdicts);
 
-      const aiBlockVerdict = evaluateAiTruthMutationBlock(rn.effectiveType, namespaceEntry);
+      const aiBlockVerdict = evaluateAiTruthMutationBlock(rn.effectiveType, policyMode);
       verdicts.push(aiBlockVerdict);
       if (!aiBlockVerdict.passed) return rejected(aiBlockVerdict.reasonCodes, verdicts);
     }
@@ -230,7 +230,7 @@ export class WriteOrchestrator {
       if (mutation.op === 'create' && mutation.kind === 'supersedes') {
         const target = loadedNodes.get(mutation.targetId);
         if (target) {
-          const supersedeVerdict = evaluateAiTruthMutationBlock(target.type, namespaceEntry);
+          const supersedeVerdict = evaluateAiTruthMutationBlock(target.type, policyMode);
           verdicts.push(supersedeVerdict);
           if (!supersedeVerdict.passed) return rejected(supersedeVerdict.reasonCodes, verdicts);
         }
@@ -295,34 +295,49 @@ export class WriteOrchestrator {
       if (!volumeVerdict.passed) return rejected(volumeVerdict.reasonCodes, verdicts);
     }
 
+    // A write that carries an attestation verified against a pending proposal
+    // for this exact mutation is an approved re-application of an
+    // already-reviewed proposal (e.g. accepting a contradiction-routed
+    // proposal, whose synthesized `contradicts` edges the reviewer has already
+    // seen). Re-running contradiction detection on it would re-route the
+    // approved write into a brand-new proposal, so it could never apply. Skip
+    // detection once the attestation is confirmed: for attestation-required
+    // policies step 7 already verified it; for ai-with-rails we confirm here
+    // rather than trust mere presence of a caller-supplied attestation.
+    const attestationApproved =
+      normalized.attestation !== undefined &&
+      (policyMode.requiresAttestation ? attestationVerdict.passed : await this.hasVerifiedAttestation(normalized, mutationHash));
+
     // Step 10: detect contradictions (only newly-created candidates can contradict).
     const contradictionsByCandidate = new Map<NodeId, NodeId[]>();
-    for (const rn of resolvedNodes) {
-      if (rn.mutation.op !== 'create' || rn.resultingPayload === undefined || rn.resultingConfidence === undefined) continue;
-      const check = await evaluateContradictions(
-        this.deps.contradictionDetector,
-        {
-          namespace: normalized.namespace,
-          subject: normalized.subject,
-          candidateNode: {
-            id: rn.mutation.nodeId,
-            type: rn.effectiveType,
+    if (!attestationApproved) {
+      for (const rn of resolvedNodes) {
+        if (rn.mutation.op !== 'create' || rn.resultingPayload === undefined || rn.resultingConfidence === undefined) continue;
+        const check = await evaluateContradictions(
+          this.deps.contradictionDetector,
+          {
             namespace: normalized.namespace,
             subject: normalized.subject,
-            payload: rn.resultingPayload,
-            confidence: rn.resultingConfidence,
+            candidateNode: {
+              id: rn.mutation.nodeId,
+              type: rn.effectiveType,
+              namespace: normalized.namespace,
+              subject: normalized.subject,
+              payload: rn.resultingPayload,
+              confidence: rn.resultingConfidence,
+            },
           },
-        },
-        (id) => this.deps.repository.getNode(normalized.namespace, id),
-      );
-      verdicts.push(check.verdict);
-      if (check.contradictingNodeIds.length > 0) {
-        contradictionsByCandidate.set(rn.mutation.nodeId, check.contradictingNodeIds);
+          (id) => this.deps.repository.getNode(normalized.namespace, id),
+        );
+        verdicts.push(check.verdict);
+        if (check.contradictingNodeIds.length > 0) {
+          contradictionsByCandidate.set(rn.mutation.nodeId, check.contradictingNodeIds);
+        }
       }
     }
 
     if (contradictionsByCandidate.size > 0) {
-      const proposal = await this.buildAndSaveProposal(normalized, mutationHash, effectiveCurrentRevision, contradictionsByCandidate);
+      const proposal = await this.buildAndSaveProposal(normalized, effectiveCurrentRevision, contradictionsByCandidate);
       return {
         outcome: 'routed_to_proposal',
         proposalId: proposal.id,
@@ -689,9 +704,29 @@ export class WriteOrchestrator {
     };
   }
 
+  /**
+   * True when the command carries an attestation that the verifier confirms
+   * against a pending proposal for this exact mutation. Used to recognize an
+   * approved re-application of an already-reviewed proposal so contradiction
+   * detection is not re-run against it. Never trusts a caller-supplied
+   * attestation id on its own -- it must resolve to a pending proposal and
+   * verify against the port.
+   */
+  private async hasVerifiedAttestation(command: WriteCommand, mutationHash: MutationHash): Promise<boolean> {
+    if (!command.attestation) return false;
+    const pending = await this.deps.proposalRepository.findPendingByMutationHash(command.namespace, mutationHash);
+    if (!pending) return false;
+    const attestation = await this.deps.attestationVerifier.verify({
+      attestationId: command.attestation.attestationId,
+      expectedProposalId: pending.id,
+      expectedProposalVersion: pending.version,
+      expectedMutationHash: mutationHash,
+    });
+    return attestation !== undefined && attestation !== null;
+  }
+
   private async buildAndSaveProposal(
     command: WriteCommand,
-    mutationHash: MutationHash,
     expectedTargetRevision: number,
     contradictionsByCandidate: Map<NodeId, NodeId[]>,
   ): Promise<Proposal> {
@@ -712,10 +747,16 @@ export class WriteOrchestrator {
       }
     }
 
-    const canonicalMutation: WriteCommand = {
+    // The synthesized `contradicts` edges are part of the canonical mutation
+    // the reviewer accepts, so the proposal's mutationHash must cover them.
+    // Re-normalizing here yields the exact form (and hash) the orchestrator
+    // recomputes when the proposal is later accepted and re-written --
+    // otherwise attestation lookup by mutationHash misses and the proposal
+    // can never be accepted.
+    const { command: canonicalMutation, mutationHash } = normalizeWriteCommand({
       ...command,
       edgeMutations: [...command.edgeMutations, ...contradictsEdgeMutations],
-    };
+    });
 
     const proposal: Proposal = {
       id: this.deps.idGenerator.nextProposalId(),

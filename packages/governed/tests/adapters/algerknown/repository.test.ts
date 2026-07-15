@@ -269,6 +269,24 @@ describe('GitAlgerknownRepository', () => {
   });
 
   describe('commit', () => {
+    it('reclaims an orphaned lock left by a crashed writer instead of wedging every future write', async () => {
+      const dossier = readDossierFile(repoRoot);
+      const evidenceId = dossier.evidence[0]!.id;
+      const write = buildCreateFactWrite(namespace, subject, { previousRevision: null, idempotencyKey: 'idem-lock', evidenceId });
+
+      // Simulate a crash between lock-acquire and release: a lock file naming a
+      // pid that is no longer running. Without reclamation this would time out
+      // and then fail on every subsequent write.
+      const lockPath = path.join(repoRoot, '.algerknown/governed/.locks', `${encodeNamespaceForPath(namespace)}.lock`);
+      fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+      fs.writeFileSync(lockPath, '999999999');
+
+      await repository.commit(write);
+
+      expect(await repository.getNode(namespace, asNodeId('fact-new-from-test'))).toBeDefined();
+      expect(fs.existsSync(lockPath)).toBe(false);
+    });
+
     it('creates a git commit, advances the namespace revision, and persists through the sidecar', async () => {
       const dossier = readDossierFile(repoRoot);
       const evidenceId = dossier.evidence[0]!.id;

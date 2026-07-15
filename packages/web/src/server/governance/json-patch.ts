@@ -15,15 +15,29 @@ export type JsonPatchOp =
   | { op: 'copy'; path: string; from: string }
   | { op: 'test'; path: string; value: unknown };
 
+/**
+ * Segments that would let a patch reach an object's prototype chain. Blocked
+ * at the single parse choke point so no navigation path (get/set/remove) can
+ * pollute `Object.prototype` via a crafted pointer such as
+ * "/__proto__/polluted".
+ */
+const FORBIDDEN_SEGMENTS = new Set(['__proto__', 'prototype', 'constructor']);
+
 function parsePointer(pointer: string): string[] {
   if (pointer === '') return [];
   if (!pointer.startsWith('/')) {
     throw new JsonPatchError(`invalid JSON pointer "${pointer}": must start with "/"`);
   }
-  return pointer
+  const tokens = pointer
     .slice(1)
     .split('/')
     .map((seg) => seg.replace(/~1/g, '/').replace(/~0/g, '~'));
+  for (const token of tokens) {
+    if (FORBIDDEN_SEGMENTS.has(token)) {
+      throw new JsonPatchError(`path segment "${token}" is not allowed`);
+    }
+  }
+  return tokens;
 }
 
 function clone<T>(value: T): T {

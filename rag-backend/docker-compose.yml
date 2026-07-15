@@ -21,6 +21,17 @@ services:
       # docs/springfield-deployment.md) - required for the host port
       # publish above to reach the container.
       - RAG_HOST=0.0.0.0
+      # The governed write API (packages/web, port 2393) runs outside this
+      # container. The image default targets the container's own loopback and
+      # cannot reach it, so ingest-proposal persistence needs an explicit,
+      # reachable URL. Set GOVERNANCE_API_URL in .env to the governance host
+      # (e.g. http://willie:2393/api/governance); the host-gateway fallback
+      # below covers a same-host deployment. GOVERNANCE_PROCESSOR_SECRET must
+      # also be set in .env or generated candidates are skipped.
+      - GOVERNANCE_API_URL=${GOVERNANCE_API_URL:-http://host.docker.internal:2393/api/governance}
+    extra_hosts:
+      # Lets host.docker.internal resolve to the host on Linux Docker.
+      - "host.docker.internal:host-gateway"
     env_file:
       - .env
     restart: unless-stopped

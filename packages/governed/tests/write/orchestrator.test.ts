@@ -207,6 +207,59 @@ describe('WriteOrchestrator: contradiction routing', () => {
     }
     expect(await harness.repository.getNode(asNamespaceId('memory.community.topic-1'), asNodeId('n-new'))).toBeUndefined();
   });
+
+  it('applies a contradiction-routed proposal re-written with a verified attestation instead of re-routing it', async () => {
+    const harness = createTestHarness();
+    const orchestrator = new WriteOrchestrator(harness);
+
+    await orchestrator.write(
+      commandFor({
+        nodeMutations: [{ op: 'create', nodeId: asNodeId('n-existing'), nodeType: 'observation', payload: { description: 'first' }, confidence: 0.9 }],
+      }),
+    );
+
+    harness.contradictionDetector.setMatches([{ nodeId: asNodeId('n-existing') }]);
+
+    const routed = await orchestrator.write(
+      commandFor({
+        idempotencyKey: asIdempotencyKey('idem-2'),
+        nodeMutations: [{ op: 'create', nodeId: asNodeId('n-new'), nodeType: 'observation', payload: { description: 'conflicting' }, confidence: 0.5 }],
+      }),
+    );
+    expect(routed.outcome).toBe('routed_to_proposal');
+    if (routed.outcome !== 'routed_to_proposal') return;
+
+    const proposal = await harness.proposalRepository.get(routed.proposalId);
+    expect(proposal).toBeDefined();
+    if (!proposal) return;
+
+    // The stored proposal's hash must equal the re-normalized canonical
+    // mutation the orchestrator recomputes at accept, or attestation lookup
+    // misses and the proposal can never be accepted.
+    expect(normalizeWriteCommand(proposal.canonicalMutation).mutationHash).toBe(proposal.mutationHash);
+
+    harness.attestationVerifier.register({
+      id: asAttestationId('att-contradiction'),
+      reviewerId: asActorId('reviewer-1'),
+      approvedAt: '2026-01-01T00:00:00.000Z',
+      proposalId: proposal.id,
+      proposalVersion: proposal.version,
+      targetRevision: proposal.expectedTargetRevision,
+      mutationHash: proposal.mutationHash,
+      channel: 'test',
+      verifierMeta: {},
+    });
+
+    // The detector still reports the contradiction; the verified attestation
+    // must let the approved write apply rather than route to a new proposal.
+    const accepted = await orchestrator.write({
+      ...proposal.canonicalMutation,
+      attestation: { attestationId: asAttestationId('att-contradiction') },
+    });
+
+    expect(accepted.outcome).toBe('applied');
+    expect(await harness.repository.getNode(asNamespaceId('memory.community.topic-1'), asNodeId('n-new'))).toBeDefined();
+  });
 });
 
 describe('WriteOrchestrator: append-only enforcement', () => {

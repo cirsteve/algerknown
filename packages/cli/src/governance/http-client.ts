@@ -2,6 +2,8 @@ import { resolveReviewerSecret } from '../auth/credential-resolver.js';
 
 export const DEFAULT_GOVERNANCE_API_URL = 'http://127.0.0.1:2393/api/governance';
 
+const REQUEST_TIMEOUT_MS = 30_000;
+
 export class GovernanceApiError extends Error {
   readonly status: number;
   readonly code?: string;
@@ -42,7 +44,10 @@ export class GovernanceClient {
   ) {}
 
   static async create(opts: GovernanceClientOptions = {}): Promise<GovernanceClient> {
-    const baseUrl = opts.baseUrl ?? process.env.GOVERNANCE_API_URL ?? DEFAULT_GOVERNANCE_API_URL;
+    const rawBaseUrl = opts.baseUrl ?? process.env.GOVERNANCE_API_URL ?? DEFAULT_GOVERNANCE_API_URL;
+    // A trailing slash produces `//proposals`, which the express routes do not
+    // match and which surfaces as a confusing HTML 404.
+    const baseUrl = rawBaseUrl.replace(/\/+$/, '');
     const secret = opts.secret ?? (await resolveReviewerSecret());
     return new GovernanceClient(baseUrl, secret);
   }
@@ -52,9 +57,23 @@ export class GovernanceClient {
       method,
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.secret}` },
       ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+      // Without a timeout a wedged or half-open server hangs the command
+      // indefinitely with no feedback.
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     const text = await res.text();
-    const data: unknown = text.length > 0 ? JSON.parse(text) : undefined;
+    // Parse defensively: a misconfigured URL/port or a reverse-proxy error page
+    // returns non-JSON (HTML), which must surface as a GovernanceApiError with
+    // the status code, not an opaque `SyntaxError: Unexpected token '<'`.
+    let data: unknown;
+    try {
+      data = text.length > 0 ? JSON.parse(text) : undefined;
+    } catch {
+      if (!res.ok) {
+        throw new GovernanceApiError(res.status, text);
+      }
+      throw new GovernanceApiError(res.status, `expected JSON response but received: ${text.slice(0, 200)}`);
+    }
     if (!res.ok) {
       throw new GovernanceApiError(res.status, data);
     }

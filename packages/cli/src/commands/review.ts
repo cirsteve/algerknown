@@ -128,7 +128,7 @@ reviewCommand
 reviewCommand
   .command('accept <id>')
   .description('Accept a pending proposal, applying its governed write')
-  .option('-y, --yes', 'Skip the confirmation prompt (does not weaken auth, attestation, rails, version, or idempotency)')
+  .option('-y, --yes', 'Skip the confirmation prompt (does not weaken auth, attestation, rails, version, target-revision, or idempotency)')
   .option('-m, --note <note>', 'Optional review note')
   .action(async (id, options) => {
     await withClient(async (client) => {
@@ -140,7 +140,7 @@ reviewCommand
       }
       const result = await client.acceptProposal(id, {
         expectedVersion: proposal.version as number,
-        expectedTargetRevision: proposal.currentTargetRevision as number | null,
+        expectedTargetRevision: proposal.expectedTargetRevision as number | null,
         reviewNote: options.note,
         idempotencyKey: randomUUID(),
       });
