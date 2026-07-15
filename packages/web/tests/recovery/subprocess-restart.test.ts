@@ -242,7 +242,6 @@ describe('EC6: durable proposal state survives a real subprocess restart', () =>
   it('records ec6-restart-crash-recovery evidence once the scenario above has passed', () => {
     recordSuiteEvidence(suiteHealth, {
       checkId: 'ec6-restart-crash-recovery',
-      caseId: 'subprocess-restart',
       suite: 'packages/web/tests/recovery/subprocess-restart.test.ts + packages/web/tests/governance/e2e-invariants.test.ts',
       fixture: 'real tsx child process stop/restart against real temp sqlite + git; in-process dangling-intent recovery (already-accepted completion, hash-mismatch block)',
       backend: 'sqlite+algerknown',
