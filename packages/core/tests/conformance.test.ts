@@ -108,18 +108,31 @@ if (SOURCE !== null) {
 
   describe('conformance corpus (content-agn/conformance/v1)', () => {
     it('manifest declares the expected number of fixtures and vectors', () => {
-      expect(manifest.fixtures.length, 'manifest fixtures').toBe(EXPECTED_FIXTURE_COUNT);
-
       const normalizationData = JSON.parse(
         fs.readFileSync(path.join(corpusDir, manifest.normalizationVectors), 'utf-8')
       ) as { vectors: unknown[] };
-      expect(normalizationData.vectors.length, 'normalization vectors').toBe(EXPECTED_NORMALIZATION_VECTOR_COUNT);
-
       const prohibitionData = JSON.parse(
         fs.readFileSync(path.join(corpusDir, manifest.prohibitionVectors), 'utf-8')
       ) as { regexGrammar: unknown[]; matchVectors: unknown[] };
-      expect(prohibitionData.regexGrammar.length, 'portable-regex grammar vectors').toBe(EXPECTED_REGEX_GRAMMAR_VECTOR_COUNT);
-      expect(prohibitionData.matchVectors.length, 'matcher vectors').toBe(EXPECTED_MATCHER_VECTOR_COUNT);
+
+      if (SOURCE.mode === 'pinned') {
+        // The pinned revision is an immutable contract: any deviation from
+        // its known-good counts means truncation, corruption, or an
+        // un-pinned corpus edit slipping through, so it's exact.
+        expect(manifest.fixtures.length, 'manifest fixtures').toBe(EXPECTED_FIXTURE_COUNT);
+        expect(normalizationData.vectors.length, 'normalization vectors').toBe(EXPECTED_NORMALIZATION_VECTOR_COUNT);
+        expect(prohibitionData.regexGrammar.length, 'portable-regex grammar vectors').toBe(EXPECTED_REGEX_GRAMMAR_VECTOR_COUNT);
+        expect(prohibitionData.matchVectors.length, 'matcher vectors').toBe(EXPECTED_MATCHER_VECTOR_COUNT);
+      } else {
+        // candidate/auto: the corpus is expected to legitimately evolve
+        // (candidate mode exists to test content-agn's proposed changes,
+        // which may add or remove cases), so only guard against the
+        // zero-discovery false-green, not against growth.
+        expect(manifest.fixtures.length, 'manifest fixtures').toBeGreaterThan(0);
+        expect(normalizationData.vectors.length, 'normalization vectors').toBeGreaterThan(0);
+        expect(prohibitionData.regexGrammar.length, 'portable-regex grammar vectors').toBeGreaterThan(0);
+        expect(prohibitionData.matchVectors.length, 'matcher vectors').toBeGreaterThan(0);
+      }
     });
 
     it.each(manifest.fixtures)('fixture $id', (fixture) => {

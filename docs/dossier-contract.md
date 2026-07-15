@@ -79,9 +79,9 @@ the canonical phrase-normalization pipeline and vendored Unicode data.
 The corpus lives in `content-agn/conformance/v1/` (manifest + fixtures +
 normalization/prohibition vectors) and is the single source of test cases
 shared by the Algerknown (producer) and Scout (consumer) implementations.
-`packages/core/tests/conformance.test.ts` and `tests/schema-parity.test.ts`
-both consume it through the shared resolver in
-`tests/support/conformance-resolution.ts`.
+`packages/core/tests/conformance.test.ts` and
+`packages/core/tests/schema-parity.test.ts` both consume it through the
+shared resolver in `packages/core/tests/support/conformance-resolution.ts`.
 
 ### conformance-corpus-revision.json
 
