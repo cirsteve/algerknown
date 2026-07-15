@@ -6,6 +6,7 @@ import type {
   DossierKnownGap,
   DossierProhibition,
   DossierProhibitionRegex,
+  DossierRegexFlags,
   DossierResource,
 } from '@algerknown/core';
 import { asNodeId } from '../../domain/ids.js';
@@ -182,6 +183,18 @@ function removeValue(arr: string[], value: string): string[] {
   return arr.filter((v) => v !== value);
 }
 
+function dossierRegexFlags(value: unknown): DossierRegexFlags | undefined {
+  if (value === undefined) return undefined;
+  if (
+    typeof value !== 'string' ||
+    !/^[ims]{0,3}$/.test(value) ||
+    new Set(value).size !== value.length
+  ) {
+    throw new Error(`regex prohibition flags must contain each of "i", "m", and "s" at most once; received ${JSON.stringify(value)}`);
+  }
+  return value as DossierRegexFlags;
+}
+
 function upsertNode(dossier: Dossier, node: GovernedNode): void {
   const recordKind = recordKindForNode(node);
   const id = String(node.id);
@@ -252,10 +265,11 @@ function upsertNode(dossier: Dossier, node: GovernedNode): void {
     } else if (typeof matcher.normalized_phrase === 'string') {
       record = { ...base, normalized_phrase: matcher.normalized_phrase };
     } else {
+      const flags = dossierRegexFlags(matcher.flags);
       record = {
         ...base,
         regex: matcher.regex as string,
-        ...(typeof matcher.flags === 'string' ? { flags: matcher.flags } : {}),
+        ...(flags !== undefined ? { flags } : {}),
       };
     }
     if (existingIndex !== undefined) dossier.prohibitions[existingIndex] = record;

@@ -189,6 +189,29 @@ describe('exact_phrase prohibition variant (not exercised by the cohort-1 fixtur
 });
 
 describe('applyGovernedDeltaToDossier: incremental mutation', () => {
+  it('rejects regex flags outside the dossier contract at the adapter boundary', () => {
+    const dossier = loadFixtureDossier('agent-evals-dossier');
+    const namespace = asNamespaceId('canonical.project.test');
+    const subject = asSubjectId('algerknown.summary:test:dossier');
+    const { nodes } = mapDossierToGoverned(dossier, namespace, subject, () => stubAttribution);
+    const prohibition = structuredClone(
+      nodes.find(
+        (node) =>
+          node.type === 'prohibition' &&
+          typeof (node.payload as unknown as { extensions: { matcher: { regex?: unknown } } }).extensions.matcher.regex ===
+            'string',
+      )!,
+    );
+    const payload = prohibition.payload as unknown as {
+      extensions: { matcher: { flags?: string } };
+    };
+    payload.extensions.matcher.flags = 'g';
+
+    expect(() => applyGovernedDeltaToDossier(dossier, [prohibition], [], [], [])).toThrow(
+      'regex prohibition flags must contain each of "i", "m", and "s" at most once',
+    );
+  });
+
   it('adding a new evidence_for edge appends to evidence_ids without disturbing existing ones', () => {
     const dossier = loadFixtureDossier('agent-evals-dossier');
     const namespace = asNamespaceId('canonical.project.test');

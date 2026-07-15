@@ -515,7 +515,8 @@ describe('Dossier Validation', () => {
     };
     const result = validate(entry, DOSSIER_TEST_PATH);
     expect(result.valid).toBe(false);
-    expect(result.errors.some(e => e.message.includes('immutable_ref'))).toBe(true);
+    // Grammar is now enforced structurally by the schema's anchored pattern.
+    expect(result.errors.some(e => e.path.includes('immutable_ref'))).toBe(true);
   });
 
   it('should reject a prohibition with unsupported regex flag', () => {
@@ -540,7 +541,8 @@ describe('Dossier Validation', () => {
     };
     const result = validate(entry, DOSSIER_TEST_PATH);
     expect(result.valid).toBe(false);
-    expect(result.errors.some(e => e.message.includes('Unsupported regex flag'))).toBe(true);
+    // "g" is not a member of the 16-value flags enum; rejected structurally by the schema.
+    expect(result.errors.some(e => e.path.includes('flags'))).toBe(true);
   });
 
   it('should reject a prohibition with an invalid regex', () => {
@@ -564,7 +566,7 @@ describe('Dossier Validation', () => {
     };
     const result = validate(entry, DOSSIER_TEST_PATH);
     expect(result.valid).toBe(false);
-    expect(result.errors.some(e => e.message.includes('Regex compilation failed'))).toBe(true);
+    expect(result.errors.some(e => e.message.includes('Portable regex rejected'))).toBe(true);
   });
 
   it('should reject duplicate canonical URLs', () => {

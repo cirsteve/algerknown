@@ -4,9 +4,14 @@
   "description": "Core library for Algerknown - file operations, validation, and index management",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "schemas"
+  ],
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
+    "pretest": "tsc",
     "test": "vitest",
     "lint": "eslint src/"
   },
