@@ -17,8 +17,11 @@ const NAMESPACE_PARAM = 'namespace';
 const PROPOSAL_PARAM = 'proposal';
 const CURSOR_PARAM = 'cursor';
 
+// 'deleted' has no visible tab in ProposalFilters, but a direct/bookmarked
+// link must still be able to reach it (deleted proposals "remain reachable
+// by direct history links").
 function isStatus(value: string | null): value is DurableProposalStatus {
-  return value === 'pending' || value === 'accepted' || value === 'rejected' || value === 'expired';
+  return value === 'pending' || value === 'accepted' || value === 'rejected' || value === 'expired' || value === 'deleted';
 }
 
 /**

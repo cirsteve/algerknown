@@ -72,4 +72,21 @@ describe('IngestPage', () => {
     // Detail is fetched directly from the `proposal` URL param, independent of the queue's own namespace filter.
     expect(await screen.findAllByText(pendingProposalDetail.targetSubject)).not.toHaveLength(0);
   });
+
+  it('honors a ?tab=deleted deep link instead of silently falling back to pending', async () => {
+    let requestedStatus: string | null = null;
+    server.use(
+      http.get('/api/entries', () => HttpResponse.json([])),
+      http.get('/rag/health', () => HttpResponse.json({ status: 'ok', documents_indexed: 0, content_dir: '.' })),
+      http.get('/api/governance/proposals', ({ request }) => {
+        requestedStatus = new URL(request.url).searchParams.get('status');
+        return HttpResponse.json({ items: [], nextCursor: null });
+      }),
+    );
+
+    renderIngestPage(['/ingest?tab=deleted']);
+
+    await waitFor(() => expect(requestedStatus).toBe('deleted'));
+    expect(await screen.findByText('No deleted proposals')).toBeInTheDocument();
+  });
 });
