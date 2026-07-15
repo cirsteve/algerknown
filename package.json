@@ -7,10 +7,10 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build --workspaces",
+    "build": "npm run build --workspace=@algerknown/core && npm run build --workspace=@algerknown/governed && npm run build --workspace=@algerknown/cli --workspace=@algerknown/web",
     "dev:cli": "npm run dev --workspace=@algerknown/cli",
     "dev:web": "npm run dev --workspace=@algerknown/web",
-    "test": "npm run test --workspaces --if-present",
+    "test": "npm run build && npm run test --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
     "test:phase2:rails": "npm run test --workspace=@algerknown/governed -- tests/write tests/domain tests/proposals tests/ports tests/acceptance",
     "test:phase2:conformance": "npm run test --workspace=@algerknown/governed -- tests/conformance tests/sqlite tests/adapters tests/read-models tests/boundary tests/config tests/auth",
