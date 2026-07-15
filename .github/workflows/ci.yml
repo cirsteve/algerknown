@@ -21,4 +21,40 @@ jobs:
       - run: npm run build --workspace=packages/core
       - run: npm run build --workspace=packages/cli --workspace=packages/web
 
-      - run: npm test
+      # Check out the exact content-agn revision pinned in
+      # packages/core/tests/conformance-corpus-revision.json, so the shared
+      # conformance corpus (schemas + fixtures + vectors) is reproducible.
+      # See docs/dossier-contract.md.
+      - name: Resolve pinned content-agn revision
+        id: corpus-revision
+        run: |
+          echo "repository=$(node -p "require('./packages/core/tests/conformance-corpus-revision.json').repository")" >> "$GITHUB_OUTPUT"
+          echo "sha=$(node -p "require('./packages/core/tests/conformance-corpus-revision.json').sha")" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.corpus-revision.outputs.repository }}
+          ref: ${{ steps.corpus-revision.outputs.sha }}
+          token: ${{ secrets.CONTENT_AGN_CHECKOUT_TOKEN }}
+          path: content-agn-corpus-pin
+
+      - name: Verify pinned checkout resolved to the exact pinned SHA
+        run: |
+          actual="$(git -C content-agn-corpus-pin rev-parse HEAD)"
+          expected="${{ steps.corpus-revision.outputs.sha }}"
+          if [ "$actual" != "$expected" ]; then
+            echo "Pinned content-agn checkout resolved to $actual, expected $expected" >&2
+            exit 1
+          fi
+
+      - name: Verify published-schema byte parity
+        run: |
+          set -e
+          diff content-agn-corpus-pin/schemas/summary.v1.schema.json content-agn-corpus-pin/.algerknown/schemas/summary.schema.json
+          diff content-agn-corpus-pin/schemas/index.v1.schema.json content-agn-corpus-pin/.algerknown/schemas/index.schema.json
+          diff packages/core/schemas/entry.schema.json content-agn-corpus-pin/.algerknown/schemas/entry.schema.json
+
+      - name: Run tests (including the shared conformance corpus)
+        env:
+          CONFORMANCE_CORPUS_DIR: ${{ github.workspace }}/content-agn-corpus-pin/conformance/v1
+        run: npm test
