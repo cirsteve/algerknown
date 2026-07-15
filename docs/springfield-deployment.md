@@ -100,6 +100,27 @@ termination is deliberately added (Caddy, nginx, or Tailscale Serve), use
 the SSH tunnel approach above instead of setting
 `GOVERNANCE_PRIVATE_DEPLOYMENT=true`.
 
+## Willie deployment: rag-backend to governance persistence
+
+On willie the RAG backend (`algerknown-rag`) and the governance web server
+(`algerknown-web`) run as separate containers on the shared `springfield`
+Docker network and address each other by service name -- `algerknown-web`
+already reaches the RAG backend via `RAG_BACKEND_URL: http://algerknown-rag:4735`.
+For the reverse direction (RAG ingest persisting governed proposals), set on
+`algerknown-rag`:
+
+- `GOVERNANCE_API_URL=http://algerknown-web:2393/api/governance`
+- `GOVERNANCE_PROCESSOR_SECRET=<secret>` (must equal `algerknown-web`'s value)
+
+Because this profile binds loopback by default (see above), inter-container
+reachability also requires both services to bind `0.0.0.0` **inside** their
+containers: set `RAG_HOST=0.0.0.0` on `algerknown-rag` and `WEB_HOST=0.0.0.0`
+on `algerknown-web`. `algerknown-web` additionally needs
+`GOVERNANCE_REVIEWER_SECRET` and `GOVERNANCE_PROCESSOR_SECRET` (both are
+required at startup). These values live in the Springfield repo's
+`machines/willie/docker-compose.yml` and `~/apps/algerknown/.env`, not in this
+repo.
+
 ## The legacy `/approve` route (retired)
 
 `rag-backend`'s `POST /approve` and `POST /preview` — and the direct YAML
