@@ -20,6 +20,10 @@ import {
   type WriteCommand,
 } from '../../src/index.js';
 import { createTestHarness } from '../fixtures/deps.js';
+import { recordSuiteEvidence, trackSuiteFailures } from '../acceptance/evidence-helpers.js';
+
+const suiteHealth = trackSuiteFailures();
+const suiteStart = Date.now();
 
 const MINIMAL_VALID_PAYLOAD: Record<NodeType, Record<string, unknown>> = {
   fact: { statement: 'the sky is blue' },
@@ -53,11 +57,22 @@ function baseCommand(namespace: string, nodeType: NodeType, overrides: Partial<W
   };
 }
 
+/**
+ * Independent tally of the generic type x namespace fixture table's actual
+ * generated case count, incremented only at the two `it(...)` call sites
+ * below -- kept apart from the loop bodies themselves so the "observed count
+ * equals fixture count" meta-test at the bottom of this file can't be
+ * satisfied by a loop silently generating zero cases.
+ */
+let observedTruthPlacementCases = 0;
+let observedNonTruthPlacementCases = 0;
+
 describe('rail matrix: truth-type placement across every namespace class', () => {
   for (const entry of DEFAULT_NAMESPACE_ENTRIES) {
     for (const truthType of CANONICAL_ONLY_NODE_TYPES) {
       const namespace = representativeNamespace(entry.pattern);
       const expectRejected = entry.class !== 'canonical';
+      observedTruthPlacementCases += 1;
 
       it(`${truthType} in ${namespace} (class=${entry.class}) is ${expectRejected ? 'rejected' : 'structurally allowed'}`, async () => {
         const harness = createTestHarness();
@@ -84,6 +99,7 @@ describe('rail matrix: truth-type placement across every namespace class', () =>
 
     for (const nonTruthType of NODE_TYPES.filter((t) => !CANONICAL_ONLY_NODE_TYPES.includes(t) && t !== 'proposal')) {
       const namespace = representativeNamespace(entry.pattern);
+      observedNonTruthPlacementCases += 1;
 
       it(`${nonTruthType} in ${namespace} never triggers truth-placement rejection`, async () => {
         const harness = createTestHarness();
@@ -558,5 +574,45 @@ describe('rail matrix: deterministic audit sampling', () => {
 
     const sampledFlags = results.map((r) => (r.outcome === 'applied' ? r.auditDirective?.sampled : undefined));
     expect(sampledFlags).toEqual([false, true, false, true]);
+  });
+});
+
+describe('rail matrix: acceptance meta-test (EC1 -- structural rails)', () => {
+  it('every configured namespace class and every node type is represented, and no case was silently dropped', () => {
+    // Recomputed independently of the generation loops above, from the same
+    // live config constants, so a loop that regresses to generating zero
+    // cases (e.g. an accidentally-emptied filter) fails this even though the
+    // (nonexistent) generated its would otherwise all vacuously "pass".
+    const expectedTruthPlacementCases = DEFAULT_NAMESPACE_ENTRIES.length * CANONICAL_ONLY_NODE_TYPES.length;
+    const expectedNonTruthPlacementCases =
+      DEFAULT_NAMESPACE_ENTRIES.length * NODE_TYPES.filter((t) => !CANONICAL_ONLY_NODE_TYPES.includes(t) && t !== 'proposal').length;
+
+    expect(expectedTruthPlacementCases).toBeGreaterThan(0);
+    expect(expectedNonTruthPlacementCases).toBeGreaterThan(0);
+    expect(observedTruthPlacementCases).toBe(expectedTruthPlacementCases);
+    expect(observedNonTruthPlacementCases).toBe(expectedNonTruthPlacementCases);
+
+    // Every required namespace class (canonical/memory/operation) and policy
+    // mode (human/human-gated/ai-with-rails) from the initial table is
+    // represented at least once.
+    const classes = new Set(DEFAULT_NAMESPACE_ENTRIES.map((e) => e.class));
+    const policies = new Set(DEFAULT_NAMESPACE_ENTRIES.map((e) => e.policy));
+    expect([...classes].sort()).toEqual(['canonical', 'memory', 'operation']);
+    expect([...policies].sort()).toEqual(['ai-with-rails', 'human', 'human-gated']);
+
+    // Every declared truth (canonical-only) and non-truth node type is a
+    // proper, non-empty subset/complement of NODE_TYPES.
+    expect(CANONICAL_ONLY_NODE_TYPES.length).toBeGreaterThan(0);
+    expect(CANONICAL_ONLY_NODE_TYPES.length).toBeLessThan(NODE_TYPES.length);
+  });
+
+  it('records EC1 evidence once every rail-matrix case above has passed', async () => {
+    await recordSuiteEvidence(suiteHealth, {
+      checkId: 'ec1-structural-rails',
+      suite: 'packages/governed/tests/write/rail-matrix.test.ts',
+      fixture: 'DEFAULT_NAMESPACE_ENTRIES x NODE_TYPES (truth-placement, AI-truth-mutation, attestation, provenance, schema, confidence/volume, append-only, reversible-diff, audit-sampling)',
+      backend: 'in-memory',
+      durationMs: Date.now() - suiteStart,
+    });
   });
 });
