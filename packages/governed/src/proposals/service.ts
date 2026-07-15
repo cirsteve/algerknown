@@ -749,7 +749,20 @@ export class DurableProposalService {
     }
 
     const result: RevertOutcome = { outcome: 'reverted', newRevision: applied.resultingRevision };
-    this.unitOfWork.run(() => {
+    return this.unitOfWork.run(() => {
+      // Claimed first, inside the same transaction as every other
+      // side-effecting statement below -- mirrors accept()'s claimIdempotency
+      // use for the same reason: the orchestrator-level write race is
+      // already resolved by this point, but this service's own
+      // reverted-flag/reversal-record/event bookkeeping is a *separate*
+      // transaction per call, so two genuinely concurrent revert() calls for
+      // the same idempotency key can both reach here. Whichever call's
+      // INSERT OR IGNORE lands first proceeds; the other sees
+      // `claimed: false` and returns that winner's exact result without a
+      // second reversal record or a raw (scope, key) constraint violation.
+      const claim = this.claimIdempotency('proposal.revert', input.idempotencyKey, requestHash, result, at);
+      if (!claim.claimed) return claim.result;
+
       this.db.prepare(`UPDATE proposals SET reverted = 1, updated_at = ? WHERE proposal_id = ?`).run(at, proposalId);
       if (input.revertCandidateId) {
         this.db
@@ -782,9 +795,8 @@ export class DurableProposalService {
         reason,
         detail: { originalRevision: row.resulting_revision, newRevision: applied.resultingRevision },
       });
-      this.recordIdempotency('proposal.revert', input.idempotencyKey, requestHash, result, at);
+      return result;
     });
-    return result;
   }
 
   private async buildRevertCommand(

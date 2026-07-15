@@ -47,7 +47,10 @@ test('recorded Algerknown governance review session', async ({ page }) => {
 
   // -- 2. Browse the pending queue.
   await page.getByRole('tab', { name: 'Pending' }).click();
-  await expect(page.getByText(/pending proposals|No pending proposals/)).toHaveCount(0).catch(() => undefined);
+  // Assert the queue actually rendered a proposal, not just that the tab
+  // click didn't throw -- the demo seeds 6 pending proposals, so at least
+  // one "pending ..." queue entry must be visible.
+  await expect(page.getByRole('button', { name: /^pending/ }).first()).toBeVisible({ timeout: 15_000 });
   record('inspect-queue', 'Opened the Pending queue tab.');
 
   // -- 3. Open the amend-target proposal directly and inspect provenance/verdicts.

@@ -26,7 +26,7 @@ quietly narrowed.
 | 3 | SQLite & Algerknown conformance | `ec3-backend-conformance` | `sqlite`, `algerknown` | `packages/governed/tests/conformance/sqlite.conformance.test.ts`, `algerknown-git.conformance.test.ts` |
 | 4 | Pinned dossier update & reversal | `ec4-pinned-dossier-update` | `default` | `packages/web/tests/governance/pinned-dossier-update.test.ts` |
 | 5 | Read-model rebuild | `ec5-read-model-rebuild` | `sqlite`, `algerknown` | `packages/governed/tests/write/read-model-rebuild-dual-backend.test.ts` |
-| 6 | Restart & crash recovery | `ec6-restart-crash-recovery` | `subprocess-restart` | `packages/web/tests/recovery/subprocess-restart.test.ts` + `tests/governance/e2e-invariants.test.ts` (dangling-intent, hash-mismatch) |
+| 6 | Restart & crash recovery | `ec6-restart-crash-recovery` | `default` | `packages/web/tests/recovery/subprocess-restart.test.ts` + `packages/web/tests/governance/e2e-invariants.test.ts` (dangling-intent, hash-mismatch) |
 | 7 | Authenticated browser/CLI boundary | `ec7-authenticated-boundary` | `web`, `cli` | `packages/web/tests/governance/browser-trust-boundary.test.ts`, `packages/cli/tests/governance/review-command.test.ts` |
 | 8 | Absence of governed write bypasses | `ec8-no-write-bypass` | `static-audit`, `runtime-boundary` | `packages/web/tests/governance/write-site-audit.test.ts`, `legacy-boundary.test.ts` (+ `packages/cli/tests/governance/command-boundary.test.ts` as a supplementary `runtime-boundary-cli` case) |
 

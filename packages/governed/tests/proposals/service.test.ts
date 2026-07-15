@@ -438,6 +438,36 @@ describe('DurableProposalService: revert', () => {
     harness.connection.close();
   });
 
+  it('two concurrent revert calls with the same idempotency key converge on one reversal, not a raw constraint error', async () => {
+    const harness = createProposalsTestHarness();
+    const command = observationMutation();
+    const created = await harness.service.propose({ mutation: command, supportingObservationIds: [], idempotencyKey: 'propose-concurrent' });
+    if (created.outcome !== 'created') throw new Error('unreachable');
+    const { mutationHash } = normalizeWriteCommand(command);
+    await acceptViaService(harness, created.proposal.id, mutationHash, 'accept-concurrent');
+
+    const revertInput = {
+      actorId: asActorId('reviewer-1'),
+      actorClass: 'processor' as const,
+      reason: 'concurrent revert race',
+      channel: 'test',
+      idempotencyKey: 'revert-concurrent',
+    };
+
+    const [first, second] = await Promise.all([
+      harness.service.revert(created.proposal.id, revertInput),
+      harness.service.revert(created.proposal.id, revertInput),
+    ]);
+
+    expect(first).toEqual(second);
+    expect(first.outcome).toBe('reverted');
+
+    const reversalRows = harness.connection.db.prepare('SELECT * FROM reversals WHERE proposal_id = ?').all(created.proposal.id);
+    expect(reversalRows).toHaveLength(1);
+
+    harness.connection.close();
+  });
+
   it('reverts via a two-phase proposeRevert + attested revert on a namespace that requires attestation', async () => {
     const harness = createProposalsTestHarness();
     const command = factMutation();
