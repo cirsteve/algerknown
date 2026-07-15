@@ -18,9 +18,23 @@ import type {
   ReviewEventFactory,
   WriteCommand,
 } from '@algerknown/governed';
-import { ProposalNotFoundError, asIdempotencyKey, asMutationHash, resolvePolicyMode } from '@algerknown/governed';
+import { ProposalNotFoundError, asAttestationId, asIdempotencyKey, asMutationHash, resolvePolicyMode } from '@algerknown/governed';
+import type { AttestationId, ProposalId as GovernedProposalId } from '@algerknown/governed';
 import type { LocalAttestationVerifier } from './attestation-verifier.js';
 import { blockIntent, completeIntent, createIntent, findActiveIntent } from './git-operation-intents.js';
+
+/**
+ * A genuine retry of the same review action (duplicate click, or a client
+ * that never saw the first response) must mint the *same* attestation id
+ * every time, so DurableProposalService.accept/revert's own idempotency
+ * check -- keyed on (scope, idempotencyKey, request content, which includes
+ * attestationId) -- recognizes it as a replay instead of a content mismatch.
+ * A fresh random id per call (the prior behavior) defeated that check for
+ * every caller of this module, not just this cohort's tests.
+ */
+function deriveAttestationId(proposalId: GovernedProposalId, idempotencyKey: string): AttestationId {
+  return asAttestationId(`derived:${proposalId}:${idempotencyKey}`);
+}
 
 export class ActiveGitOperationError extends Error {
   constructor(proposalId: ProposalId) {
@@ -79,7 +93,7 @@ export async function acceptProposal(deps: ReviewActionsDeps, proposalId: Propos
     // fall through with the placeholders; accept() will short-circuit on the version mismatch.
   }
 
-  const attestationId = deps.idGenerator.nextAttestationId();
+  const attestationId = deriveAttestationId(proposalId, input.idempotencyKey);
   const event = deps.reviewEventFactory.create(input.reviewContext, {
     proposalId,
     proposalVersion: input.expectedVersion,
@@ -185,7 +199,7 @@ export async function revertProposal(deps: ReviewActionsDeps, proposalId: Propos
     const candidateProposal = await deps.proposalService.getProposal(candidate.revertProposalId);
     const candidateTargetRevision = candidateProposal?.expectedTargetRevision ?? null;
 
-    const attestationId = deps.idGenerator.nextAttestationId();
+    const attestationId = deriveAttestationId(candidate.revertProposalId, input.idempotencyKey);
     const event = deps.reviewEventFactory.create(input.reviewContext, {
       proposalId: candidate.revertProposalId,
       proposalVersion: candidate.revertProposalVersion,

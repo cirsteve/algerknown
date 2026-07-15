@@ -226,9 +226,11 @@ describe('governance e2e invariants', () => {
     expect(firstAccept.outcome).toBe('accepted');
     expect(gitCommitCount(kb.root)).toBe(commitsBefore + 1);
 
-    // A second accept attempt against an already-accepted proposal must
-    // never land a second commit, whatever shape its outcome takes.
-    await expect(acceptProposal(composition.reviewActionsDeps, proposalId, acceptInput)).rejects.toThrow();
+    // A genuine retry of the exact same accept call (duplicate click, or a
+    // client that never saw the first response) returns the identical
+    // byte-for-byte outcome and never lands a second commit.
+    const secondAccept = await acceptProposal(composition.reviewActionsDeps, proposalId, acceptInput);
+    expect(secondAccept).toEqual(firstAccept);
     expect(gitCommitCount(kb.root)).toBe(commitsBefore + 1);
   });
 

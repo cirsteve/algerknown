@@ -423,11 +423,12 @@ export class DurableProposalService {
 
     if (row.version !== input.expectedVersion) {
       const result: AcceptOutcome = { outcome: 'version_conflict', expectedVersion: input.expectedVersion, actualVersion: row.version };
-      this.unitOfWork.run(() => {
+      return this.unitOfWork.run(() => {
+        const claim = this.claimIdempotency('proposal.accept', input.idempotencyKey, requestHash, result, at);
+        if (!claim.claimed) return claim.result;
         this.insertEvent({ eventId: this.idGenerator.nextEventId(), proposalId, kind: 'accept_conflict', at, actorId: input.actorId, detail: result });
-        this.recordIdempotency('proposal.accept', input.idempotencyKey, requestHash, result, at);
+        return result;
       });
-      return result;
     }
 
     const versionRow = this.getVersionRow(proposalId, row.version)!;
@@ -465,11 +466,12 @@ export class DurableProposalService {
         expectedRevision: writeResult.expectedRevision,
         actualRevision: writeResult.actualRevision,
       };
-      this.unitOfWork.run(() => {
+      return this.unitOfWork.run(() => {
+        const claim = this.claimIdempotency('proposal.accept', input.idempotencyKey, requestHash, result, at);
+        if (!claim.claimed) return claim.result;
         this.insertEvent({ eventId: this.idGenerator.nextEventId(), proposalId, kind: 'accept_conflict', at, actorId: input.actorId, detail: result });
-        this.recordIdempotency('proposal.accept', input.idempotencyKey, requestHash, result, at);
+        return result;
       });
-      return result;
     }
 
     if (!applied) {
@@ -478,7 +480,20 @@ export class DurableProposalService {
     }
 
     const result: AcceptOutcome = { outcome: 'accepted', resultingRevision: applied.resultingRevision };
-    this.unitOfWork.run(() => {
+    return this.unitOfWork.run(() => {
+      // Claimed first, inside the same transaction as every other
+      // side-effecting statement below: two genuinely concurrent accept
+      // calls for the same idempotency key can both reach here (the
+      // orchestrator-level write race is already resolved by this point --
+      // see WriteOrchestrator.write's commit retry -- but this service's own
+      // status update / event / attestation bookkeeping is a *separate*
+      // transaction per call). Whichever call's INSERT OR IGNORE lands first
+      // proceeds; the other sees `claimed: false` and returns that
+      // winner's exact result without touching proposals/events/attestations
+      // a second time.
+      const claim = this.claimIdempotency('proposal.accept', input.idempotencyKey, requestHash, result, at);
+      if (!claim.claimed) return claim.result;
+
       this.db.prepare(`UPDATE proposals SET status = 'accepted', resulting_revision = ?, updated_at = ? WHERE proposal_id = ?`).run(
         applied.resultingRevision,
         at,
@@ -514,9 +529,8 @@ export class DurableProposalService {
           attestation.channel,
           canonicalStringify(attestation.verifierMeta),
         );
-      this.recordIdempotency('proposal.accept', input.idempotencyKey, requestHash, result, at);
+      return result;
     });
-    return result;
   }
 
   async reject(proposalId: ProposalId, input: RejectInput): Promise<DurableProposal> {
@@ -977,5 +991,32 @@ export class DurableProposalService {
     this.db
       .prepare('INSERT INTO idempotency_records (scope, key, request_hash, result_json, created_at) VALUES (?, ?, ?, ?, ?)')
       .run(scope, key, requestHash, canonicalStringify(result), at);
+  }
+
+  /**
+   * Atomically claims (scope, key) for `result` via INSERT OR IGNORE, meant
+   * to be the *first* statement inside a unitOfWork transaction whose other
+   * statements should only run once per key. checkIdempotency's own read
+   * happens *before* this transaction opens, so two genuinely concurrent
+   * calls for the same key can both reach here; only one INSERT actually
+   * lands. The loser gets `claimed: false` and the winner's own result back
+   * (or a thrown ProposalIdempotencyMismatchError if the winner's recorded
+   * request differed) instead of re-running -- and duplicating -- the
+   * caller's other side effects.
+   */
+  private claimIdempotency<T>(scope: string, key: string, requestHash: string, result: T, at: string): { claimed: boolean; result: T } {
+    const inserted = this.db
+      .prepare('INSERT OR IGNORE INTO idempotency_records (scope, key, request_hash, result_json, created_at) VALUES (?, ?, ?, ?, ?)')
+      .run(scope, key, requestHash, canonicalStringify(result), at);
+    if (inserted.changes > 0) {
+      return { claimed: true, result };
+    }
+    const existing = this.db.prepare('SELECT request_hash, result_json FROM idempotency_records WHERE scope = ? AND key = ?').get(scope, key) as
+      | { request_hash: string; result_json: string }
+      | undefined;
+    if (!existing || existing.request_hash !== requestHash) {
+      throw new ProposalIdempotencyMismatchError(scope, key);
+    }
+    return { claimed: false, result: JSON.parse(existing.result_json) as T };
   }
 }
