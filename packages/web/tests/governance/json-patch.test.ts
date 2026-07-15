@@ -52,4 +52,16 @@ describe('applyJsonPatch', () => {
     const result = applyJsonPatch(doc, [{ op: 'test', path: '/list', value: [{ b: 2, a: 1 }, { c: 3 }] }]);
     expect(result).toEqual(doc);
   });
+
+  it.each(['__proto__', 'constructor', 'prototype'])('rejects a "%s" pointer segment instead of polluting the prototype', (segment) => {
+    expect(() => applyJsonPatch({}, [{ op: 'add', path: `/${segment}/polluted`, value: 'x' }])).toThrow(JsonPatchError);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(({} as any).polluted).toBeUndefined();
+  });
+
+  it('rejects a terminal "__proto__" segment as well', () => {
+    expect(() => applyJsonPatch({}, [{ op: 'add', path: '/__proto__', value: { polluted: 'x' } }])).toThrow(JsonPatchError);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(({} as any).polluted).toBeUndefined();
+  });
 });

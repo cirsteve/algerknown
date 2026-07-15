@@ -33,7 +33,7 @@ import {
   computeAuditDirective,
 } from '../../src/write/evaluators/index.js';
 import { DEFAULT_NODE_SCHEMAS, SchemaRegistry, DEFAULT_CONFIDENCE_POLICY } from '../../src/config/index.js';
-import { HUMAN_POLICY_MODE, HUMAN_GATED_POLICY_MODE } from '../../src/rails/index.js';
+import { HUMAN_POLICY_MODE, HUMAN_GATED_POLICY_MODE, AI_WITH_RAILS_POLICY_MODE } from '../../src/rails/index.js';
 
 function canonicalGlobal(): NamespacePolicyEntry {
   return { pattern: 'canonical.global', class: 'canonical', engine: 'algerknown', policy: 'human' };
@@ -111,15 +111,21 @@ describe('truth-protection evaluators (the two structural invariants)', () => {
     expect(evaluateTruthTypePlacement('observation', aiCommunity()).passed).toBe(true);
   });
 
-  it('blocks AI-with-rails from mutating a truth type even if class were misconfigured to canonical', () => {
-    const misconfigured: NamespacePolicyEntry = { ...aiCommunity(), class: 'canonical' };
-    const verdict = evaluateAiTruthMutationBlock('resource', misconfigured);
+  it('blocks any policy mode that permits direct AI mutation from mutating a truth type', () => {
+    // Keyed on the capability, not the 'ai-with-rails' id, so a custom mode
+    // that permits direct AI mutation cannot slip a truth mutation past it.
+    const verdict = evaluateAiTruthMutationBlock('resource', AI_WITH_RAILS_POLICY_MODE);
     expect(verdict.passed).toBe(false);
     expect(verdict.reasonCodes).toContain('AI_TRUTH_MUTATION_FORBIDDEN');
   });
 
-  it('allows AI-with-rails to mutate non-truth types', () => {
-    expect(evaluateAiTruthMutationBlock('observation', aiCommunity()).passed).toBe(true);
+  it('does not fire the AI truth block for a policy mode that does not permit direct AI mutation', () => {
+    // human / human-gated gate truth writes through attestation, not this block.
+    expect(evaluateAiTruthMutationBlock('resource', HUMAN_POLICY_MODE).passed).toBe(true);
+  });
+
+  it('allows a direct-AI policy mode to mutate non-truth types', () => {
+    expect(evaluateAiTruthMutationBlock('observation', AI_WITH_RAILS_POLICY_MODE).passed).toBe(true);
   });
 });
 

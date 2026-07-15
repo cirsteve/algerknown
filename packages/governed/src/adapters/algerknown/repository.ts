@@ -61,6 +61,16 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** True if a process with `pid` currently exists. `kill(pid, 0)` sends no signal; EPERM means it exists but is not ours to signal. */
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
 /**
  * Serves one existing dossier-capable Algerknown Summary as canonical.project.<key>
  * governed nodes, backed entirely by git commits against the dossier file it
@@ -208,11 +218,43 @@ export class GitAlgerknownRepository implements Repository {
         };
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+        // The holder may have crashed between openSync and release, leaving a
+        // lock nothing will ever remove. Reclaim it if its pid is no longer
+        // running (or the file is empty residue of a crash mid-acquire) and
+        // retry immediately, so a crash cannot permanently wedge every future
+        // write to this namespace.
+        if (this.reclaimStaleLock(lockPath)) continue;
         if (Date.now() > deadline) {
           throw new Error(`timed out waiting for namespace lock at ${lockPath}`);
         }
         await sleep(20);
       }
+    }
+  }
+
+  /**
+   * Reclaims the namespace lock when its recorded holder pid is not running,
+   * returning true if the stale lock was removed. Safe for the single-operator
+   * deployment this adapter targets: the atomic `wx` create in the retry loop
+   * still arbitrates if two processes race to reclaim.
+   */
+  private reclaimStaleLock(lockPath: string): boolean {
+    let raw: string;
+    try {
+      raw = fs.readFileSync(lockPath, 'utf8').trim();
+    } catch {
+      // Lock vanished between the failed create and this read; let the loop retry.
+      return false;
+    }
+    const holderPid = raw === '' ? undefined : Number(raw);
+    if (holderPid !== undefined && Number.isInteger(holderPid) && isProcessAlive(holderPid)) {
+      return false;
+    }
+    try {
+      fs.rmSync(lockPath, { force: true });
+      return true;
+    } catch {
+      return false;
     }
   }
 

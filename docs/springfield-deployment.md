@@ -100,17 +100,36 @@ termination is deliberately added (Caddy, nginx, or Tailscale Serve), use
 the SSH tunnel approach above instead of setting
 `GOVERNANCE_PRIVATE_DEPLOYMENT=true`.
 
-## The legacy `/approve` route
+## Willie deployment: rag-backend to governance persistence
 
-`rag-backend`'s `POST /approve` (and the direct-write path behind it) is a
-transitional holdover from before this trust profile existed. It is
-**explicitly not part of the governed trust surface**: it has no reviewer-
-session semantics, and loopback binding plus the removal of wildcard CORS
-are the only things limiting its exposure. It is not proxied to a browser
-origin other than through the Node server's `/rag/*` proxy, and cohort 6
-removes both the route and the direct writer behind it once mutations are
-integrated through governed review actions. Phase 2 security is **not**
-complete while this route remains.
+On willie the RAG backend (`algerknown-rag`) and the governance web server
+(`algerknown-web`) run as separate containers on the shared `springfield`
+Docker network and address each other by service name -- `algerknown-web`
+already reaches the RAG backend via `RAG_BACKEND_URL: http://algerknown-rag:4735`.
+For the reverse direction (RAG ingest persisting governed proposals), set on
+`algerknown-rag`:
+
+- `GOVERNANCE_API_URL=http://algerknown-web:2393/api/governance`
+- `GOVERNANCE_PROCESSOR_SECRET=<secret>` (must equal `algerknown-web`'s value)
+
+Because this profile binds loopback by default (see above), inter-container
+reachability also requires both services to bind `0.0.0.0` **inside** their
+containers: set `RAG_HOST=0.0.0.0` on `algerknown-rag` and `WEB_HOST=0.0.0.0`
+on `algerknown-web`. `algerknown-web` additionally needs
+`GOVERNANCE_REVIEWER_SECRET` and `GOVERNANCE_PROCESSOR_SECRET` (both are
+required at startup). These values live in the Springfield repo's
+`machines/willie/docker-compose.yml` and `~/apps/algerknown/.env`, not in this
+repo.
+
+## The legacy `/approve` route (retired)
+
+`rag-backend`'s `POST /approve` and `POST /preview` — and the direct YAML
+writer (`writer.apply_update`) behind them — have been **retired**. Both
+routes now return `410 Gone`, `writer.py` no longer holds any write path, and
+`packages/web/tests/governance/write-site-audit.test.ts` statically enforces
+that no ungoverned write site reappears. All mutations flow through governed
+review actions; there is no direct-write path left to limit by loopback
+binding. This closes the Phase 2 gap this section previously tracked.
 
 ## Threat model
 

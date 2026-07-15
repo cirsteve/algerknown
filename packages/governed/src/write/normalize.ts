@@ -12,6 +12,18 @@ function canonicalStringify(value: unknown): string {
   return `{${keys.map((k) => `${JSON.stringify(k)}:${canonicalStringify(obj[k])}`).join(',')}}`;
 }
 
+/**
+ * Deterministic, locale-independent string ordering. `localeCompare` is
+ * ICU/locale-dependent, so the same logical command could sort — and thus
+ * hash — differently across environments (e.g. a web reviewer and a CLI
+ * submitter with different `LANG`), producing spurious attestation-hash
+ * mismatches. mutationHash is the binding key for attestations and proposal
+ * lookups, so it must be stable everywhere.
+ */
+function compareCodeUnits(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
 function nodeMutationSortKey(mutation: NodeMutation): string {
   return `${mutation.op}:${mutation.nodeId}`;
 }
@@ -33,10 +45,10 @@ export interface NormalizedWriteCommand {
  */
 export function normalizeWriteCommand(command: WriteCommand): NormalizedWriteCommand {
   const nodeMutations = [...command.nodeMutations].sort((a, b) =>
-    nodeMutationSortKey(a).localeCompare(nodeMutationSortKey(b)),
+    compareCodeUnits(nodeMutationSortKey(a), nodeMutationSortKey(b)),
   );
   const edgeMutations = [...command.edgeMutations].sort((a, b) =>
-    edgeMutationSortKey(a).localeCompare(edgeMutationSortKey(b)),
+    compareCodeUnits(edgeMutationSortKey(a), edgeMutationSortKey(b)),
   );
 
   const normalized: WriteCommand = { ...command, nodeMutations, edgeMutations };

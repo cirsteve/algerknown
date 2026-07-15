@@ -38,6 +38,44 @@ describe('GovernanceClient', () => {
     await expect(client.getProposal('missing')).rejects.toBeInstanceOf(GovernanceApiError);
   });
 
+  it('surfaces a fetch connection failure as a GovernanceApiError instead of a raw TypeError', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new TypeError('fetch failed');
+      }),
+    );
+
+    const client = await GovernanceClient.create();
+    const err = await client.listProposals().then(
+      () => undefined,
+      (e) => e,
+    );
+    expect(err).toBeInstanceOf(GovernanceApiError);
+    expect(err.status).toBe(0);
+    expect(String(err.code)).toContain('could not reach governance API');
+  });
+
+  it('surfaces an AbortSignal.timeout as a GovernanceApiError timeout', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        const timeout = new Error('The operation timed out');
+        timeout.name = 'TimeoutError';
+        throw timeout;
+      }),
+    );
+
+    const client = await GovernanceClient.create();
+    const err = await client.getProposal('p1').then(
+      () => undefined,
+      (e) => e,
+    );
+    expect(err).toBeInstanceOf(GovernanceApiError);
+    expect(err.status).toBe(0);
+    expect(String(err.code)).toContain('timed out');
+  });
+
   it('sends accept body with expected fields and idempotency key', async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ status: 'accepted', resultingRevision: 1 }), { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);

@@ -102,6 +102,20 @@ export interface IsolatedCommitRequest {
   trailers: CommitTrailer[];
 }
 
+export class GitCommitFieldError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'GitCommitFieldError';
+  }
+}
+
+/** Rejects CR/LF in commit subject/trailer fields to prevent audit-record forgery via injected trailer lines. */
+function assertSingleLine(label: string, value: string): void {
+  if (/[\r\n]/.test(value)) {
+    throw new GitCommitFieldError(`${label} must not contain a newline`);
+  }
+}
+
 export class GitConcurrentUpdateError extends Error {
   constructor(message: string) {
     super(message);
@@ -130,6 +144,16 @@ export function commitManagedFiles(repoRoot: string, request: IsolatedCommitRequ
     }
     const treeSha = run(repoRoot, ['write-tree'], undefined, env).trim();
 
+    // The commit subject and trailers are the human/audit-facing record of a
+    // governed write, and some trailer values (idempotency key, actor id,
+    // provenance source locators) originate from callers the AI can influence.
+    // A newline embedded in any of them would inject forged trailer lines
+    // (e.g. a fake Actor-Id), so reject CR/LF before assembling the message.
+    assertSingleLine('commit subject', request.subject);
+    for (const t of request.trailers) {
+      assertSingleLine('trailer key', t.key);
+      assertSingleLine('trailer value', t.value);
+    }
     const message = [request.subject, '', ...request.trailers.map((t) => `${t.key}: ${t.value}`)].join('\n');
     const commitArgs = ['commit-tree', treeSha, '-m', message];
     if (request.parentSha) commitArgs.push('-p', request.parentSha);
