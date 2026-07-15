@@ -124,6 +124,7 @@ export async function createGovernanceComposition(opts: CreateGovernanceComposit
     attestationVerifier,
     clock,
     idGenerator,
+    repository,
   });
 
   const reviewActionsDeps: ReviewActionsDeps = {

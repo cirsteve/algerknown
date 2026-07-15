@@ -52,6 +52,7 @@ import type { WriteOrchestrator } from '../write/orchestrator.js';
 import type { AttestationVerifier } from '../ports/attestation-verifier.js';
 import type { Clock } from '../ports/clock.js';
 import type { IdGenerator } from '../ports/id-generator.js';
+import type { Repository } from '../ports/repository.js';
 
 export interface DurableProposalServiceDeps {
   db: DatabaseType;
@@ -59,6 +60,14 @@ export interface DurableProposalServiceDeps {
   attestationVerifier: AttestationVerifier;
   clock: Clock;
   idGenerator: IdGenerator;
+  /**
+   * Same Repository the orchestrator writes through. buildRevertCommand reads
+   * applied-revision ids and the current namespace revision from here rather
+   * than the sqlite `namespace_revisions`/`namespaces` tables directly, so
+   * revert works for every backend (git-backed namespaces never populate
+   * those sqlite tables).
+   */
+  repository: Repository;
 }
 
 interface ProposalRow {
@@ -206,6 +215,7 @@ export class DurableProposalService {
   private readonly attestationVerifier: AttestationVerifier;
   private readonly clock: Clock;
   private readonly idGenerator: IdGenerator;
+  private readonly repository: Repository;
   private readonly unitOfWork: SqliteUnitOfWork;
 
   constructor(deps: DurableProposalServiceDeps) {
@@ -214,6 +224,7 @@ export class DurableProposalService {
     this.attestationVerifier = deps.attestationVerifier;
     this.clock = deps.clock;
     this.idGenerator = deps.idGenerator;
+    this.repository = deps.repository;
     this.unitOfWork = new SqliteUnitOfWork(deps.db);
   }
 
@@ -601,7 +612,7 @@ export class DurableProposalService {
     if (row.reverted) throw new ProposalInvalidTransitionError(proposalId, 'accepted (already reverted)', 'revert');
     if (row.resulting_revision === null) throw new ProposalValidationError(`proposal "${proposalId}" has no applied revision to revert`);
 
-    const built = this.buildRevertCommand(row, input.actorId, input.actorClass, input.idempotencyKey);
+    const built = await this.buildRevertCommand(row, input.actorId, input.actorClass, input.idempotencyKey);
     const { command: normalized, mutationHash } = normalizeWriteCommand(built);
     const at = this.clock.now();
 
@@ -688,7 +699,7 @@ export class DurableProposalService {
       }
       command = { ...candidateVersion.canonicalMutation, attestation: { attestationId: input.attestationId } };
     } else {
-      command = this.buildRevertCommand(row, input.actorId, input.actorClass, input.idempotencyKey);
+      command = await this.buildRevertCommand(row, input.actorId, input.actorClass, input.idempotencyKey);
     }
 
     const at = this.clock.now();
@@ -748,24 +759,33 @@ export class DurableProposalService {
     return result;
   }
 
-  private buildRevertCommand(row: ProposalRow, actorId: ActorId, actorClass: ActorClass, idempotencyKey: string): WriteCommand {
+  private async buildRevertCommand(
+    row: ProposalRow,
+    actorId: ActorId,
+    actorClass: ActorClass,
+    idempotencyKey: string,
+  ): Promise<WriteCommand> {
     const currentVersion = rowToVersion(this.getVersionRow(row.proposal_id, row.version)!);
-
-    const revisionRow = this.db
-      .prepare('SELECT revision_id FROM namespace_revisions WHERE namespace = ? AND namespace_revision = ?')
-      .get(row.target_namespace, row.resulting_revision) as { revision_id: string } | undefined;
-    if (!revisionRow) {
-      throw new ProposalValidationError(`applied revision ${row.resulting_revision} for proposal "${row.proposal_id}" was not found`);
+    const namespace = asNamespaceId(row.target_namespace);
+    const resultingRevision = row.resulting_revision;
+    if (resultingRevision === null) {
+      throw new ProposalValidationError(`proposal "${row.proposal_id}" has no applied revision to revert`);
     }
-    const targetRevisionId = asRevisionId(revisionRow.revision_id);
 
-    const namespaceRow = this.db.prepare('SELECT current_revision FROM namespaces WHERE namespace = ?').get(row.target_namespace) as
-      | { current_revision: number }
-      | undefined;
-    const expectedNamespaceRevision = namespaceRow?.current_revision ?? null;
+    // Read through the same Repository port the orchestrator writes
+    // through -- never the sqlite `namespace_revisions`/`namespaces` tables
+    // directly -- so revert works identically for sqlite- and git-backed
+    // namespaces.
+    const [revisionRecord] = await this.repository.listRevisionsSince(namespace, resultingRevision - 1);
+    if (!revisionRecord || revisionRecord.namespaceRevision !== resultingRevision) {
+      throw new ProposalValidationError(`applied revision ${resultingRevision} for proposal "${row.proposal_id}" was not found`);
+    }
+    const targetRevisionId = asRevisionId(revisionRecord.revisionId);
+
+    const expectedNamespaceRevision = await this.repository.getNamespaceRevision(namespace);
 
     return {
-      namespace: asNamespaceId(row.target_namespace),
+      namespace,
       subject: asSubjectId(row.target_subject),
       nodeMutations: currentVersion.canonicalMutation.nodeMutations.map((m) => ({ op: 'revert' as const, nodeId: m.nodeId, targetRevisionId })),
       edgeMutations: currentVersion.canonicalMutation.edgeMutations.map((m) => ({ op: 'revert' as const, edgeId: m.edgeId, targetRevisionId })),

@@ -73,6 +73,7 @@ export function createSqliteGovernedAdapter(sqliteConfig: GovernedSqliteConfig, 
     attestationVerifier: deps.attestationVerifier,
     clock: deps.clock,
     idGenerator: deps.idGenerator,
+    repository,
   });
 
   return { connection, repository, proposalRepository, operationSink, usageCounter, orchestrator, proposalService };

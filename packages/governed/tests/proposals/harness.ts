@@ -61,6 +61,7 @@ export function createProposalsTestHarness(
     attestationVerifier,
     clock,
     idGenerator,
+    repository: deps.repository,
   });
 
   return {

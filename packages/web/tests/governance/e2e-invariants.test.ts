@@ -326,11 +326,13 @@ describe('governance e2e invariants', () => {
     expect(reversalRow?.reason).toBe('Accepted in error.');
   });
 
-  it('KNOWN LIMITATION: reverting a git-backed dossier proposal fails because DurableProposalService.buildRevertCommand looks up the applied revision in the sqlite namespace_revisions table, which the git adapter never populates', async () => {
+  it('reverting a git-backed dossier proposal lands a new attributed commit and removes the fact', async () => {
     kb = seedKnowledgeBase();
     writeNamespaceBindings(kb.root, [kb.binding]);
     env = testEnv({ ALGERKNOWN_ROOT: kb.root });
     composition = await createGovernanceComposition({ env });
+
+    const commitsBefore = gitCommitCount(kb.root);
 
     const proposeOutcome = await composition.proposalService.propose({
       mutation: proposeCommand(kb, 'fact-revert-git-1', 'edge-revert-git-1'),
@@ -348,9 +350,28 @@ describe('governance e2e invariants', () => {
       idempotencyKey: 'accept-revert-git-1',
     });
     if (accepted.outcome !== 'accepted') throw new Error('expected accepted');
+    expect(gitCommitCount(kb.root)).toBe(commitsBefore + 1);
 
-    await expect(
-      revertProposal(composition.reviewActionsDeps, proposalId, { reviewContext, reason: 'Accepted in error.', idempotencyKey: 'revert-revert-git-1' }),
-    ).rejects.toThrow(/was not found/);
+    const node = await composition.repository.getNode(namespaceForBinding(kb.binding), asNodeId('fact-revert-git-1'));
+    expect(node).toBeDefined();
+
+    const reverted = await revertProposal(composition.reviewActionsDeps, proposalId, {
+      reviewContext,
+      reason: 'Accepted in error.',
+      idempotencyKey: 'revert-revert-git-1',
+    });
+    expect(reverted.outcome).toBe('reverted');
+    if (reverted.outcome !== 'reverted') throw new Error('expected reverted');
+    expect(reverted.newRevision).toBe(accepted.resultingRevision + 1);
+    expect(gitCommitCount(kb.root)).toBe(commitsBefore + 2);
+
+    const nodeAfterRevert = await composition.repository.getNode(namespaceForBinding(kb.binding), asNodeId('fact-revert-git-1'));
+    expect(nodeAfterRevert).toBeUndefined();
+
+    const reversalRow = composition.reviewActionsDeps.db
+      .prepare('SELECT * FROM reversals WHERE proposal_id = ?')
+      .get(proposalId) as { actor_id: string; reason: string } | undefined;
+    expect(reversalRow?.actor_id).toBe('reviewer-1');
+    expect(reversalRow?.reason).toBe('Accepted in error.');
   });
 });
