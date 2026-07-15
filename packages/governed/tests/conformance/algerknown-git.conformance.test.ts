@@ -9,6 +9,8 @@ import { createTestClock } from '../fixtures/clock.js';
 import { createTestIdGenerator } from '../fixtures/id-generator.js';
 import { StubAttestationVerifier } from '../fixtures/attestation-verifier.js';
 import { runRepositoryConformanceSuite } from './repository-conformance.js';
+import { recordSuiteEvidence, trackSuiteFailures } from '../acceptance/evidence-helpers.js';
+import { describe, it } from 'vitest';
 
 const binding: DossierBinding = {
   projectKey: 'agent-evals',
@@ -67,4 +69,20 @@ runRepositoryConformanceSuite<GitContext>({
       JSON.stringify({ parentSha: null, paths: [binding.path], previousContent: ['SIMULATED-CRASH-CORRUPTION\n'] }),
     );
   },
+});
+
+const suiteHealth = trackSuiteFailures();
+const suiteStart = Date.now();
+
+describe('algerknown-git conformance: acceptance evidence', () => {
+  it('records the algerknown case of ec3-backend-conformance once every case above has passed', () => {
+    recordSuiteEvidence(suiteHealth, {
+      checkId: 'ec3-backend-conformance',
+      caseId: 'algerknown',
+      suite: 'packages/governed/tests/conformance/algerknown-git.conformance.test.ts',
+      fixture: 'runRepositoryConformanceSuite against GitAlgerknownRepository seeded from the pinned cohort-1 fixture, including simulated crash-mid-write self-heal',
+      backend: 'algerknown',
+      durationMs: Date.now() - suiteStart,
+    });
+  });
 });
