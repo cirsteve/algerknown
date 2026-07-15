@@ -54,6 +54,26 @@ export function useNodeHistory(namespace: string | null, entityId: string | null
   return { revisions: data?.revisions ?? null, error: error ?? null, isLoading };
 }
 
+/**
+ * Maps namespaceRevision -> proposalId for every accepted proposal in a
+ * namespace. There is no direct "proposal for this revision" endpoint, so
+ * history views cross-reference this way instead of an id lookup per
+ * revision.
+ */
+export function useAcceptedRevisionIndex(namespace: string | null) {
+  const { governanceFetch, status } = useGovernanceAuth();
+  const { data } = useSWR<ProposalQueuePage>(
+    namespace && status === 'unlocked' ? [QUEUE_KEY, 'accepted', namespace, null, null, 200] : null,
+    () => governanceApi.listProposals(governanceFetch, { status: 'accepted', namespace: namespace!, limit: 200 }),
+    { revalidateOnFocus: false },
+  );
+  const index = new Map<number, string>();
+  for (const item of data?.items ?? []) {
+    if (item.resultingRevision !== null) index.set(item.resultingRevision, item.id);
+  }
+  return index;
+}
+
 /** Invalidates every cached queue page and the given proposal's detail/history after a durable mutation. */
 async function invalidateAfterAction(id: string) {
   await globalMutate((key) => Array.isArray(key) && (key[0] === QUEUE_KEY || (key[0] === PROPOSAL_KEY && key[1] === id)));
