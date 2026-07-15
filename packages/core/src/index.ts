@@ -126,3 +126,17 @@ export type { PortableRegexFlags, CompiledPortableRegex } from './regex/compile.
 
 // Prohibition matching
 export { matchesProhibition } from './prohibition.js';
+
+// Governed write boundary
+export {
+  GOVERNED_BOUNDARY_MANIFEST_RELATIVE_PATH,
+  GovernedWriteBoundaryError,
+  loadGovernedBoundaryManifest,
+  classifyWriteTarget,
+  assertWriteAllowed,
+} from './governed-boundary.js';
+export type {
+  WriteBoundaryClassification,
+  GovernedBoundaryManifest,
+  WriteBoundaryClassificationResult,
+} from './governed-boundary.js';

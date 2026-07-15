@@ -5,11 +5,9 @@ FastAPI endpoints for query and ingest functionality.
 """
 
 from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Optional
 from contextlib import asynccontextmanager
-from datetime import date
 import asyncio
 import os
 import logging
@@ -30,9 +28,9 @@ from loader import load_content, flatten_document
 from vectorstore import VectorStore
 from proposer import identify_related_summaries
 from pipelines import build_query_pipeline, build_proposal_pipeline
-from writer import apply_update, preview_update, validate_proposal
 from diff_engine import Changelog, VersionCache, diff_and_log
 from jobs import JobStore, JobStatus
+from governance_client import GovernanceClient, GovernanceClientError, build_candidate_idempotency_key
 
 # Configure logging
 logging.basicConfig(
@@ -122,6 +120,11 @@ async def lifespan(app: FastAPI):
     tracer_db = os.getenv("TRACER_DB_PATH", "jig_traces.db")
     app.state.tracer = SQLiteTracer(db_path=tracer_db)
     app.state.job_store = JobStore()
+    app.state.governance_client = GovernanceClient()
+    if not app.state.governance_client.enabled:
+        logger.warning(
+            "GOVERNANCE_PROCESSOR_SECRET not configured — generated proposals will not be persisted"
+        )
 
     # Initialize changelog and version cache
     changelog = Changelog(Path(CONTENT_DIR) / "changelog.jsonl")
@@ -166,14 +169,9 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS configuration
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# No CORS middleware: this service is server-to-server only. Browser access
+# goes through the same-origin Node proxy (see docs/springfield-deployment.md)
+# until cohort 6 replaces the mutation routes with governed review actions.
 
 
 # ============ Health Check ============
@@ -537,18 +535,6 @@ class IngestRequest(FilePathRequest):
     max_proposals: Optional[int] = Field(default=None, ge=1, le=20, description="Maximum proposals to generate (default: MAX_PROPOSALS env var or 5)")
 
 
-class ProposalData(BaseModel):
-    target_summary_id: str
-    source_entry_id: str
-    new_learnings: Optional[list[dict]] = None
-    new_decisions: Optional[list[dict]] = None
-    new_open_questions: Optional[list[str]] = None
-    new_links: Optional[list[dict]] = None
-    rationale: Optional[str] = None
-    match_score: Optional[float] = None
-    match_reason: Optional[str] = None
-
-
 @app.post("/ingest", response_model=JobSubmitResponse, status_code=202)
 async def ingest(request: IngestRequest):
     """
@@ -572,8 +558,71 @@ async def ingest(request: IngestRequest):
     return {"job_id": job.id, "status": job.status.value}
 
 
+async def persist_generated_candidates(job_id: str, entry_id: str, candidates: list[dict]) -> dict:
+    """
+    Submits every generated candidate to the governance API as a durable
+    generic proposal immediately, before the ingest job is marked complete.
+    Never holds proposal payloads in the result -- JobStore is not a
+    competing queue; the governance API's proposal store is authoritative.
+
+    Always returns (never raises): if a candidate fails to persist, stops
+    submitting further candidates and returns with "failed" set, listing the
+    idempotency keys of that candidate and every candidate after it as
+    retryable -- a retry resubmits those exact candidates idempotently
+    rather than reconstructing review state from this job's own record.
+    """
+    client: GovernanceClient = app.state.governance_client
+    proposal_ids: list[str] = []
+    suppressed: list[dict] = []
+
+    if not client.enabled:
+        logger.warning("GOVERNANCE_PROCESSOR_SECRET not configured -- skipping proposal persistence")
+        return {
+            "proposal_ids": proposal_ids,
+            "suppressed": suppressed,
+            "counts": {"generated": len(candidates), "persisted": 0, "suppressed": 0},
+        }
+
+    for index, candidate in enumerate(candidates):
+        idempotency_key = build_candidate_idempotency_key(job_id, index, candidate)
+        try:
+            outcome = await client.submit_candidate(
+                source_entry_id=candidate["source_entry_id"],
+                target_summary_id=candidate["target_summary_id"],
+                confidence=float(candidate["match_score"]) if candidate.get("match_score") is not None else 0.5,
+                idempotency_key=idempotency_key,
+                new_learnings=candidate.get("new_learnings"),
+                new_decisions=candidate.get("new_decisions"),
+                new_open_questions=candidate.get("new_open_questions"),
+                new_links=candidate.get("new_links"),
+            )
+        except GovernanceClientError as e:
+            logger.error(f"Failed to persist candidate {index} for entry {entry_id}: {e}")
+            remaining_keys = [idempotency_key] + [
+                build_candidate_idempotency_key(job_id, later_index, candidates[later_index])
+                for later_index in range(index + 1, len(candidates))
+            ]
+            return {
+                "proposal_ids": proposal_ids,
+                "suppressed": suppressed,
+                "counts": {"generated": len(candidates), "persisted": len(proposal_ids), "suppressed": len(suppressed)},
+                "failed": {"index": index, "error": str(e), "retryable_idempotency_keys": remaining_keys},
+            }
+
+        if outcome["status"] == "created":
+            proposal_ids.append(outcome["proposalId"])
+        else:
+            suppressed.append({"index": index, "proposalId": outcome["proposalId"], "reason": outcome.get("reason")})
+
+    return {
+        "proposal_ids": proposal_ids,
+        "suppressed": suppressed,
+        "counts": {"generated": len(candidates), "persisted": len(proposal_ids), "suppressed": len(suppressed)},
+    }
+
+
 async def run_ingest_job(job_id: str, file_path: str, max_proposals: int | None):
-    """Background task: ingest entry, index, and generate proposals."""
+    """Background task: ingest entry, index, and generate + durably persist proposals."""
     store = app.state.job_store
     store.update(job_id, status=JobStatus.RUNNING, progress="Loading entry...")
 
@@ -581,30 +630,28 @@ async def run_ingest_job(job_id: str, file_path: str, max_proposals: int | None)
         # Load and validate entry
         abs_path, raw_entry, entry = load_entry_document(file_path, CONTENT_DIR)
 
-        # Update last_ingested date
-        store.update(job_id, progress="Updating entry metadata...")
-        from ruamel.yaml import YAML
-        yaml_parser = YAML()
-        yaml_parser.preserve_quotes = True
-        yaml_parser.indent(mapping=2, sequence=4, offset=2)
-
-        last_ingested = date.today().isoformat()
-        raw_entry["last_ingested"] = last_ingested
-        try:
-            with open(abs_path, 'w') as f:
-                yaml_parser.dump(raw_entry, f)
-            logger.info(f"Updated last_ingested for entry: {entry['id']}")
-            entry["raw"] = raw_entry
-            entry["metadata"]["last_ingested"] = last_ingested
-        except Exception as e:
-            raw_entry.pop("last_ingested", None)
-            logger.warning(f"Failed to update last_ingested: {e}")
-
-        # Index the entry
+        # Index the entry. last_ingested is no longer written back into the
+        # entry's YAML: that was an ungoverned side-effect mutation outside
+        # the write API. Ingest completion is tracked as an attributable
+        # operation event instead (see governance API history), not as
+        # governed content.
         store.update(job_id, progress="Indexing entry...")
         await vector_store.index_documents([entry])
         entries_cache[entry["id"]] = entry
         logger.info(f"Indexed new entry: {entry['id']}")
+
+        governance_client: GovernanceClient = app.state.governance_client
+        if governance_client.enabled:
+            try:
+                await governance_client.submit_operation(
+                    subject=f"algerknown.entry:{entry['id']}:ingest",
+                    description=f"Ingested entry {entry['id']}",
+                    idempotency_key=f"ingest:{job_id}:{entry['id']}",
+                )
+            except GovernanceClientError as e:
+                # Non-fatal: this is telemetry, not the ingest job's own
+                # deliverable (candidate proposals). Log and continue.
+                logger.warning(f"Failed to record ingest operation event for {entry['id']}: {e}")
 
         # Log changes
         if changelog and version_cache:
@@ -623,7 +670,7 @@ async def run_ingest_job(job_id: str, file_path: str, max_proposals: int | None)
                 job_id,
                 status=JobStatus.COMPLETE,
                 progress="Complete",
-                result={"entry_id": entry["id"], "proposals": []},
+                result={"entry_id": entry["id"], "proposal_ids": [], "suppressed": [], "counts": {"generated": 0, "persisted": 0, "suppressed": 0}},
             )
             return
 
@@ -641,10 +688,30 @@ async def run_ingest_job(job_id: str, file_path: str, max_proposals: int | None)
             context={"llm": app.state.ingest_llm},
         )
         await app.state.tracer.flush()
-        proposals = [
+        candidates = [
             r.output for r in map_result.results
             if not r.output.get("no_updates") and not r.output.get("error")
         ]
+
+        store.update(job_id, progress=f"Persisting {len(candidates)} proposal(s)...")
+        persistence = await persist_generated_candidates(job_id, entry["id"], candidates)
+
+        if "failed" in persistence:
+            failed = persistence["failed"]
+            store.update(
+                job_id,
+                status=JobStatus.FAILED,
+                progress="Failed",
+                progress_detail=None,
+                result={
+                    "entry_id": entry["id"],
+                    "proposal_ids": persistence["proposal_ids"],
+                    "suppressed": persistence["suppressed"],
+                    "retryable_idempotency_keys": failed["retryable_idempotency_keys"],
+                },
+                error=failed["error"],
+            )
+            return
 
         store.update(
             job_id,
@@ -652,10 +719,7 @@ async def run_ingest_job(job_id: str, file_path: str, max_proposals: int | None)
             progress="Complete",
             progress_detail=None,
             trace_id=map_result.trace_id,
-            result={
-                "entry_id": entry["id"],
-                "proposals": proposals,
-            },
+            result={"entry_id": entry["id"], **persistence},
         )
 
     except Exception as e:
@@ -694,68 +758,34 @@ async def index_document(request: IndexRequest):
     return {"status": "indexed", "id": entry["id"]}
 
 
-# ============ Approve Updates ============
+# ============ Retired: browser-authoritative apply/preview ============
+#
+# /approve applied a client-submitted proposal directly to a YAML file with
+# no attestation, provenance, or review-event trail, and /preview served the
+# same client-submitted shape; both are structural bypasses of the governed
+# write path. Generated candidates are now persisted immediately as durable
+# proposals via the governance API's processor endpoint (see
+# persist_generated_candidates/GovernanceClient above), and every review
+# action -- accept, reject, amend, revert -- goes through
+# POST /api/governance/proposals/:id/{action} on the Node service instead.
 
-class ApproveRequest(BaseModel):
-    proposal: ProposalData
-
-
-class ApproveResponse(BaseModel):
-    success: bool
-    file: Optional[str] = None
-    changes: Optional[list[str]] = None
-    error: Optional[str] = None
-
-
-@app.post("/approve", response_model=ApproveResponse)
-async def approve(request: ApproveRequest):
-    """
-    Apply an approved proposal to update a summary.
-
-    Writes the proposed changes to the YAML file.
-    """
-    proposal_dict = request.proposal.model_dump()
-
-    # Validate
-    is_valid, error = validate_proposal(proposal_dict)
-    if not is_valid:
-        return ApproveResponse(success=False, error=error)
-
-    # Apply update
-    result = apply_update(proposal_dict, CONTENT_DIR)
-
-    if not result.get("success"):
-        return ApproveResponse(success=False, error=result.get("error"))
-
-    # Re-index the updated summary and log changes
-    documents = load_content(CONTENT_DIR)
-    updated = [d for d in documents if d["id"] == request.proposal.target_summary_id]
-    if updated and vector_store:
-        await vector_store.index_documents(updated)
-        entries_cache[updated[0]["id"]] = updated[0]
-        
-        # Log the diff for this summary update
-        if changelog and version_cache:
-            file_path = result.get("file", "")
-            if file_path:
-                diff_and_log(file_path, updated[0]["raw"], changelog, version_cache)
-    
-    return ApproveResponse(
-        success=True,
-        file=result.get("file"),
-        changes=result.get("changes", [])
-    )
+_RETIRED_APPLY_MESSAGE = {
+    "error": "endpoint_retired",
+    "message": "Direct proposal application has been retired. Review and accept proposals through the governance API instead.",
+    "governance_api": "/api/governance/proposals",
+}
 
 
-class PreviewRequest(BaseModel):
-    proposal: ProposalData
+@app.post("/approve", status_code=410)
+async def approve():
+    """Retired: use POST /api/governance/proposals/:id/accept instead."""
+    return _RETIRED_APPLY_MESSAGE
 
 
-@app.post("/preview")
-def preview(request: PreviewRequest):
-    """Preview what changes a proposal would make."""
-    proposal_dict = request.proposal.model_dump()
-    return preview_update(proposal_dict, CONTENT_DIR)
+@app.post("/preview", status_code=410)
+async def preview():
+    """Retired: use GET /api/governance/proposals/:id instead."""
+    return _RETIRED_APPLY_MESSAGE
 
 
 # ============ Utility Endpoints ============
@@ -964,7 +994,7 @@ def get_entry_history(entry_id: str, limit: int = 50):
 if __name__ == "__main__":
     import uvicorn
     
-    host = os.getenv("RAG_HOST", os.getenv("HOST", "0.0.0.0"))
+    host = os.getenv("RAG_HOST", os.getenv("HOST", "127.0.0.1"))
     port = int(os.getenv("RAG_PORT", os.getenv("PORT", "4735")))
     
     uvicorn.run("api:app", host=host, port=port, reload=True)

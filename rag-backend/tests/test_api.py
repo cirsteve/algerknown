@@ -363,7 +363,8 @@ class TestIngestEndpoint:
             finally:
                 api.CONTENT_DIR = old_content_dir
 
-    def test_ingest_returns_202(self):
+    @patch("api.run_ingest_job", new_callable=AsyncMock)
+    def test_ingest_returns_202(self, mock_run_ingest_job):
         """Should return 202 with a job_id for a valid entry."""
         from fastapi.testclient import TestClient
         from api import app
@@ -393,6 +394,7 @@ class TestIngestEndpoint:
                     data = response.json()
                     assert "job_id" in data
                     assert data["status"] == "pending"
+                    mock_run_ingest_job.assert_called_once()
             finally:
                 api.CONTENT_DIR = old_content_dir
 
@@ -440,7 +442,8 @@ class TestIngestEndpoint:
                     result = status.json()
                     assert result["status"] == "complete"
                     assert result["result"]["entry_id"] == "test-entry"
-                    assert isinstance(result["result"]["proposals"], list)
+                    assert result["result"]["proposal_ids"] == []
+                    assert result["result"]["counts"] == {"generated": 0, "persisted": 0, "suppressed": 0}
             finally:
                 api.CONTENT_DIR = old_content_dir
 
@@ -480,6 +483,7 @@ class TestIngestEndpoint:
         # in finally so the next test starts from whatever lifespan last
         # produced (or None, if this was the first test to run).
         from jobs import JobStore
+        from governance_client import GovernanceClient
 
         import api
         mock_store = MagicMock()
@@ -497,11 +501,16 @@ class TestIngestEndpoint:
         old_tracer = getattr(app.state, "tracer", None)
         old_query_llm = getattr(app.state, "query_llm", None)
         old_ingest_llm = getattr(app.state, "ingest_llm", None)
+        old_governance_client = getattr(app.state, "governance_client", None)
 
         app.state.job_store = JobStore()
         app.state.tracer = mock_tracer
         app.state.query_llm = MagicMock()
         app.state.ingest_llm = MagicMock()
+        # Force-disabled client (empty secret, ignoring any ambient
+        # GOVERNANCE_PROCESSOR_SECRET) -- persist_generated_candidates then
+        # skips submission gracefully rather than making a real HTTP call.
+        app.state.governance_client = GovernanceClient(processor_secret="")
 
         with tempfile.TemporaryDirectory() as tmpdir:
             entries_dir = os.path.join(tmpdir, "entries")
@@ -532,8 +541,11 @@ class TestIngestEndpoint:
                     result = status.json()
                     assert result["status"] == "complete"
                     assert result["result"]["entry_id"] == "test-entry"
-                    assert len(result["result"]["proposals"]) == 1
-                    assert result["result"]["proposals"][0]["target_summary_id"] == "summary-1"
+                    # Governance client is disabled in this unit test, so the
+                    # generated candidate is counted but not persisted --
+                    # persistence itself is covered by test_governance_client.py.
+                    assert result["result"]["counts"] == {"generated": 1, "persisted": 0, "suppressed": 0}
+                    assert result["result"]["proposal_ids"] == []
                     assert result["progress_detail"] is None  # cleared on completion
             finally:
                 api.CONTENT_DIR = old_content_dir
@@ -542,6 +554,62 @@ class TestIngestEndpoint:
                 app.state.tracer = old_tracer
                 app.state.query_llm = old_query_llm
                 app.state.ingest_llm = old_ingest_llm
+                app.state.governance_client = old_governance_client
+
+
+class TestPersistGeneratedCandidates:
+    """Tests for persist_generated_candidates's confidence derivation."""
+
+    @pytest.mark.asyncio
+    async def test_preserves_a_legitimate_zero_match_score(self):
+        """A match_score of exactly 0.0 is a real (if low) confidence value,
+        not an unset one -- `or 0.5` would have silently replaced it."""
+        from api import app, persist_generated_candidates
+
+        captured = {}
+
+        class FakeClient:
+            enabled = True
+
+            async def submit_candidate(self, **kwargs):
+                captured.update(kwargs)
+                return {"proposalId": "p1", "status": "created"}
+
+        old_client = getattr(app.state, "governance_client", None)
+        app.state.governance_client = FakeClient()
+        try:
+            result = await persist_generated_candidates(
+                "job-1",
+                "entry-1",
+                [{"source_entry_id": "entry-1", "target_summary_id": "summary-1", "match_score": 0.0}],
+            )
+            assert captured["confidence"] == 0.0
+            assert result["counts"] == {"generated": 1, "persisted": 1, "suppressed": 0}
+        finally:
+            app.state.governance_client = old_client
+
+    @pytest.mark.asyncio
+    async def test_defaults_confidence_when_match_score_is_absent(self):
+        from api import app, persist_generated_candidates
+
+        captured = {}
+
+        class FakeClient:
+            enabled = True
+
+            async def submit_candidate(self, **kwargs):
+                captured.update(kwargs)
+                return {"proposalId": "p1", "status": "created"}
+
+        old_client = getattr(app.state, "governance_client", None)
+        app.state.governance_client = FakeClient()
+        try:
+            await persist_generated_candidates(
+                "job-1", "entry-1", [{"source_entry_id": "entry-1", "target_summary_id": "summary-1"}]
+            )
+            assert captured["confidence"] == 0.5
+        finally:
+            app.state.governance_client = old_client
 
 
 class TestEntriesWithLastIngested:
@@ -580,49 +648,44 @@ class TestEntriesWithLastIngested:
                 api.entries_cache.pop("test-without-date", None)
 
 
-class TestApproveEndpoint:
-    """Tests for the /approve endpoint."""
+class TestRetiredApplyPreviewEndpoints:
+    """/approve and /preview applied/previewed a client-submitted proposal
+    directly against a YAML file with no attestation or provenance -- a
+    structural bypass of the governed write path. Both are retired with 410,
+    naming the governance API reviewers and the RAG backend now use instead."""
 
-    @patch("api.apply_update")
-    @patch("api.load_content")
-    @patch("api.VectorStore")
-    def test_approve_success(self, MockVectorStore, mock_load, mock_apply):
+    def test_approve_retired(self):
         from fastapi.testclient import TestClient
         from api import app
 
-        mock_store = MagicMock()
-        mock_store.index_documents = AsyncMock(return_value=1)
-        mock_store.count = AsyncMock(return_value=0)
-        mock_store.close = AsyncMock()
-        MockVectorStore.return_value = mock_store
-
-        mock_apply.return_value = {"success": True, "file": "/path/to/file.yaml", "changes": ["Added learning"]}
-        mock_load.return_value = []
-
         with TestClient(app) as client:
             response = client.post("/approve", json={
-                "proposal": {
-                    "target_summary_id": "test-summary",
-                    "source_entry_id": "test-entry",
-                    "new_learnings": [{"insight": "Test", "context": "Test"}],
-                }
+                "proposal": {"target_summary_id": "test-summary", "source_entry_id": "test-entry"}
             })
-            assert response.status_code == 200
-            assert response.json()["success"] is True
+            assert response.status_code == 410
+            body = response.json()
+            assert body["error"] == "endpoint_retired"
+            assert "/api/governance/proposals" in body["governance_api"]
 
-    @patch("api.apply_update")
-    def test_approve_failure(self, mock_apply):
+    def test_preview_retired(self):
         from fastapi.testclient import TestClient
         from api import app
 
-        mock_apply.return_value = {"success": False, "error": "File not found"}
+        with TestClient(app) as client:
+            response = client.post("/preview", json={
+                "proposal": {"target_summary_id": "test-summary", "source_entry_id": "test-entry"}
+            })
+            assert response.status_code == 410
+            assert response.json()["error"] == "endpoint_retired"
+
+    def test_approve_accepts_no_body(self):
+        """Retired endpoints don't need to parse a proposal payload at all."""
+        from fastapi.testclient import TestClient
+        from api import app
 
         with TestClient(app) as client:
-            response = client.post("/approve", json={
-                "proposal": {"target_summary_id": "nonexistent", "source_entry_id": "test-entry"}
-            })
-            assert response.status_code == 200
-            assert response.json()["success"] is False
+            response = client.post("/approve")
+            assert response.status_code == 410
 
 
 class TestChangelogEndpoint:

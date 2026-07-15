@@ -1,0 +1,20 @@
+{
+  "sourceRepository": "cirsteve/algerknown-content",
+  "sourceCommit": "ca3f0b73fe7458c8c391ce10800eb409e19c9faa",
+  "dossiers": [
+    {
+      "summaryId": "agent-evals-dossier",
+      "projectKey": "agent-evals",
+      "path": "summaries/agent-evals-dossier.yaml",
+      "snapshotFile": "snapshots/agent-evals-dossier.yaml",
+      "blobSha": "80c72e63be336ab82d37ef031d45ae80a40198c1"
+    },
+    {
+      "summaryId": "agent-ops-dossier",
+      "projectKey": "agent-ops",
+      "path": "summaries/agent-ops-dossier.yaml",
+      "snapshotFile": "snapshots/agent-ops-dossier.yaml",
+      "blobSha": "c1012594f0c82c4308806882fef8bfc87434837c"
+    }
+  ]
+}
