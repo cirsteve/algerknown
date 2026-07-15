@@ -1,8 +1,11 @@
 /**
  * RAG Backend API Client
- * 
- * Client for the Algerknown RAG backend (Python/FastAPI).
- * Handles query, search, ingest, and approval operations.
+ *
+ * Client for the Algerknown RAG backend (Python/FastAPI): query, search,
+ * ingest, jobs, traces, and changelog. Proposal review/approval is not
+ * handled here -- it lives entirely in governanceApi.ts against the durable
+ * /api/governance API. The RAG backend's own /approve and /preview routes
+ * are retired server-side (410 Gone; see rag-backend/api.py).
  */
 
 // RAG backend URL - proxied through the web server via /rag prefix
@@ -58,44 +61,32 @@ export interface IngestRequest {
   max_proposals?: number;
 }
 
-export interface ProposalData {
-  target_summary_id: string;
-  source_entry_id: string;
-  new_learnings?: Array<{
-    insight: string;
-    context?: string;
-    relevance?: string[];
-  }>;
-  new_decisions?: Array<{
-    decision: string;
-    rationale?: string;
-    date?: string;
-  }>;
-  new_open_questions?: string[];
-  new_links?: Array<{
-    id: string;
-    relationship: string;
-    notes?: string;
-  }>;
-  rationale?: string;
-  match_score?: number;
-  match_reason?: string;
+/**
+ * Every generated candidate is durably persisted through the governance
+ * API's processor endpoint before this job completes (see
+ * persist_generated_candidates/GovernanceClient in rag-backend); JobStore
+ * never holds proposal content, only these durable proposal ids and counts.
+ * Use the governance API (governanceApi.ts) to inspect or review a
+ * proposal, never job.result.
+ */
+export interface SuppressedCandidate {
+  index: number;
+  proposalId: string;
+  reason: string | null;
+}
+
+export interface IngestCounts {
+  generated: number;
+  persisted: number;
+  suppressed: number;
 }
 
 export interface IngestResult {
   entry_id: string;
-  proposals: ProposalData[];
-}
-
-export interface ApproveRequest {
-  proposal: ProposalData;
-}
-
-export interface ApproveResponse {
-  success: boolean;
-  file?: string;
-  changes?: string[];
-  error?: string;
+  proposal_ids: string[];
+  suppressed: SuppressedCandidate[];
+  counts: IngestCounts;
+  retryable_idempotency_keys?: string[];
 }
 
 export interface HealthResponse {
@@ -157,26 +148,6 @@ export const ragApi = {
     ragRequest<JobSubmitResponse>('/ingest', {
       method: 'POST',
       body: JSON.stringify({ file_path, max_proposals }),
-    }),
-
-  // Preview proposal changes
-  preview: (proposal: ProposalData) =>
-    ragRequest<{
-      valid: boolean;
-      file?: string;
-      error?: string;
-      current_learnings_count?: number;
-      proposed_new_learnings?: number;
-    }>('/preview', {
-      method: 'POST',
-      body: JSON.stringify({ proposal }),
-    }),
-
-  // Approve and apply proposal
-  approve: (proposal: ProposalData) =>
-    ragRequest<ApproveResponse>('/approve', {
-      method: 'POST',
-      body: JSON.stringify({ proposal }),
     }),
 
   // Job status polling

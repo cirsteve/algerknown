@@ -1,9 +1,28 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { ragApi, ChangelogEntry, ChangelogStats, checkRagConnection } from '../lib/ragApi';
+import { ProposalDetail } from '../components/governance/ProposalDetail';
 
 type ChangeTypeFilter = 'all' | 'added' | 'modified' | 'removed';
 
+/** Governed revision metadata for a proposal deep-linked via ?proposal=&revision=, shown alongside the legacy changelog below. */
+function GovernedRevisionSection({ proposalId, revision }: { proposalId: string; revision: string | null }) {
+  const [dirty, setDirty] = useState(false);
+  return (
+    <div className="bg-slate-800 rounded-lg p-6 border border-sky-800/50">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-lg font-medium text-slate-100">Governed revision{revision ? ` ${revision}` : ''}</h2>
+      </div>
+      <ProposalDetail id={proposalId} onDirtyChange={setDirty} />
+      {dirty && <p className="mt-2 text-xs text-amber-400">This proposal has an unsaved amendment draft.</p>}
+    </div>
+  );
+}
+
 export function ChangesPage() {
+  const [searchParams] = useSearchParams();
+  const proposalId = searchParams.get('proposal');
+  const revision = searchParams.get('revision');
   const [ragConnected, setRagConnected] = useState<boolean | null>(null);
   const [changes, setChanges] = useState<ChangelogEntry[]>([]);
   const [stats, setStats] = useState<ChangelogStats | null>(null);
@@ -142,29 +161,40 @@ export function ChangesPage() {
     }
   };
 
+  // Governed history is independent of RAG backend connectivity, so it's
+  // shown above every legacy-changelog state (checking/offline/loaded).
+  const governedSection = proposalId ? <GovernedRevisionSection proposalId={proposalId} revision={revision} /> : null;
+
   if (ragConnected === null) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-slate-400">Checking RAG connection...</div>
+      <div className="space-y-6">
+        {governedSection}
+        <div className="flex items-center justify-center h-64">
+          <div className="text-slate-400">Checking RAG connection...</div>
+        </div>
       </div>
     );
   }
 
   if (!ragConnected) {
     return (
-      <div className="bg-yellow-900/30 border border-yellow-700 rounded-lg p-6 text-center">
-        <h2 className="text-lg font-medium text-yellow-300 mb-2">RAG Backend Offline</h2>
-        <p className="text-slate-400">
-          The RAG backend is not available. Start it with{' '}
-          <code className="bg-slate-800 px-2 py-1 rounded">docker-compose up</code> in the
-          rag-backend directory.
-        </p>
+      <div className="space-y-6">
+        {governedSection}
+        <div className="bg-yellow-900/30 border border-yellow-700 rounded-lg p-6 text-center">
+          <h2 className="text-lg font-medium text-yellow-300 mb-2">RAG Backend Offline</h2>
+          <p className="text-slate-400">
+            The RAG backend is not available. Start it with{' '}
+            <code className="bg-slate-800 px-2 py-1 rounded">docker-compose up</code> in the
+            rag-backend directory.
+          </p>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
+      {governedSection}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-slate-100">Recent Changes</h1>
         <button

@@ -1,4 +1,6 @@
+import { Link } from 'react-router-dom';
 import { ChangelogEntry } from '../../lib/ragApi';
+import type { RevisionRecord } from '../../lib/governanceApi';
 
 interface ChangeItemProps {
   change: ChangelogEntry;
@@ -74,6 +76,58 @@ export function ChangeItem({ change, className = '' }: ChangeItemProps) {
           <DiffBlock variant="added" value={change.new} />
         </div>
       )}
+    </div>
+  );
+}
+
+interface GovernedRevisionItemProps {
+  revision: RevisionRecord;
+  /** The proposal that produced this revision, when it could be cross-referenced from the accepted queue. */
+  proposalId?: string;
+  className?: string;
+}
+
+/**
+ * ChangeItem's governed counterpart: renders one immutable namespace
+ * revision (per-entity field changes, actor, and a link to the proposal
+ * that produced it) in the same card shell as the legacy changelog, so
+ * HistoryList can show both in one visual language.
+ */
+export function GovernedRevisionItem({ revision, proposalId, className = '' }: GovernedRevisionItemProps) {
+  return (
+    <div className={`bg-slate-800 border border-slate-700 rounded-lg p-4 ${className}`}>
+      <div className="flex items-start justify-between">
+        <div className="flex items-center gap-3">
+          <span className="inline-flex items-center justify-center w-6 h-6 rounded text-xs font-bold bg-sky-600 text-sky-100">#{revision.namespaceRevision}</span>
+          <div>
+            <div className="text-sm text-slate-300">
+              {revision.actorId} <span className="text-slate-500">({revision.actorClass})</span>
+            </div>
+            <div className="text-xs text-slate-500">{formatTimestamp(revision.createdAt)}</div>
+          </div>
+        </div>
+        {proposalId && (
+          <Link to={`/ingest?tab=accepted&proposal=${proposalId}`} className="text-xs text-sky-400 hover:text-sky-300 underline">
+            proposal {proposalId}
+          </Link>
+        )}
+      </div>
+
+      <div className="mt-2 space-y-1">
+        {revision.diff.map((entry, i) => (
+          <div key={`${entry.entityId}-${i}`} className="rounded p-2 text-sm bg-slate-900/50 border border-slate-700">
+            <div className="text-xs text-slate-500">
+              {entry.changeKind} {entry.entityKind} <span className="font-mono text-sky-400">{entry.entityId}</span>
+            </div>
+            {entry.forward.map((field, j) => (
+              <div key={j} className="mt-1 text-xs">
+                <span className="font-mono text-slate-500">{field.path}</span>: <span className="text-red-400">{formatValue(field.before)}</span> →{' '}
+                <span className="text-green-400">{formatValue(field.after)}</span>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
