@@ -40,6 +40,59 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  dossier-contract:
+    name: dossier-contract (pinned content-agn conformance + schema parity)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out algerknown
+        uses: actions/checkout@v4
+        with:
+          path: algerknown
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: algerknown/package-lock.json
+      - name: Read the pinned content-agn repository, revision, and paths
+        id: pin
+        run: |
+          node -e '
+            const pin = require("./algerknown/packages/core/tests/conformance-corpus-revision.json");
+            const fs = require("fs");
+            fs.appendFileSync(process.env.GITHUB_OUTPUT,
+              `repository=${pin.repository}\n` +
+              `revision=${pin.revision.toLowerCase()}\n` +
+              `corpus_path=${pin.corpus_path}\n`);
+          '
+      - name: Check out the pinned content-agn revision (immutable; not main, a tag, or a package)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.pin.outputs.repository }}
+          ref: ${{ steps.pin.outputs.revision }}
+          token: ${{ secrets.CONTENT_AGN_CHECKOUT_TOKEN }}
+          path: content-agn-pinned
+      - name: Verify the pinned checkout HEAD matches conformance-corpus-revision.json
+        run: |
+          set -e
+          actual_head=$(git -C content-agn-pinned rev-parse HEAD | tr '[:upper:]' '[:lower:]')
+          expected_head="${{ steps.pin.outputs.revision }}"
+          if [ "$actual_head" != "$expected_head" ]; then
+            echo "::error::pinned content-agn checkout HEAD $actual_head does not match conformance-corpus-revision.json revision $expected_head"
+            exit 1
+          fi
+      - name: Install and build @algerknown/core
+        working-directory: algerknown
+        run: |
+          npm ci
+          npm run build --workspace=@algerknown/core
+      - name: Run dossier-contract conformance + schema-parity tests (pinned, required)
+        working-directory: algerknown
+        env:
+          CONFORMANCE_SOURCE_MODE: pinned
+          CONFORMANCE_REQUIRED: "1"
+          CONFORMANCE_CORPUS_DIR: ${{ github.workspace }}/content-agn-pinned/${{ steps.pin.outputs.corpus_path }}
+        run: npm run test --workspace=@algerknown/core -- tests/conformance.test.ts tests/schema-parity.test.ts
+
   python-rag:
     name: python-rag (pytest, no provider calls)
     runs-on: ubuntu-latest
