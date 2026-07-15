@@ -79,17 +79,77 @@ the canonical phrase-normalization pipeline and vendored Unicode data.
 The corpus lives in `content-agn/conformance/v1/` (manifest + fixtures +
 normalization/prohibition vectors) and is the single source of test cases
 shared by the Algerknown (producer) and Scout (consumer) implementations.
+`packages/core/tests/conformance.test.ts` and `tests/schema-parity.test.ts`
+both consume it through the shared resolver in
+`tests/support/conformance-resolution.ts`.
 
-From `packages/core/`:
+### conformance-corpus-revision.json
 
-```sh
-CONFORMANCE_CORPUS_DIR=../../content-agn/conformance/v1 npx vitest run tests/conformance.test.ts
+`packages/core/tests/conformance-corpus-revision.json` is the sole,
+machine-readable pin:
+
+```json
+{
+  "repository": "cirsteve/content-agn",
+  "revision": "<full 40-char commit SHA>",
+  "corpus_path": "conformance/v1",
+  "summary_schema_path": "schemas/summary.v1.schema.json",
+  "index_schema_path": "schemas/index.v1.schema.json"
+}
 ```
 
-In CI, Algerknown checks out the exact content-agn revision recorded in
-`packages/core/tests/conformance-corpus-revision.json` (see
-`.github/workflows/ci.yml`) rather than relying on a local checkout path, so
-the corpus a given Algerknown commit is tested against is pinned and
-reproducible. content-agn's own CI runs the same runner against its working
-tree, validating all current `index.yaml` and `summaries/*.yaml` data before
-merge.
+Update `revision` (and, if applicable, `repository` or the `*_path` fields)
+whenever content-agn's contract/corpus is intentionally revised, in the same
+PR that depends on the new corpus content.
+
+### Runner modes
+
+> **Status:** the `dossier-contract` CI job described below is specified and
+> ready to add, but could not be pushed through this PR's automation — see
+> the PR description for the full workflow diff and why it's pending a
+> maintainer applying it directly.
+
+The resolver selects a mode from the `CONFORMANCE_SOURCE_MODE` environment
+variable:
+
+- **`pinned`** — the expected content-agn revision comes only from the
+  checked-in pin above; nothing can override it via environment variable.
+  CI's `dossier-contract` job checks out that exact SHA into a sibling
+  directory, points `CONFORMANCE_CORPUS_DIR` at its `conformance/v1`
+  subdirectory, and the resolver independently re-verifies the checkout's
+  `git rev-parse HEAD` against the pin before any test runs.
+- **`candidate`** — for content-agn's own CI, validating its proposed
+  (not-yet-merged) tree against Algerknown's current producer
+  implementation. Requires `CONTENT_AGN_CANDIDATE_CHECKOUT` (the checkout
+  root) and `CONTENT_AGN_CANDIDATE_SHA` (verified against that checkout's
+  HEAD); corpus and schema paths are derived from the candidate root using
+  the same relative paths as the pin. Candidate mode is never an automatic
+  fallback — it only runs when explicitly selected, and any resolution
+  failure is fatal regardless of `CONFORMANCE_REQUIRED`.
+- **unset** — local developer convenience: look for a sibling or nested
+  content-agn checkout (or `CONFORMANCE_CORPUS_DIR`, if set) without
+  verifying its revision, so contributors without a pinned checkout can
+  still run the rest of the suite.
+
+`CONFORMANCE_REQUIRED=1` makes every resolution failure — an absent
+checkout, a non-git checkout, a HEAD mismatch, a missing schema or manifest,
+an empty manifest, zero fixtures/vectors discovered, or a fixture/vector
+count that doesn't match the corpus's expected 23 fixtures / 15
+normalization vectors / 45 regex-grammar vectors / 18 matcher vectors —
+fail the test run outright instead of skipping. CI always sets
+`CONFORMANCE_REQUIRED=1`; only an unset (or `0`) value, in the unset-mode
+local case with no checkout found, is allowed to skip with a clear message.
+
+From `packages/core/`, to run locally against a sibling or nested checkout:
+
+```sh
+CONFORMANCE_CORPUS_DIR=../../content-agn/conformance/v1 npx vitest run tests/conformance.test.ts tests/schema-parity.test.ts
+```
+
+In CI, the `dossier-contract` job (see `.github/workflows/ci.yml`) checks out
+the exact content-agn revision recorded in
+`packages/core/tests/conformance-corpus-revision.json` rather than relying on
+a local checkout path, so the corpus a given Algerknown commit is tested
+against is pinned and reproducible. content-agn's own CI runs the same
+runner in candidate mode against its working tree, validating all current
+`index.yaml` and `summaries/*.yaml` data before merge.
