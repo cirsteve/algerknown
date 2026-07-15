@@ -199,4 +199,31 @@ describe('governance HTTP API', () => {
     expect(acceptStale.status).toBe(409);
     expect(acceptStale.body.error).toBe('version_conflict');
   });
+
+  it('POST /processor/operations records a generic append-only telemetry event, idempotently, without creating a reviewable proposal', async () => {
+    const first = await processorRequest()
+      .post('/api/governance/processor/operations')
+      .send({ subject: 'algerknown.entry:entry-ops-1:ingest', description: 'Ingested entry entry-ops-1', idempotencyKey: 'ingest:job-ops-1:entry-ops-1' });
+    expect(first.status).toBe(201);
+    expect(first.body.status).toBe('recorded');
+    expect(first.body.resultingRevision).toBe(1);
+
+    // Exact replay is idempotent -- no second revision, no error.
+    const replay = await processorRequest()
+      .post('/api/governance/processor/operations')
+      .send({ subject: 'algerknown.entry:entry-ops-1:ingest', description: 'Ingested entry entry-ops-1', idempotencyKey: 'ingest:job-ops-1:entry-ops-1' });
+    expect(replay.status).toBe(200);
+    expect(replay.body.resultingRevision).toBe(1);
+
+    // Never appears in the reviewer proposal queue -- it was never a proposal.
+    const queue = await reviewerRequest().get('/api/governance/proposals?limit=50');
+    expect((queue.body.items as { id: string }[]).length).toBe(0);
+
+    // A reviewer bearer credential cannot record an operation event either --
+    // this is a processor-only route, symmetric with propose-only.
+    const asReviewer = await reviewerRequest()
+      .post('/api/governance/processor/operations')
+      .send({ subject: 'algerknown.entry:entry-ops-2:ingest', description: 'Ingested entry entry-ops-2', idempotencyKey: 'ingest:job-ops-1:entry-ops-2' });
+    expect(asReviewer.status).toBe(401);
+  });
 });
