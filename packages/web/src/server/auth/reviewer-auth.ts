@@ -49,17 +49,28 @@ export function requireReviewerAuth(config: EnabledGovernanceConfig, sessionRegi
       return;
     }
 
-    const originResult = checkBrowserMutationOrigin({
-      originHeader: req.headers.origin,
-      hostHeader: req.headers.host,
-      forwardedHostHeader: firstHeaderValue(req.headers['x-forwarded-host']),
-      remoteAddress: req.socket.remoteAddress,
-      contentType: req.headers['content-type'],
-      config,
-    });
-    if (!originResult.ok) {
-      res.status(403).json({ error: 'request_rejected' });
-      return;
+    // The strict Origin/Host/Content-Type check exists to stop a forged
+    // cross-site *mutation* from riding the session cookie -- it does not
+    // apply to safe (GET/HEAD) reads: browsers do not send an Origin header
+    // on a same-origin GET at all (only on unsafe methods and cross-origin
+    // requests), so requiring its presence here would reject every real
+    // browser read, not just forged ones. Reads still require a valid
+    // session cookie and CSRF token below, and the session cookie itself
+    // (HttpOnly, SameSite=Strict) is never sent cross-site by the browser.
+    const isSafeMethod = req.method === 'GET' || req.method === 'HEAD';
+    if (!isSafeMethod) {
+      const originResult = checkBrowserMutationOrigin({
+        originHeader: req.headers.origin,
+        hostHeader: req.headers.host,
+        forwardedHostHeader: firstHeaderValue(req.headers['x-forwarded-host']),
+        remoteAddress: req.socket.remoteAddress,
+        contentType: req.headers['content-type'],
+        config,
+      });
+      if (!originResult.ok) {
+        res.status(403).json({ error: 'request_rejected' });
+        return;
+      }
     }
 
     const sessionToken = parseSessionCookie(req.headers.cookie);

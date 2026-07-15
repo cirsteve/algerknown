@@ -4,6 +4,13 @@ import { asActorId, asNamespaceId, asOperationId } from '../domain/ids.js';
 import type { ActorId, NamespaceId, OperationId } from '../domain/ids.js';
 import type { OperationRecord, OperationSink } from '../ports/operation-sink.js';
 
+export class OperationSinkIdempotencyMismatchError extends Error {
+  constructor(operationId: string) {
+    super(`operation id "${operationId}" was already recorded with different content`);
+    this.name = 'OperationSinkIdempotencyMismatchError';
+  }
+}
+
 export interface StoredOperationEvent {
   eventId: string;
   operationId: OperationId;
@@ -66,8 +73,13 @@ export class SqliteOperationSink implements OperationSink {
       // observe "not present" and race to insert, which would otherwise
       // surface a raw UNIQUE-constraint error instead of the promised
       // idempotent no-op.
-      const existing = this.db.prepare('SELECT 1 FROM operation_events WHERE event_id = ?').get(record.operationId);
+      const existing = this.db.prepare('SELECT payload_hash FROM operation_events WHERE event_id = ?').get(record.operationId) as
+        | { payload_hash: string }
+        | undefined;
       if (existing) {
+        if (existing.payload_hash !== contentHash(record.payload)) {
+          throw new OperationSinkIdempotencyMismatchError(record.operationId);
+        }
         this.db.exec('COMMIT');
         return;
       }

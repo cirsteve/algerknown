@@ -640,6 +640,19 @@ async def run_ingest_job(job_id: str, file_path: str, max_proposals: int | None)
         entries_cache[entry["id"]] = entry
         logger.info(f"Indexed new entry: {entry['id']}")
 
+        governance_client: GovernanceClient = app.state.governance_client
+        if governance_client.enabled:
+            try:
+                await governance_client.submit_operation(
+                    subject=f"algerknown.entry:{entry['id']}:ingest",
+                    description=f"Ingested entry {entry['id']}",
+                    idempotency_key=f"ingest:{job_id}:{entry['id']}",
+                )
+            except GovernanceClientError as e:
+                # Non-fatal: this is telemetry, not the ingest job's own
+                # deliverable (candidate proposals). Log and continue.
+                logger.warning(f"Failed to record ingest operation event for {entry['id']}: {e}")
+
         # Log changes
         if changelog and version_cache:
             try:

@@ -2,61 +2,51 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { recordSuiteEvidence, trackSuiteFailures } from './evidence-helpers.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '../../../..');
 
 /**
- * Every write site in the codebase must be classified as exactly one of:
+ * Every write site in the codebase must be deliberately classified as
+ * exactly one of the categories in scripts/governance/write-sites.json:
  *
  * - governed_adapter: the Algerknown git/YAML adapter, the only code
  *   allowed to materialize managed dossier/summary changes.
  * - governed_sqlite: the durable proposal store, governed SQLite
  *   repository, and this web composition root's own operation-intent
  *   ledger in the same database.
- * - rebuildable_cache_telemetry: vector indexes, changelog/diff caches, and
- *   trace/job stores -- explicitly *not* governed memory namespaces.
+ * - rebuildable_cache: vector indexes, changelog/diff caches, and the
+ *   runtime boundary manifest -- deterministic, disposable, never a
+ *   governed memory namespace.
+ * - telemetry: trace/job/metrics stores -- also never governed memory.
  * - legacy_ungoverned: Phase 2 has not migrated every historical Algerknown
  *   artifact; these sites remain permitted only for non-governed targets,
  *   enforced by the boundary check in @algerknown/core.
  *
  * A file with a write-shaped call that isn't listed here fails this test --
  * that's the point: a new write site must be deliberately classified, not
- * silently added.
+ * silently added. The inventory is a checked-in JSON file (not inlined in
+ * this test) so it can be reviewed and referenced independently of the test
+ * that enforces it.
  */
-type Classification = 'governed_adapter' | 'governed_sqlite' | 'rebuildable_cache_telemetry' | 'legacy_ungoverned';
+type Classification = 'governed_adapter' | 'governed_sqlite' | 'rebuildable_cache' | 'telemetry' | 'legacy_ungoverned';
 
-const ALLOWLIST: Record<string, Classification> = {
-  // -- Algerknown git/YAML adapter: the sole materializer of governed content.
-  'packages/governed/src/adapters/algerknown/git.ts': 'governed_adapter',
-  'packages/governed/src/adapters/algerknown/repository.ts': 'governed_adapter',
+interface WriteSiteEntry {
+  path: string;
+  classification: Classification;
+  owner: string;
+  rationale: string;
+}
 
-  // -- Governed SQLite: durable proposal store, repository, and transaction plumbing.
-  'packages/governed/src/sqlite/repository.ts': 'governed_sqlite',
-  'packages/governed/src/sqlite/proposal-repository.ts': 'governed_sqlite',
-  'packages/governed/src/sqlite/operation-sink.ts': 'governed_sqlite',
-  'packages/governed/src/sqlite/usage-counter.ts': 'governed_sqlite',
-  'packages/governed/src/sqlite/migrate.ts': 'governed_sqlite',
-  'packages/governed/src/proposals/service.ts': 'governed_sqlite',
-  'packages/governed/src/proposals/unit-of-work.ts': 'governed_sqlite',
-  // Web-owned operation-intent ledger, same database, for git-target accept/revert recovery.
-  'packages/web/src/server/governance/git-operation-intents.ts': 'governed_sqlite',
-  // Runtime boundary manifest: regenerated fresh from namespace bindings on
-  // every composition-root startup -- a deterministic, rebuildable artifact,
-  // not governed content or a legacy KB entry itself.
-  'packages/web/src/server/governance/manifest.ts': 'rebuildable_cache_telemetry',
+interface WriteSitesFile {
+  classifications: Classification[];
+  sites: WriteSiteEntry[];
+}
 
-  // -- Legacy_ungoverned: @algerknown/core's low-level store, boundary-checked
-  // before every write, and the KB bootstrap (init/schema scaffolding) that
-  // Phase 2 does not bring under namespace governance either.
-  'packages/core/src/store.ts': 'legacy_ungoverned',
-  'packages/core/src/config.ts': 'legacy_ungoverned',
-
-  // -- rag-backend: vector index and changelog/diff cache are explicitly
-  // rebuildable application state, never governed memory namespaces.
-  'rag-backend/vectorstore.py': 'rebuildable_cache_telemetry',
-  'rag-backend/diff_engine.py': 'rebuildable_cache_telemetry',
-};
+const WRITE_SITES_PATH = path.join(repoRoot, 'scripts/governance/write-sites.json');
+const writeSitesFile = JSON.parse(fs.readFileSync(WRITE_SITES_PATH, 'utf-8')) as WriteSitesFile;
+const ALLOWLIST: Record<string, WriteSiteEntry> = Object.fromEntries(writeSitesFile.sites.map((s) => [s.path, s]));
 
 interface WriteHit {
   file: string;
@@ -125,7 +115,10 @@ function findWriteSites(): Map<string, WriteHit[]> {
   return byFile;
 }
 
-describe('write-site allowlist audit', () => {
+const suiteHealth = trackSuiteFailures();
+const suiteStart = Date.now();
+
+describe('write-site allowlist audit (scripts/governance/write-sites.json)', () => {
   it('classifies every detected write site', () => {
     const writeSites = findWriteSites();
     const unclassified: string[] = [];
@@ -138,19 +131,75 @@ describe('write-site allowlist audit', () => {
 
     expect(
       unclassified,
-      `Found write site(s) not in the allowlist -- classify them in write-site-audit.test.ts:\n${unclassified.join('\n')}`,
+      `Found write site(s) not in scripts/governance/write-sites.json -- classify them there:\n${unclassified.join('\n')}`,
     ).toEqual([]);
   });
 
-  it('every allowlist entry still exists', () => {
-    for (const file of Object.keys(ALLOWLIST)) {
-      expect(fs.existsSync(path.join(repoRoot, file)), `allowlisted file "${file}" no longer exists -- remove its stale entry`).toBe(true);
+  it('every allowlist entry still exists, uses a declared classification, and has an owner and rationale', () => {
+    for (const entry of writeSitesFile.sites) {
+      expect(fs.existsSync(path.join(repoRoot, entry.path)), `allowlisted file "${entry.path}" no longer exists -- remove its stale entry`).toBe(true);
+      expect(writeSitesFile.classifications, `"${entry.path}" uses an undeclared classification "${entry.classification}"`).toContain(entry.classification);
+      expect(entry.owner.length, `"${entry.path}" is missing an owner`).toBeGreaterThan(0);
+      expect(entry.rationale.length, `"${entry.path}" is missing a rationale`).toBeGreaterThan(0);
     }
   });
 
-  it('writer.py retains no filesystem write sites (apply_update was removed)', () => {
+  it('no allowlist path entry uses a wildcard/glob -- every site is individually reviewed, never bulk-covered', () => {
+    const wildcardEntries = writeSitesFile.sites.filter((s) => /[*?[\]]/.test(s.path));
+    expect(wildcardEntries.map((s) => s.path)).toEqual([]);
+  });
+
+  it('the governed-boundary path matcher itself uses exact inclusion, never a wildcard/glob/prefix match', () => {
+    // A prefix or glob match in the boundary reader would silently widen
+    // "legacy_ungoverned" (or "governed") to paths never individually
+    // reviewed -- this is the "wildcard bypass" the write-site inventory
+    // above guards against for the write-sites.json data; this guards the
+    // matching *code* itself.
+    const boundaryReaderPath = path.join(repoRoot, 'packages/core/src/governed-boundary.ts');
+    const content = fs.readFileSync(boundaryReaderPath, 'utf-8');
+    expect(content).toMatch(/managedPaths\.includes\(/);
+    expect(content).not.toMatch(/managedPaths[^)]*\.(startsWith|match|test)\(/);
+    expect(content).not.toMatch(/new RegExp\(/);
+    expect(content).not.toMatch(/minimatch|micromatch|glob/i);
+  });
+
+  it('writer.py retains no filesystem write sites (apply_update was removed) and neither /approve nor /preview implement a write', () => {
     const writerPath = path.join(repoRoot, 'rag-backend/writer.py');
-    const hits = scanFile(writerPath, [PY_WRITE_MODE_PATTERN, PY_YAML_DUMP_PATTERN]);
-    expect(hits).toEqual([]);
+    const writerHits = scanFile(writerPath, [PY_WRITE_MODE_PATTERN, PY_YAML_DUMP_PATTERN]);
+    expect(writerHits).toEqual([]);
+
+    // Static proof that /approve and /preview are retired stubs, not a live
+    // handler that happens to not be reached in whatever tests run: both
+    // routes must return 410 and neither may import writer's removed
+    // apply_update, before any test exercises them over HTTP.
+    const apiPath = path.join(repoRoot, 'rag-backend/api.py');
+    const apiContent = fs.readFileSync(apiPath, 'utf-8');
+    expect(apiContent).not.toMatch(/^\s*from writer import|^\s*import writer\b/m);
+    const approveDecorator = apiContent.match(/@app\.\w+\("\/approve"[^)]*\)/)?.[0] ?? '';
+    const previewDecorator = apiContent.match(/@app\.\w+\("\/preview"[^)]*\)/)?.[0] ?? '';
+    expect(approveDecorator).toMatch(/410/);
+    expect(previewDecorator).toMatch(/410/);
+  });
+
+  it('the governance HTTP route module imports no raw writer -- every mutation goes through the composition root', () => {
+    const governanceRoutePath = path.join(repoRoot, 'packages/web/src/server/routes/governance.ts');
+    const content = fs.readFileSync(governanceRoutePath, 'utf-8');
+    expect(content).not.toMatch(/from ['"]node:fs['"]|from ['"]fs['"]/);
+    expect(content).not.toMatch(/better-sqlite3/);
+    // Every mutation this route performs must be through review-actions.ts
+    // (acceptProposal/amendProposal/...) or proposalService, both sourced
+    // from the composition root -- never a locally-constructed writer.
+    expect(content).toMatch(/from '\.\.\/governance\/(review-actions|compose|index)\.js'/);
+  });
+
+  it('records ec8-no-write-bypass evidence (static-audit case) once every case above has passed', () => {
+    recordSuiteEvidence(suiteHealth, {
+      checkId: 'ec8-no-write-bypass',
+      caseId: 'static-audit',
+      suite: 'packages/web/tests/governance/write-site-audit.test.ts',
+      fixture: 'scripts/governance/write-sites.json inventory + wildcard-bypass + legacy-/approve + raw-writer-import checks',
+      backend: 'ts+py',
+      durationMs: Date.now() - suiteStart,
+    });
   });
 });

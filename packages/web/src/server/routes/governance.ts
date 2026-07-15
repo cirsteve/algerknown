@@ -6,10 +6,14 @@ import {
   ProposalNotFoundError,
   ProposalValidationError,
   ProposalVersionConflictError,
+  asActorId,
   asEdgeId,
+  asIdempotencyKey,
   asNamespaceId,
   asNodeId,
+  asProcessorId,
   asProposalId,
+  asSubjectId,
   type DurableProposalStatus,
   type WriteCommand,
 } from '@algerknown/governed';
@@ -169,6 +173,63 @@ export function createGovernanceRouter(runtime: GovernanceRuntime, composition: 
           sendError(res, 404, err.code);
           return;
         }
+        next(err);
+      }
+    })();
+  });
+
+  // Generic append-only operation.<trace> event: a processor telemetry
+  // record (e.g. "this entry was ingested") that carries no application
+  // schema of its own -- unlike /processor/proposals, this never becomes
+  // reviewable content, only an attributable, idempotent, ordered entry in
+  // the operation sink (see WriteOrchestrator's automatic operationSink
+  // append for any appendOnly namespace). Used so ingest completion is
+  // recorded as governed telemetry instead of an ungoverned YAML edit.
+  router.post('/processor/operations', processorAuth, rejectClientSuppliedIdentityFields, (req: Request, res: Response, next: NextFunction) => {
+    let parsed: { subject: string; description: string; idempotencyKey: string } | undefined;
+
+    withValidation(res, () => {
+      const body = assertPlainObject(req.body);
+      assertOnlyKeys(body, ['subject', 'description', 'idempotencyKey']);
+      parsed = {
+        subject: requireString(body, 'subject'),
+        description: requireString(body, 'description'),
+        idempotencyKey: requireString(body, 'idempotencyKey'),
+      };
+    });
+    if (res.headersSent || !parsed) return;
+
+    void (async () => {
+      try {
+        const command: WriteCommand = {
+          namespace: asNamespaceId('operation.ingest'),
+          subject: asSubjectId(parsed!.subject),
+          nodeMutations: [
+            {
+              op: 'create',
+              nodeId: reviewActionsDeps.idGenerator.nextNodeId(),
+              nodeType: 'observation',
+              payload: { description: parsed!.description, context: { subject: parsed!.subject } },
+              confidence: 1,
+            },
+          ],
+          edgeMutations: [],
+          expectedNamespaceRevision: null,
+          idempotencyKey: asIdempotencyKey(parsed!.idempotencyKey),
+          actorId: asActorId(composition.config.processorId),
+          actorClass: 'processor',
+          provenanceInput: { sources: [{ kind: 'external', id: parsed!.subject }], processorId: asProcessorId(composition.config.processorId) },
+        };
+        const result = await composition.orchestrator.write(command);
+        if (result.outcome === 'applied') {
+          res.status(201).json({ status: 'recorded', resultingRevision: result.resultingRevision });
+        } else if (result.outcome === 'idempotent_replay' && result.original.outcome === 'applied') {
+          res.status(200).json({ status: 'recorded', resultingRevision: result.original.resultingRevision });
+        } else {
+          const reasonCodes = result.outcome === 'rejected' || result.outcome === 'routed_to_proposal' ? result.reasonCodes : [];
+          sendError(res, 422, 'rejected', { reasonCodes });
+        }
+      } catch (err) {
         next(err);
       }
     })();

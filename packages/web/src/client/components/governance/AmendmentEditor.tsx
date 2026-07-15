@@ -118,17 +118,23 @@ export function AmendmentEditor({ proposal, onDirtyChange }: AmendmentEditorProp
                   Remove
                 </button>
               </div>
-              {editableFields.map((field) => (
-                <div key={field}>
-                  <label className="block text-xs text-slate-500 mb-1">{field}</label>
-                  <TextArea
-                    value={typeof node.payload[field] === 'string' ? (node.payload[field] as string) : ''}
-                    onChange={(e) => editField(node.nodeId, field, e.target.value)}
-                    rows={2}
-                    className="text-sm"
-                  />
-                </div>
-              ))}
+              {editableFields.map((field) => {
+                const fieldId = `amend-${node.nodeId}-${field}`;
+                return (
+                  <div key={field}>
+                    <label htmlFor={fieldId} className="block text-xs text-slate-500 mb-1">
+                      {field}
+                    </label>
+                    <TextArea
+                      id={fieldId}
+                      value={typeof node.payload[field] === 'string' ? (node.payload[field] as string) : ''}
+                      onChange={(e) => editField(node.nodeId, field, e.target.value)}
+                      rows={2}
+                      className="text-sm"
+                    />
+                  </div>
+                );
+              })}
             </li>
           );
         })}

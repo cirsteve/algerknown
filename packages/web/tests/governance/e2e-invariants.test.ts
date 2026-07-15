@@ -226,9 +226,11 @@ describe('governance e2e invariants', () => {
     expect(firstAccept.outcome).toBe('accepted');
     expect(gitCommitCount(kb.root)).toBe(commitsBefore + 1);
 
-    // A second accept attempt against an already-accepted proposal must
-    // never land a second commit, whatever shape its outcome takes.
-    await expect(acceptProposal(composition.reviewActionsDeps, proposalId, acceptInput)).rejects.toThrow();
+    // A genuine retry of the exact same accept call (duplicate click, or a
+    // client that never saw the first response) returns the identical
+    // byte-for-byte outcome and never lands a second commit.
+    const secondAccept = await acceptProposal(composition.reviewActionsDeps, proposalId, acceptInput);
+    expect(secondAccept).toEqual(firstAccept);
     expect(gitCommitCount(kb.root)).toBe(commitsBefore + 1);
   });
 
@@ -281,6 +283,54 @@ describe('governance e2e invariants', () => {
     expect(row?.status).toBe('completed');
   });
 
+  it('blocks a dangling git operation intent whose mutation hash no longer matches, with no second write', async () => {
+    kb = seedKnowledgeBase();
+    writeNamespaceBindings(kb.root, [kb.binding]);
+    env = testEnv({ ALGERKNOWN_ROOT: kb.root });
+    composition = await createGovernanceComposition({ env });
+    const { db, proposalService, idGenerator, clock } = composition.reviewActionsDeps;
+
+    const proposeOutcome = await proposalService.propose({
+      mutation: proposeCommand(kb, 'fact-hashmismatch-1', 'edge-hashmismatch-1'),
+      supportingObservationIds: [],
+      idempotencyKey: 'propose-hashmismatch-1',
+    });
+    if (proposeOutcome.outcome !== 'created') throw new Error('expected created');
+    const proposalId = proposeOutcome.proposal.id;
+    const commitsBefore = gitCommitCount(kb.root);
+
+    // Simulate a crash strictly *after* the intent was recorded but *before*
+    // the write was attempted at all: the proposal is still pending, and the
+    // dangling intent's expectedMutationHash is deliberately stale (as if
+    // the proposal had been amended between recording the intent and the
+    // crash) -- recovery must refuse to replay a write against content the
+    // intent was never actually recorded for.
+    const inspection = await proposalService.inspect(proposalId);
+    createIntent(db, {
+      operationId: idGenerator.nextOperationId(),
+      proposalId,
+      action: 'accept',
+      namespace: String(proposeOutcome.proposal.targetNamespace),
+      commandIdempotencyKey: String((inspection.currentVersion.canonicalMutation as WriteCommand).idempotencyKey),
+      expectedMutationHash: 'deliberately-stale-hash-does-not-match-current-version',
+      reviewInput: { expectedVersion: 1, expectedTargetRevision: null, attestationId: 'irrelevant-for-this-path', actorId: asActorId('reviewer-1'), channel: 'cli', idempotencyKey: 'accept-hashmismatch-1' },
+      createdAt: clock.now(),
+    });
+
+    await recoverIncompleteGitOperations({ db, proposalService, clock });
+
+    const row = db.prepare(`SELECT status, note FROM web_git_operation_intents WHERE proposal_id = ?`).get(proposalId) as
+      | { status: string; note: string | null }
+      | undefined;
+    expect(row?.status).toBe('blocked');
+    expect(row?.note).toMatch(/mutation hash/);
+
+    // No second write: the proposal is still pending, and the git history is
+    // completely untouched -- recovery never even attempted the write.
+    expect((await proposalService.getProposal(proposalId))?.status).toBe('pending');
+    expect(gitCommitCount(kb.root)).toBe(commitsBefore);
+  });
+
   it('reverting an accepted proposal produces an attributed new revision', async () => {
     kb = seedKnowledgeBase();
     writeNamespaceBindings(kb.root, [kb.binding]);
@@ -326,11 +376,13 @@ describe('governance e2e invariants', () => {
     expect(reversalRow?.reason).toBe('Accepted in error.');
   });
 
-  it('KNOWN LIMITATION: reverting a git-backed dossier proposal fails because DurableProposalService.buildRevertCommand looks up the applied revision in the sqlite namespace_revisions table, which the git adapter never populates', async () => {
+  it('reverting a git-backed dossier proposal lands a new attributed commit and removes the fact', async () => {
     kb = seedKnowledgeBase();
     writeNamespaceBindings(kb.root, [kb.binding]);
     env = testEnv({ ALGERKNOWN_ROOT: kb.root });
     composition = await createGovernanceComposition({ env });
+
+    const commitsBefore = gitCommitCount(kb.root);
 
     const proposeOutcome = await composition.proposalService.propose({
       mutation: proposeCommand(kb, 'fact-revert-git-1', 'edge-revert-git-1'),
@@ -348,9 +400,28 @@ describe('governance e2e invariants', () => {
       idempotencyKey: 'accept-revert-git-1',
     });
     if (accepted.outcome !== 'accepted') throw new Error('expected accepted');
+    expect(gitCommitCount(kb.root)).toBe(commitsBefore + 1);
 
-    await expect(
-      revertProposal(composition.reviewActionsDeps, proposalId, { reviewContext, reason: 'Accepted in error.', idempotencyKey: 'revert-revert-git-1' }),
-    ).rejects.toThrow(/was not found/);
+    const node = await composition.repository.getNode(namespaceForBinding(kb.binding), asNodeId('fact-revert-git-1'));
+    expect(node).toBeDefined();
+
+    const reverted = await revertProposal(composition.reviewActionsDeps, proposalId, {
+      reviewContext,
+      reason: 'Accepted in error.',
+      idempotencyKey: 'revert-revert-git-1',
+    });
+    expect(reverted.outcome).toBe('reverted');
+    if (reverted.outcome !== 'reverted') throw new Error('expected reverted');
+    expect(reverted.newRevision).toBe(accepted.resultingRevision + 1);
+    expect(gitCommitCount(kb.root)).toBe(commitsBefore + 2);
+
+    const nodeAfterRevert = await composition.repository.getNode(namespaceForBinding(kb.binding), asNodeId('fact-revert-git-1'));
+    expect(nodeAfterRevert).toBeUndefined();
+
+    const reversalRow = composition.reviewActionsDeps.db
+      .prepare('SELECT * FROM reversals WHERE proposal_id = ?')
+      .get(proposalId) as { actor_id: string; reason: string } | undefined;
+    expect(reversalRow?.actor_id).toBe('reviewer-1');
+    expect(reversalRow?.reason).toBe('Accepted in error.');
   });
 });

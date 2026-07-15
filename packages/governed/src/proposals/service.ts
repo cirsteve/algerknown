@@ -52,6 +52,7 @@ import type { WriteOrchestrator } from '../write/orchestrator.js';
 import type { AttestationVerifier } from '../ports/attestation-verifier.js';
 import type { Clock } from '../ports/clock.js';
 import type { IdGenerator } from '../ports/id-generator.js';
+import type { Repository } from '../ports/repository.js';
 
 export interface DurableProposalServiceDeps {
   db: DatabaseType;
@@ -59,6 +60,14 @@ export interface DurableProposalServiceDeps {
   attestationVerifier: AttestationVerifier;
   clock: Clock;
   idGenerator: IdGenerator;
+  /**
+   * Same Repository the orchestrator writes through. buildRevertCommand reads
+   * applied-revision ids and the current namespace revision from here rather
+   * than the sqlite `namespace_revisions`/`namespaces` tables directly, so
+   * revert works for every backend (git-backed namespaces never populate
+   * those sqlite tables).
+   */
+  repository: Repository;
 }
 
 interface ProposalRow {
@@ -206,6 +215,7 @@ export class DurableProposalService {
   private readonly attestationVerifier: AttestationVerifier;
   private readonly clock: Clock;
   private readonly idGenerator: IdGenerator;
+  private readonly repository: Repository;
   private readonly unitOfWork: SqliteUnitOfWork;
 
   constructor(deps: DurableProposalServiceDeps) {
@@ -214,6 +224,7 @@ export class DurableProposalService {
     this.attestationVerifier = deps.attestationVerifier;
     this.clock = deps.clock;
     this.idGenerator = deps.idGenerator;
+    this.repository = deps.repository;
     this.unitOfWork = new SqliteUnitOfWork(deps.db);
   }
 
@@ -385,8 +396,15 @@ export class DurableProposalService {
 
   async accept(proposalId: ProposalId, input: AcceptInput): Promise<AcceptOutcome> {
     const row = this.mustGetProposalRow(proposalId);
-    if (row.status !== 'pending') throw new ProposalInvalidTransitionError(proposalId, row.status, 'accept');
 
+    // Idempotency is checked *before* the pending-status guard: a genuine
+    // retry of the exact same accept call (duplicate click, or a client
+    // that never saw the first response) must return the identical
+    // byte-for-byte outcome even after the first call already moved the
+    // proposal out of 'pending' -- not an invalid-transition error. A
+    // request with a *different* body under the same key still throws via
+    // checkIdempotency's own hash-mismatch check; a genuinely new key
+    // against a non-pending proposal still falls through to the guard below.
     const requestHash = contentHash({
       expectedVersion: input.expectedVersion,
       expectedTargetRevision: input.expectedTargetRevision,
@@ -399,15 +417,18 @@ export class DurableProposalService {
     const idem = this.checkIdempotency<AcceptOutcome>('proposal.accept', input.idempotencyKey, requestHash);
     if (idem) return idem;
 
+    if (row.status !== 'pending') throw new ProposalInvalidTransitionError(proposalId, row.status, 'accept');
+
     const at = this.clock.now();
 
     if (row.version !== input.expectedVersion) {
       const result: AcceptOutcome = { outcome: 'version_conflict', expectedVersion: input.expectedVersion, actualVersion: row.version };
-      this.unitOfWork.run(() => {
+      return this.unitOfWork.run(() => {
+        const claim = this.claimIdempotency('proposal.accept', input.idempotencyKey, requestHash, result, at);
+        if (!claim.claimed) return claim.result;
         this.insertEvent({ eventId: this.idGenerator.nextEventId(), proposalId, kind: 'accept_conflict', at, actorId: input.actorId, detail: result });
-        this.recordIdempotency('proposal.accept', input.idempotencyKey, requestHash, result, at);
+        return result;
       });
-      return result;
     }
 
     const versionRow = this.getVersionRow(proposalId, row.version)!;
@@ -445,11 +466,12 @@ export class DurableProposalService {
         expectedRevision: writeResult.expectedRevision,
         actualRevision: writeResult.actualRevision,
       };
-      this.unitOfWork.run(() => {
+      return this.unitOfWork.run(() => {
+        const claim = this.claimIdempotency('proposal.accept', input.idempotencyKey, requestHash, result, at);
+        if (!claim.claimed) return claim.result;
         this.insertEvent({ eventId: this.idGenerator.nextEventId(), proposalId, kind: 'accept_conflict', at, actorId: input.actorId, detail: result });
-        this.recordIdempotency('proposal.accept', input.idempotencyKey, requestHash, result, at);
+        return result;
       });
-      return result;
     }
 
     if (!applied) {
@@ -458,7 +480,20 @@ export class DurableProposalService {
     }
 
     const result: AcceptOutcome = { outcome: 'accepted', resultingRevision: applied.resultingRevision };
-    this.unitOfWork.run(() => {
+    return this.unitOfWork.run(() => {
+      // Claimed first, inside the same transaction as every other
+      // side-effecting statement below: two genuinely concurrent accept
+      // calls for the same idempotency key can both reach here (the
+      // orchestrator-level write race is already resolved by this point --
+      // see WriteOrchestrator.write's commit retry -- but this service's own
+      // status update / event / attestation bookkeeping is a *separate*
+      // transaction per call). Whichever call's INSERT OR IGNORE lands first
+      // proceeds; the other sees `claimed: false` and returns that
+      // winner's exact result without touching proposals/events/attestations
+      // a second time.
+      const claim = this.claimIdempotency('proposal.accept', input.idempotencyKey, requestHash, result, at);
+      if (!claim.claimed) return claim.result;
+
       this.db.prepare(`UPDATE proposals SET status = 'accepted', resulting_revision = ?, updated_at = ? WHERE proposal_id = ?`).run(
         applied.resultingRevision,
         at,
@@ -494,9 +529,8 @@ export class DurableProposalService {
           attestation.channel,
           canonicalStringify(attestation.verifierMeta),
         );
-      this.recordIdempotency('proposal.accept', input.idempotencyKey, requestHash, result, at);
+      return result;
     });
-    return result;
   }
 
   async reject(proposalId: ProposalId, input: RejectInput): Promise<DurableProposal> {
@@ -601,7 +635,7 @@ export class DurableProposalService {
     if (row.reverted) throw new ProposalInvalidTransitionError(proposalId, 'accepted (already reverted)', 'revert');
     if (row.resulting_revision === null) throw new ProposalValidationError(`proposal "${proposalId}" has no applied revision to revert`);
 
-    const built = this.buildRevertCommand(row, input.actorId, input.actorClass, input.idempotencyKey);
+    const built = await this.buildRevertCommand(row, input.actorId, input.actorClass, input.idempotencyKey);
     const { command: normalized, mutationHash } = normalizeWriteCommand(built);
     const at = this.clock.now();
 
@@ -657,15 +691,20 @@ export class DurableProposalService {
 
   async revert(proposalId: ProposalId, input: RevertInput): Promise<RevertOutcome> {
     const row = this.mustGetProposalRow(proposalId);
-    if (row.status !== 'accepted') throw new ProposalInvalidTransitionError(proposalId, row.status, 'revert');
-    if (row.reverted) throw new ProposalInvalidTransitionError(proposalId, 'accepted (already reverted)', 'revert');
-    if (row.resulting_revision === null) throw new ProposalValidationError(`proposal "${proposalId}" has no applied revision to revert`);
     const reason = input.reason.trim();
     if (!reason) throw new ProposalValidationError('revert requires a non-empty reason');
 
+    // Idempotency before the transition guards below, for the same reason
+    // as accept(): a genuine retry of the exact same revert call must
+    // return the identical outcome even after the first call already
+    // flipped `reverted`, not an invalid-transition error.
     const requestHash = contentHash({ reason, channel: input.channel ?? null, revertCandidateId: input.revertCandidateId ?? null });
     const idem = this.checkIdempotency<RevertOutcome>('proposal.revert', input.idempotencyKey, requestHash);
     if (idem) return idem;
+
+    if (row.status !== 'accepted') throw new ProposalInvalidTransitionError(proposalId, row.status, 'revert');
+    if (row.reverted) throw new ProposalInvalidTransitionError(proposalId, 'accepted (already reverted)', 'revert');
+    if (row.resulting_revision === null) throw new ProposalValidationError(`proposal "${proposalId}" has no applied revision to revert`);
 
     let command: WriteCommand;
     if (input.revertCandidateId) {
@@ -688,7 +727,7 @@ export class DurableProposalService {
       }
       command = { ...candidateVersion.canonicalMutation, attestation: { attestationId: input.attestationId } };
     } else {
-      command = this.buildRevertCommand(row, input.actorId, input.actorClass, input.idempotencyKey);
+      command = await this.buildRevertCommand(row, input.actorId, input.actorClass, input.idempotencyKey);
     }
 
     const at = this.clock.now();
@@ -710,7 +749,20 @@ export class DurableProposalService {
     }
 
     const result: RevertOutcome = { outcome: 'reverted', newRevision: applied.resultingRevision };
-    this.unitOfWork.run(() => {
+    return this.unitOfWork.run(() => {
+      // Claimed first, inside the same transaction as every other
+      // side-effecting statement below -- mirrors accept()'s claimIdempotency
+      // use for the same reason: the orchestrator-level write race is
+      // already resolved by this point, but this service's own
+      // reverted-flag/reversal-record/event bookkeeping is a *separate*
+      // transaction per call, so two genuinely concurrent revert() calls for
+      // the same idempotency key can both reach here. Whichever call's
+      // INSERT OR IGNORE lands first proceeds; the other sees
+      // `claimed: false` and returns that winner's exact result without a
+      // second reversal record or a raw (scope, key) constraint violation.
+      const claim = this.claimIdempotency('proposal.revert', input.idempotencyKey, requestHash, result, at);
+      if (!claim.claimed) return claim.result;
+
       this.db.prepare(`UPDATE proposals SET reverted = 1, updated_at = ? WHERE proposal_id = ?`).run(at, proposalId);
       if (input.revertCandidateId) {
         this.db
@@ -743,29 +795,37 @@ export class DurableProposalService {
         reason,
         detail: { originalRevision: row.resulting_revision, newRevision: applied.resultingRevision },
       });
-      this.recordIdempotency('proposal.revert', input.idempotencyKey, requestHash, result, at);
+      return result;
     });
-    return result;
   }
 
-  private buildRevertCommand(row: ProposalRow, actorId: ActorId, actorClass: ActorClass, idempotencyKey: string): WriteCommand {
+  private async buildRevertCommand(
+    row: ProposalRow,
+    actorId: ActorId,
+    actorClass: ActorClass,
+    idempotencyKey: string,
+  ): Promise<WriteCommand> {
     const currentVersion = rowToVersion(this.getVersionRow(row.proposal_id, row.version)!);
-
-    const revisionRow = this.db
-      .prepare('SELECT revision_id FROM namespace_revisions WHERE namespace = ? AND namespace_revision = ?')
-      .get(row.target_namespace, row.resulting_revision) as { revision_id: string } | undefined;
-    if (!revisionRow) {
-      throw new ProposalValidationError(`applied revision ${row.resulting_revision} for proposal "${row.proposal_id}" was not found`);
+    const namespace = asNamespaceId(row.target_namespace);
+    const resultingRevision = row.resulting_revision;
+    if (resultingRevision === null) {
+      throw new ProposalValidationError(`proposal "${row.proposal_id}" has no applied revision to revert`);
     }
-    const targetRevisionId = asRevisionId(revisionRow.revision_id);
 
-    const namespaceRow = this.db.prepare('SELECT current_revision FROM namespaces WHERE namespace = ?').get(row.target_namespace) as
-      | { current_revision: number }
-      | undefined;
-    const expectedNamespaceRevision = namespaceRow?.current_revision ?? null;
+    // Read through the same Repository port the orchestrator writes
+    // through -- never the sqlite `namespace_revisions`/`namespaces` tables
+    // directly -- so revert works identically for sqlite- and git-backed
+    // namespaces.
+    const [revisionRecord] = await this.repository.listRevisionsSince(namespace, resultingRevision - 1);
+    if (!revisionRecord || revisionRecord.namespaceRevision !== resultingRevision) {
+      throw new ProposalValidationError(`applied revision ${resultingRevision} for proposal "${row.proposal_id}" was not found`);
+    }
+    const targetRevisionId = asRevisionId(revisionRecord.revisionId);
+
+    const expectedNamespaceRevision = await this.repository.getNamespaceRevision(namespace);
 
     return {
-      namespace: asNamespaceId(row.target_namespace),
+      namespace,
       subject: asSubjectId(row.target_subject),
       nodeMutations: currentVersion.canonicalMutation.nodeMutations.map((m) => ({ op: 'revert' as const, nodeId: m.nodeId, targetRevisionId })),
       edgeMutations: currentVersion.canonicalMutation.edgeMutations.map((m) => ({ op: 'revert' as const, edgeId: m.edgeId, targetRevisionId })),
@@ -943,5 +1003,32 @@ export class DurableProposalService {
     this.db
       .prepare('INSERT INTO idempotency_records (scope, key, request_hash, result_json, created_at) VALUES (?, ?, ?, ?, ?)')
       .run(scope, key, requestHash, canonicalStringify(result), at);
+  }
+
+  /**
+   * Atomically claims (scope, key) for `result` via INSERT OR IGNORE, meant
+   * to be the *first* statement inside a unitOfWork transaction whose other
+   * statements should only run once per key. checkIdempotency's own read
+   * happens *before* this transaction opens, so two genuinely concurrent
+   * calls for the same key can both reach here; only one INSERT actually
+   * lands. The loser gets `claimed: false` and the winner's own result back
+   * (or a thrown ProposalIdempotencyMismatchError if the winner's recorded
+   * request differed) instead of re-running -- and duplicating -- the
+   * caller's other side effects.
+   */
+  private claimIdempotency<T>(scope: string, key: string, requestHash: string, result: T, at: string): { claimed: boolean; result: T } {
+    const inserted = this.db
+      .prepare('INSERT OR IGNORE INTO idempotency_records (scope, key, request_hash, result_json, created_at) VALUES (?, ?, ?, ?, ?)')
+      .run(scope, key, requestHash, canonicalStringify(result), at);
+    if (inserted.changes > 0) {
+      return { claimed: true, result };
+    }
+    const existing = this.db.prepare('SELECT request_hash, result_json FROM idempotency_records WHERE scope = ? AND key = ?').get(scope, key) as
+      | { request_hash: string; result_json: string }
+      | undefined;
+    if (!existing || existing.request_hash !== requestHash) {
+      throw new ProposalIdempotencyMismatchError(scope, key);
+    }
+    return { claimed: false, result: JSON.parse(existing.result_json) as T };
   }
 }

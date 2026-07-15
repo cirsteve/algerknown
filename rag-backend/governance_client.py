@@ -131,3 +131,47 @@ class GovernanceClient:
             raise GovernanceClientError(response.status_code, body, "governance API returned an unexpected response body")
 
         return body
+
+    async def submit_operation(self, *, subject: str, description: str, idempotency_key: str) -> dict:
+        """
+        Records one generic, application-neutral append-only operation event
+        (POST /processor/operations) -- never reviewable content, unlike
+        submit_candidate. Used for ingest completion tracking (last_ingested)
+        instead of an ungoverned YAML edit. Returns
+        {"status": "recorded", "resultingRevision": int}.
+
+        Raises GovernanceClientError on any transport failure or non-2xx
+        response; callers treat this as non-fatal telemetry (see
+        api.py's run_ingest_job, which logs and continues rather than
+        failing the ingest job over a telemetry write).
+        """
+        if not self.enabled:
+            raise GovernanceClientError(None, None, "GOVERNANCE_PROCESSOR_SECRET is not configured")
+
+        payload = {"subject": subject, "description": description, "idempotencyKey": idempotency_key}
+
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+                response = await client.post(
+                    f"{self.base_url}/processor/operations",
+                    json=payload,
+                    headers={"Authorization": f"Bearer {self.processor_secret}"},
+                )
+        except httpx.HTTPError as e:
+            raise GovernanceClientError(None, None, f"governance API request failed: {e}") from e
+
+        try:
+            body = response.json() if response.content else None
+        except ValueError:
+            body = None
+
+        if response.status_code not in (200, 201):
+            detail = body.get("error") if isinstance(body, dict) else None
+            raise GovernanceClientError(
+                response.status_code, body, f"governance API returned {response.status_code}" + (f" ({detail})" if detail else "")
+            )
+
+        if not isinstance(body, dict):
+            raise GovernanceClientError(response.status_code, body, "governance API returned an unexpected response body")
+
+        return body

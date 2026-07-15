@@ -415,17 +415,40 @@ export class WriteOrchestrator {
       ...(auditDirective ? { auditDirective } : {}),
     };
 
-    // Step 12: call the repository once with a prepared write.
-    await this.deps.repository.commit({
-      namespace: normalized.namespace,
-      previousRevision: currentRevision,
-      resultingRevision,
-      revisionRecord,
-      nodesUpserted,
-      nodesDeleted,
-      edgesUpserted,
-      edgesDeleted,
-    });
+    // Step 12: call the repository once with a prepared write. The
+    // getNamespaceRevision read in step 4 and this commit are not atomic
+    // with each other -- two genuinely concurrent callers (e.g. duplicate
+    // acceptance racing on the same idempotency key) can both pass the
+    // step-5 idempotency/expected-revision checks before either has
+    // committed, so the backend's own commit-time revision check can still
+    // reject the loser. Rather than let that backend-specific error escape
+    // raw, re-resolve it the same way a *sequential* retry would: if the
+    // loser's own idempotency key is now recorded (the winner was in fact
+    // this same request), replay it; otherwise it's a genuine conflict
+    // against different content, reported the same way the early check
+    // would have reported it had timing allowed.
+    try {
+      await this.deps.repository.commit({
+        namespace: normalized.namespace,
+        previousRevision: currentRevision,
+        resultingRevision,
+        revisionRecord,
+        nodesUpserted,
+        nodesDeleted,
+        edgesUpserted,
+        edgesDeleted,
+      });
+    } catch (err) {
+      const raceWinner = await this.deps.repository.findByIdempotencyKey(normalized.namespace, normalized.idempotencyKey);
+      if (raceWinner) {
+        return { outcome: 'idempotent_replay', original: appliedFromRevisionRecord(raceWinner) };
+      }
+      const actualRevision = await this.deps.repository.getNamespaceRevision(normalized.namespace);
+      if (actualRevision !== currentRevision) {
+        return conflict(normalized.expectedNamespaceRevision, actualRevision ?? 0);
+      }
+      throw err;
+    }
 
     if (namespaceEntry.appendOnly) {
       await this.deps.operationSink.append({
