@@ -1,24 +1,18 @@
 /**
  * Shared conformance corpus runner.
  *
- * Reads content-agn/conformance/v1/manifest.json and runs every declared
+ * Reads content-agn's conformance/v1/manifest.json and runs every declared
  * case against this package's real validate()/matchesProhibition()/
  * canonicalNormalize()/parsePortableRegex() — the same producer code path
  * used by `agn validate`. See docs/dossier-contract.md for the corpus
  * location, versioning, and how CI pins content-agn's revision.
  *
- * The corpus directory is resolved, in order:
- *   1. CONFORMANCE_CORPUS_DIR env var (what CI sets, pointing at the
- *      revision-pinned content-agn checkout).
- *   2. A sibling checkout: ../../../content-agn/conformance/v1 (algerknown
- *      and content-agn cloned as separate sibling repos).
- *   3. A nested checkout: ../../content-agn/conformance/v1 (this monorepo-
- *      style local arrangement, where content-agn lives inside algerknown/).
- *
- * If none exist, the corpus-dependent tests are skipped with a clear
- * message rather than failing — contributors without a content-agn checkout
- * can still run the rest of the suite. CI always sets the env var (see
- * .github/workflows/ci.yml), so the corpus always runs there.
+ * Corpus resolution (pinned checkout, candidate checkout, or local
+ * auto-discovery) is handled by ./support/conformance-resolution.ts. In CI,
+ * CONFORMANCE_REQUIRED=1 makes every resolution failure and every count
+ * mismatch a fatal error rather than a silent skip; only an un-required local
+ * run without a content-agn checkout is allowed to skip. See
+ * .github/workflows/ci.yml.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -29,24 +23,12 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import { validate, matchesProhibition, canonicalNormalize, parsePortableRegex, PortableRegexError } from '../src/index.js';
 import type { ValidationError, DossierProhibition } from '../src/index.js';
+import { resolveConformanceSource } from './support/conformance-resolution.js';
 
-function resolveCorpusDir(): string | null {
-  const fromEnv = process.env.CONFORMANCE_CORPUS_DIR;
-  const candidates = [
-    fromEnv,
-    path.join(__dirname, '..', '..', '..', 'content-agn', 'conformance', 'v1'),
-    path.join(__dirname, '..', '..', 'content-agn', 'conformance', 'v1'),
-  ].filter((p): p is string => Boolean(p));
-
-  for (const candidate of candidates) {
-    if (fs.existsSync(path.join(candidate, 'manifest.json'))) {
-      return candidate;
-    }
-  }
-  return null;
-}
-
-const CORPUS_DIR = resolveCorpusDir();
+const EXPECTED_FIXTURE_COUNT = 23;
+const EXPECTED_NORMALIZATION_VECTOR_COUNT = 15;
+const EXPECTED_REGEX_GRAMMAR_VECTOR_COUNT = 45;
+const EXPECTED_MATCHER_VECTOR_COUNT = 18;
 
 interface ManifestFixture {
   id: string;
@@ -107,13 +89,17 @@ function compileSchema(ajv: Ajv2020, schemaPath: string) {
   return ajv.compile(schema);
 }
 
-// NOTE: describe.runIf()/skipIf() only mark the resulting suite as skipped —
-// vitest still calls the describe callback synchronously during collection
-// to discover its `it()`s. Since the corpus may not exist (CORPUS_DIR would
-// be null), the manifest-loading body below must never run in that case, so
-// this is gated with a plain `if` instead of describe.runIf.
-if (CORPUS_DIR !== null) {
-  const corpusDir = CORPUS_DIR;
+// resolveConformanceSource() throws when CONFORMANCE_REQUIRED=1 and
+// resolution fails, so a thrown error here fails the whole file rather than
+// silently skipping. describe.runIf()/skipIf() only mark the resulting suite
+// as skipped — vitest still calls the describe callback synchronously during
+// collection to discover its it()s — so the manifest-loading body below must
+// never run when there's no source, hence the plain `if` instead of
+// describe.runIf.
+const SOURCE = resolveConformanceSource();
+
+if (SOURCE !== null) {
+  const { corpusDir, contentAgnRoot } = SOURCE;
   const manifest: Manifest = JSON.parse(fs.readFileSync(path.join(corpusDir, 'manifest.json'), 'utf-8'));
 
   const ajv = new Ajv2020({ allErrors: true, strict: false, validateFormats: true });
@@ -121,6 +107,21 @@ if (CORPUS_DIR !== null) {
   const validateIndex = compileSchema(ajv, path.join(corpusDir, manifest.schemas.index));
 
   describe('conformance corpus (content-agn/conformance/v1)', () => {
+    it('manifest declares the expected number of fixtures and vectors', () => {
+      expect(manifest.fixtures.length, 'manifest fixtures').toBe(EXPECTED_FIXTURE_COUNT);
+
+      const normalizationData = JSON.parse(
+        fs.readFileSync(path.join(corpusDir, manifest.normalizationVectors), 'utf-8')
+      ) as { vectors: unknown[] };
+      expect(normalizationData.vectors.length, 'normalization vectors').toBe(EXPECTED_NORMALIZATION_VECTOR_COUNT);
+
+      const prohibitionData = JSON.parse(
+        fs.readFileSync(path.join(corpusDir, manifest.prohibitionVectors), 'utf-8')
+      ) as { regexGrammar: unknown[]; matchVectors: unknown[] };
+      expect(prohibitionData.regexGrammar.length, 'portable-regex grammar vectors').toBe(EXPECTED_REGEX_GRAMMAR_VECTOR_COUNT);
+      expect(prohibitionData.matchVectors.length, 'matcher vectors').toBe(EXPECTED_MATCHER_VECTOR_COUNT);
+    });
+
     it.each(manifest.fixtures)('fixture $id', (fixture) => {
       const filePath = path.join(corpusDir, fixture.file);
       const doc = yaml.load(fs.readFileSync(filePath, 'utf-8'));
@@ -131,11 +132,8 @@ if (CORPUS_DIR !== null) {
         return;
       }
 
-      // summary/entry: exercise the full producer pipeline (schema + semantic)
-      // against content-agn's own tracked, deployed schemas. corpusDir is
-      // <content-agn root>/conformance/v1 — strip those two path segments
-      // with path.dirname (portable) rather than a POSIX-only "/" regex.
-      const contentAgnRoot = path.dirname(path.dirname(corpusDir));
+      // summary/entry: exercise the full producer pipeline (schema +
+      // semantic) against content-agn's own tracked, deployed schemas.
       const result = validate(doc as never, contentAgnRoot);
       expect(result.valid).toBe(fixture.expected.valid);
 
@@ -196,6 +194,6 @@ if (CORPUS_DIR !== null) {
   });
 } else {
   describe('conformance corpus (content-agn/conformance/v1)', () => {
-    it.skip('skipped: no content-agn checkout found (set CONFORMANCE_CORPUS_DIR)', () => {});
+    it.skip('skipped: no content-agn checkout found (set CONFORMANCE_CORPUS_DIR or CONFORMANCE_SOURCE_MODE)', () => {});
   });
 }
