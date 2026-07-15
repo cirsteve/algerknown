@@ -396,8 +396,15 @@ export class DurableProposalService {
 
   async accept(proposalId: ProposalId, input: AcceptInput): Promise<AcceptOutcome> {
     const row = this.mustGetProposalRow(proposalId);
-    if (row.status !== 'pending') throw new ProposalInvalidTransitionError(proposalId, row.status, 'accept');
 
+    // Idempotency is checked *before* the pending-status guard: a genuine
+    // retry of the exact same accept call (duplicate click, or a client
+    // that never saw the first response) must return the identical
+    // byte-for-byte outcome even after the first call already moved the
+    // proposal out of 'pending' -- not an invalid-transition error. A
+    // request with a *different* body under the same key still throws via
+    // checkIdempotency's own hash-mismatch check; a genuinely new key
+    // against a non-pending proposal still falls through to the guard below.
     const requestHash = contentHash({
       expectedVersion: input.expectedVersion,
       expectedTargetRevision: input.expectedTargetRevision,
@@ -409,6 +416,8 @@ export class DurableProposalService {
     });
     const idem = this.checkIdempotency<AcceptOutcome>('proposal.accept', input.idempotencyKey, requestHash);
     if (idem) return idem;
+
+    if (row.status !== 'pending') throw new ProposalInvalidTransitionError(proposalId, row.status, 'accept');
 
     const at = this.clock.now();
 
@@ -668,15 +677,20 @@ export class DurableProposalService {
 
   async revert(proposalId: ProposalId, input: RevertInput): Promise<RevertOutcome> {
     const row = this.mustGetProposalRow(proposalId);
-    if (row.status !== 'accepted') throw new ProposalInvalidTransitionError(proposalId, row.status, 'revert');
-    if (row.reverted) throw new ProposalInvalidTransitionError(proposalId, 'accepted (already reverted)', 'revert');
-    if (row.resulting_revision === null) throw new ProposalValidationError(`proposal "${proposalId}" has no applied revision to revert`);
     const reason = input.reason.trim();
     if (!reason) throw new ProposalValidationError('revert requires a non-empty reason');
 
+    // Idempotency before the transition guards below, for the same reason
+    // as accept(): a genuine retry of the exact same revert call must
+    // return the identical outcome even after the first call already
+    // flipped `reverted`, not an invalid-transition error.
     const requestHash = contentHash({ reason, channel: input.channel ?? null, revertCandidateId: input.revertCandidateId ?? null });
     const idem = this.checkIdempotency<RevertOutcome>('proposal.revert', input.idempotencyKey, requestHash);
     if (idem) return idem;
+
+    if (row.status !== 'accepted') throw new ProposalInvalidTransitionError(proposalId, row.status, 'revert');
+    if (row.reverted) throw new ProposalInvalidTransitionError(proposalId, 'accepted (already reverted)', 'revert');
+    if (row.resulting_revision === null) throw new ProposalValidationError(`proposal "${proposalId}" has no applied revision to revert`);
 
     let command: WriteCommand;
     if (input.revertCandidateId) {
