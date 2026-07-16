@@ -12,7 +12,8 @@
     "build": "tsc",
     "dev": "tsc --watch",
     "pretest": "tsc",
-    "test": "vitest",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "lint": "eslint src/"
   },
   "keywords": [

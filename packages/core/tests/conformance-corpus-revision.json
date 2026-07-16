@@ -1,5 +1,8 @@
 {
-  "$comment": "Pins the exact cirsteve/algerknown-content commit CI checks out to run the shared conformance corpus. See docs/dossier-contract.md. Update this file's `sha` (and, if applicable, `repository`) whenever content-agn's contract/corpus is intentionally revised, in the same PR that depends on the new corpus content.",
-  "repository": "cirsteve/algerknown-content",
-  "sha": "358049cd656e727161b48158b59ea6fe6803a255"
+  "$comment": "Pins the exact cirsteve/content-agn commit CI checks out to run the shared conformance corpus. See docs/dossier-contract.md. Update `revision` (and, if applicable, `repository` or the *_path fields) whenever content-agn's contract/corpus is intentionally revised, in the same PR that depends on the new corpus content.",
+  "repository": "cirsteve/content-agn",
+  "revision": "358049cd656e727161b48158b59ea6fe6803a255",
+  "corpus_path": "conformance/v1",
+  "summary_schema_path": "schemas/summary.v1.schema.json",
+  "index_schema_path": "schemas/index.v1.schema.json"
 }
