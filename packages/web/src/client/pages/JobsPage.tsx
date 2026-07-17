@@ -21,11 +21,9 @@ function Badge({ label, className = '' }: { label: string; className?: string })
   );
 }
 
-/** The first durable proposal id a completed ingest job persisted, if any -- never proposal content, which JobStore never holds. */
-function firstDurableProposalId(job: JobResponse): string | null {
-  const result = job.result as { proposal_ids?: unknown } | null;
-  const ids = result?.proposal_ids;
-  return Array.isArray(ids) && typeof ids[0] === 'string' ? ids[0] : null;
+function hasProposals(job: JobResponse): boolean {
+  const result = job.result as Record<string, unknown> | null;
+  return Array.isArray(result?.proposals) && result.proposals.length > 0;
 }
 
 function JobRow({ job }: { job: JobResponse }) {
@@ -85,22 +83,17 @@ function JobRow({ job }: { job: JobResponse }) {
                     View Trace &rarr;
                   </Link>
                 )}
-                {job.type === 'ingest' && (job.status === 'pending' || job.status === 'running') && (
+                {job.type === 'ingest' && (
+                  job.status === 'pending' ||
+                  job.status === 'running' ||
+                  (job.status === 'complete' && hasProposals(job))
+                ) && (
                   <Link
                     to={`/ingest?job=${job.job_id}`}
                     className="text-amber-400 hover:text-amber-300 text-sm"
                     onClick={e => e.stopPropagation()}
                   >
-                    View progress &rarr;
-                  </Link>
-                )}
-                {job.type === 'ingest' && job.status === 'complete' && firstDurableProposalId(job) && (
-                  <Link
-                    to={`/ingest?tab=pending&proposal=${firstDurableProposalId(job)}`}
-                    className="text-amber-400 hover:text-amber-300 text-sm"
-                    onClick={e => e.stopPropagation()}
-                  >
-                    Open durable proposals &rarr;
+                    {job.status === 'complete' ? 'Review Proposals' : 'Resume Ingest'} &rarr;
                   </Link>
                 )}
               </div>

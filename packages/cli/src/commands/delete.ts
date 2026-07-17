@@ -7,8 +7,6 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import inquirer from 'inquirer';
 import { deleteEntry, readEntry, entryExists } from '@algerknown/core';
-import { checkGovernedTarget } from '../governance/boundary-check.js';
-import { reportGovernedRefusal } from '../governance/messages.js';
 
 export const deleteCommand = new Command('delete')
   .alias('rm')
@@ -26,11 +24,6 @@ export const deleteCommand = new Command('delete')
       if (!entry) {
         console.error(chalk.red(`Error: Could not read entry: ${id}`));
         process.exit(1);
-      }
-
-      const boundary = checkGovernedTarget(id);
-      if (boundary.governed) {
-        reportGovernedRefusal(id, boundary.namespace);
       }
 
       // Confirm unless --force

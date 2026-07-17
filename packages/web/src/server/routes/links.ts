@@ -1,7 +1,6 @@
 import { Router, Request, Response } from 'express';
 import * as core from '@algerknown/core';
 import { getZkbPath } from '../utils/zkb-path.js';
-import { respondIfGoverned } from '../utils/governed-check.js';
 
 const router = Router();
 
@@ -12,13 +11,11 @@ router.post('/', async (req: Request, res: Response) => {
     const { sourceId, targetId, relationship, notes } = req.body;
     
     if (!sourceId || !targetId || !relationship) {
-      return res.status(400).json({
-        error: 'sourceId, targetId, and relationship are required'
+      return res.status(400).json({ 
+        error: 'sourceId, targetId, and relationship are required' 
       });
     }
-
-    if (respondIfGoverned(zkbPath, sourceId, res)) return;
-
+    
     const added = core.addLink(sourceId, targetId, relationship as core.Relationship, notes, zkbPath);
     
     res.status(added ? 201 : 200).json({ 
@@ -39,13 +36,11 @@ router.delete('/', async (req: Request, res: Response) => {
     const { sourceId, targetId, relationship } = req.body;
     
     if (!sourceId || !targetId || !relationship) {
-      return res.status(400).json({
-        error: 'sourceId, targetId, and relationship are required'
+      return res.status(400).json({ 
+        error: 'sourceId, targetId, and relationship are required' 
       });
     }
-
-    if (respondIfGoverned(zkbPath, sourceId, res)) return;
-
+    
     const removed = core.removeLink(sourceId, targetId, relationship as core.Relationship, zkbPath);
     
     res.json({ 

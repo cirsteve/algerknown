@@ -34,7 +34,6 @@ export type {
   DossierProhibition,
   DossierKnownGap,
   Dossier,
-  DossierRegexFlags,
 } from './types.js';
 
 export { isSummary, isEntry } from './types.js';
@@ -103,40 +102,3 @@ export {
   filterByType,
   getAllTags,
 } from './search.js';
-
-// Unicode normalization
-export {
-  canonicalNormalize,
-  fullCaseFold,
-  isUnicodeWhiteSpace,
-  normalizeSubjectForRegex,
-  NORMALIZATION_UNICODE_VERSION,
-} from './unicode/normalize.js';
-
-// Portable regex
-export {
-  parsePortableRegex,
-  PortableRegexError,
-} from './regex/portable-regex.js';
-export {
-  compilePortableRegex,
-  asciiFold,
-} from './regex/compile.js';
-export type { PortableRegexFlags, CompiledPortableRegex } from './regex/compile.js';
-
-// Prohibition matching
-export { matchesProhibition } from './prohibition.js';
-
-// Governed write boundary
-export {
-  GOVERNED_BOUNDARY_MANIFEST_RELATIVE_PATH,
-  GovernedWriteBoundaryError,
-  loadGovernedBoundaryManifest,
-  classifyWriteTarget,
-  assertWriteAllowed,
-} from './governed-boundary.js';
-export type {
-  WriteBoundaryClassification,
-  GovernedBoundaryManifest,
-  WriteBoundaryClassificationResult,
-} from './governed-boundary.js';

@@ -87,14 +87,7 @@ export interface Outcome {
 
 // ============== Dossier ==============
 
-export type DossierFactStatus =
-  | 'supported'
-  | 'qualified'
-  | 'uncertain'
-  | 'shipped'
-  | 'experimental'
-  | 'planned'
-  | 'deprecated';
+export type DossierFactStatus = 'shipped' | 'experimental' | 'planned' | 'deprecated';
 
 export interface DossierReviewer {
   id: string;
@@ -143,15 +136,9 @@ export interface DossierProhibitionNormalized extends DossierProhibitionBase {
   regex?: never;
 }
 
-// Every string containing i, m, and s at most once each, in any authored order (16 total).
-export type DossierRegexFlags =
-  | '' | 'i' | 'm' | 's'
-  | 'im' | 'is' | 'mi' | 'ms' | 'si' | 'sm'
-  | 'ims' | 'ism' | 'mis' | 'msi' | 'sim' | 'smi';
-
 export interface DossierProhibitionRegex extends DossierProhibitionBase {
   regex: string;
-  flags?: DossierRegexFlags;
+  flags?: string;
   exact_phrase?: never;
   normalized_phrase?: never;
 }

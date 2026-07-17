@@ -7,12 +7,10 @@ import tempfile
 from pathlib import Path
 from ruamel.yaml import YAML
 
-import inspect
-
-import writer
 from writer import (
     validate_proposal,
     find_summary_file,
+    apply_update,
     preview_update
 )
 
@@ -226,35 +224,169 @@ class TestFindSummaryFile:
         assert file_path is None
 
 
-class TestNoFilesystemWrites:
-    """apply_update was removed along with all file-writing behavior; the
-    module must now perform only pure conversion/validation and read-only
-    lookups (find_summary_file, preview_update)."""
-
-    def test_apply_update_no_longer_exists(self):
-        assert not hasattr(writer, "apply_update")
-
-    def test_module_source_contains_no_write_mode_file_opens(self):
-        source = inspect.getsource(writer)
-        assert 'open(file_path, "w")' not in source
-        assert "open(file_path, 'w')" not in source
-        assert "yaml.dump(" not in source
-
-    def test_preview_and_find_leave_the_summary_file_untouched(self, temp_content_dir):
+class TestApplyUpdate:
+    """Tests for apply_update function."""
+    
+    def test_apply_new_learning(self, temp_content_dir):
+        """Should add new learning to summary."""
+        proposal = {
+            "target_summary_id": "test-summary",
+            "source_entry_id": "test-entry",
+            "new_learnings": [
+                {"insight": "Brand new insight", "context": "New context"}
+            ]
+        }
+        
+        result = apply_update(proposal, temp_content_dir)
+        
+        assert result["success"] is True
+        assert len(result["changes"]) == 1
+        
+        # Verify file was updated
         file_path = Path(temp_content_dir) / "summaries" / "test-summary.yaml"
-        before = file_path.read_text()
-
-        find_summary_file("test-summary", temp_content_dir)
-        preview_update(
-            {
-                "target_summary_id": "test-summary",
-                "source_entry_id": "test-entry",
-                "new_learnings": [{"insight": "New", "context": "New"}],
-            },
-            temp_content_dir,
-        )
-
-        assert file_path.read_text() == before
+        with open(file_path) as f:
+            updated = yaml.load(f)
+        
+        assert len(updated["learnings"]) == 2
+        assert updated["learnings"][1]["insight"] == "Brand new insight"
+        # Should have added relevance
+        assert "test-entry" in updated["learnings"][1]["relevance"]
+    
+    def test_apply_new_decision(self, temp_content_dir):
+        """Should add new decision to summary."""
+        proposal = {
+            "target_summary_id": "test-summary",
+            "source_entry_id": "test-entry",
+            "new_decisions": [
+                {"decision": "New decision", "rationale": "New rationale"}
+            ]
+        }
+        
+        result = apply_update(proposal, temp_content_dir)
+        
+        assert result["success"] is True
+        
+        # Verify file was updated
+        file_path = Path(temp_content_dir) / "summaries" / "test-summary.yaml"
+        with open(file_path) as f:
+            updated = yaml.load(f)
+        
+        assert len(updated["decisions"]) == 2
+        # Should have added date
+        assert "date" in updated["decisions"][1]
+    
+    def test_apply_new_question(self, temp_content_dir):
+        """Should add new open question to summary."""
+        proposal = {
+            "target_summary_id": "test-summary",
+            "source_entry_id": "test-entry",
+            "new_open_questions": ["New question?"]
+        }
+        
+        result = apply_update(proposal, temp_content_dir)
+        
+        assert result["success"] is True
+        
+        file_path = Path(temp_content_dir) / "summaries" / "test-summary.yaml"
+        with open(file_path) as f:
+            updated = yaml.load(f)
+        
+        assert "New question?" in updated["open_questions"]
+    
+    def test_apply_new_link(self, temp_content_dir):
+        """Should add new link to summary."""
+        proposal = {
+            "target_summary_id": "test-summary",
+            "source_entry_id": "test-entry",
+            "new_links": [
+                {"id": "new-link", "relationship": "informs"}
+            ]
+        }
+        
+        result = apply_update(proposal, temp_content_dir)
+        
+        assert result["success"] is True
+        
+        file_path = Path(temp_content_dir) / "summaries" / "test-summary.yaml"
+        with open(file_path) as f:
+            updated = yaml.load(f)
+        
+        link_ids = [l["id"] for l in updated["links"]]
+        assert "new-link" in link_ids
+    
+    def test_skip_duplicate_learning(self, temp_content_dir):
+        """Should not add duplicate learning."""
+        proposal = {
+            "target_summary_id": "test-summary",
+            "source_entry_id": "test-entry",
+            "new_learnings": [
+                {"insight": "Existing learning", "context": "Different context"}
+            ]
+        }
+        
+        result = apply_update(proposal, temp_content_dir)
+        
+        assert result["success"] is True
+        assert len(result["changes"]) == 0  # No new changes
+        
+        file_path = Path(temp_content_dir) / "summaries" / "test-summary.yaml"
+        with open(file_path) as f:
+            updated = yaml.load(f)
+        
+        # Still only one learning
+        assert len(updated["learnings"]) == 1
+    
+    def test_skip_duplicate_question(self, temp_content_dir):
+        """Should not add duplicate question."""
+        proposal = {
+            "target_summary_id": "test-summary",
+            "source_entry_id": "test-entry",
+            "new_open_questions": ["Existing question?"]
+        }
+        
+        result = apply_update(proposal, temp_content_dir)
+        
+        assert result["success"] is True
+        assert len(result["changes"]) == 0
+    
+    def test_skip_duplicate_link(self, temp_content_dir):
+        """Should not add duplicate link."""
+        proposal = {
+            "target_summary_id": "test-summary",
+            "source_entry_id": "test-entry",
+            "new_links": [
+                {"id": "existing-link", "relationship": "informs"}
+            ]
+        }
+        
+        result = apply_update(proposal, temp_content_dir)
+        
+        assert result["success"] is True
+        assert len(result["changes"]) == 0
+    
+    def test_apply_to_nonexistent_summary(self, temp_content_dir):
+        """Should fail for non-existent summary."""
+        proposal = {
+            "target_summary_id": "nonexistent",
+            "source_entry_id": "test-entry",
+            "new_learnings": [{"insight": "Test", "context": "Test"}]
+        }
+        
+        result = apply_update(proposal, temp_content_dir)
+        
+        assert result["success"] is False
+        assert "not found" in result["error"]
+    
+    def test_apply_invalid_proposal(self, temp_content_dir):
+        """Should fail for invalid proposal structure."""
+        proposal = {
+            "target_summary_id": "test-summary"
+            # Missing source_entry_id
+        }
+        
+        result = apply_update(proposal, temp_content_dir)
+        
+        assert result["success"] is False
 
 
 class TestPreviewUpdate:

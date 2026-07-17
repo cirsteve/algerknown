@@ -10,16 +10,6 @@ const ALGERKNOWN_DIR = '.algerknown';
 const INDEX_FILE = 'index.yaml';
 const SCHEMAS_DIR = 'schemas';
 
-// The package's own authoring-source schemas (packages/core/schemas/*.json).
-// Resolved relative to this module's location (this package builds to
-// CommonJS, so __dirname is the compiled-output directory) so it works
-// identically from source (src/config.ts), compiled dist (dist/config.js),
-// and a packaged install (node_modules/@algerknown/core/dist/config.js) — in
-// every case, schemas/ sits one directory up from this file's directory.
-const PACKAGE_SCHEMAS_DIR = path.join(__dirname, '..', 'schemas');
-
-const SCHEMA_FILENAMES = ['index.schema.json', 'summary.schema.json', 'entry.schema.json'] as const;
-
 /**
  * Get the knowledge base root directory.
  * 
@@ -113,6 +103,369 @@ version: "1.0.0"
 entries: {}
 `;
 
+const INDEX_SCHEMA = `{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://algerknown.dev/schemas/index.schema.json",
+  "title": "Algerknown Index",
+  "description": "Index file mapping entry IDs to file paths",
+  "type": "object",
+  "required": ["version", "entries"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Schema version",
+      "pattern": "^\\\\d+\\\\.\\\\d+\\\\.\\\\d+$"
+    },
+    "entries": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/indexEntry"
+      }
+    }
+  },
+  "$defs": {
+    "indexEntry": {
+      "type": "object",
+      "required": ["path", "type"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Relative path to the entry file"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["summary", "entry"],
+          "description": "Entry type"
+        }
+      }
+    }
+  }
+}`;
+
+const SUMMARY_SCHEMA = `{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://algerknown.dev/schemas/summary.schema.json",
+  "title": "Algerknown Summary",
+  "description": "A topic summary aggregating learnings, decisions, and artifacts",
+  "type": "object",
+  "required": ["id", "type", "topic", "status", "summary"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier for this summary",
+      "pattern": "^[a-z0-9-]+$"
+    },
+    "type": {
+      "type": "string",
+      "const": "summary"
+    },
+    "topic": {
+      "type": "string",
+      "description": "Human-readable topic name"
+    },
+    "date_range": {
+      "$ref": "#/$defs/dateRange"
+    },
+    "status": {
+      "$ref": "#/$defs/status"
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "summary": {
+      "type": "string",
+      "description": "Brief description of the topic"
+    },
+    "learnings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/learning"
+      }
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/decision"
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/artifact"
+      }
+    },
+    "open_questions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "resources": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/resource"
+      }
+    },
+    "links": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/link"
+      }
+    }
+  },
+  "$defs": {
+    "dateRange": {
+      "type": "object",
+      "required": ["start"],
+      "properties": {
+        "start": {
+          "type": "string",
+          "pattern": "^\\\\d{4}(-\\\\d{2})?(-\\\\d{2})?$",
+          "description": "Start date (YYYY, YYYY-MM, or YYYY-MM-DD)"
+        },
+        "end": {
+          "type": "string",
+          "pattern": "^\\\\d{4}(-\\\\d{2})?(-\\\\d{2})?$",
+          "description": "End date (YYYY, YYYY-MM, or YYYY-MM-DD)"
+        }
+      }
+    },
+    "status": {
+      "type": "string",
+      "enum": ["active", "archived", "reference", "blocked", "planned"],
+      "description": "Current status of the topic"
+    },
+    "learning": {
+      "type": "object",
+      "required": ["insight"],
+      "properties": {
+        "insight": {
+          "type": "string",
+          "description": "The key learning or insight"
+        },
+        "context": {
+          "type": "string",
+          "description": "How this was discovered"
+        },
+        "relevance": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "IDs of related entries"
+        }
+      }
+    },
+    "decision": {
+      "type": "object",
+      "required": ["decision"],
+      "properties": {
+        "decision": {
+          "type": "string",
+          "description": "What was decided"
+        },
+        "rationale": {
+          "type": "string",
+          "description": "Why this decision was made"
+        },
+        "trade_offs": {
+          "type": "string",
+          "description": "What was sacrificed or risked"
+        },
+        "date": {
+          "type": "string",
+          "format": "date"
+        },
+        "superseded_by": {
+          "type": "string",
+          "description": "ID of decision that replaced this one"
+        }
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "required": ["path"],
+      "properties": {
+        "repo": {
+          "type": "string",
+          "description": "Repository URL or name"
+        },
+        "path": {
+          "type": "string",
+          "description": "Path within the repo"
+        },
+        "notes": {
+          "type": "string"
+        },
+        "commit": {
+          "type": "string",
+          "description": "Specific commit hash"
+        }
+      }
+    },
+    "resource": {
+      "type": "object",
+      "required": ["url"],
+      "properties": {
+        "url": {
+          "type": "string",
+          "format": "uri"
+        },
+        "title": {
+          "type": "string"
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    },
+    "link": {
+      "type": "object",
+      "required": ["id", "relationship"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "ID of the linked entry"
+        },
+        "relationship": {
+          "$ref": "#/$defs/relationship"
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    },
+    "relationship": {
+      "type": "string",
+      "enum": [
+        "evolved_into",
+        "evolved_from",
+        "informs",
+        "informed_by",
+        "part_of",
+        "contains",
+        "blocked_by",
+        "blocks",
+        "supersedes",
+        "superseded_by",
+        "references",
+        "referenced_by",
+        "depends_on",
+        "dependency_of",
+        "enables",
+        "enabled_by"
+      ],
+      "description": "How entries relate to each other. Bidirectional pairs allow expressing relationships from either direction."
+    }
+  }
+}`;
+
+const ENTRY_SCHEMA = `{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://algerknown.dev/schemas/entry.schema.json",
+  "title": "Algerknown Entry",
+  "description": "A journal entry capturing work done at a specific point in time",
+  "type": "object",
+  "required": ["id", "type", "date", "topic", "status"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier, typically YYYY-MM-DD-slug",
+      "pattern": "^[a-z0-9-]+$"
+    },
+    "type": {
+      "type": "string",
+      "const": "entry"
+    },
+    "date": {
+      "type": "string",
+      "format": "date",
+      "description": "Date of the entry (YYYY-MM-DD)"
+    },
+    "topic": {
+      "type": "string",
+      "description": "Human-readable topic name"
+    },
+    "status": {
+      "$ref": "summary.schema.json#/$defs/status"
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "time_hours": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Approximate hours spent"
+    },
+    "context": {
+      "type": "string",
+      "description": "What problem was being solved, what was already known"
+    },
+    "approach": {
+      "type": "string",
+      "description": "What was tried, methodology used"
+    },
+    "outcome": {
+      "$ref": "#/$defs/outcome"
+    },
+    "commits": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Related git commit hashes"
+    },
+    "resources": {
+      "type": "array",
+      "items": {
+        "$ref": "summary.schema.json#/$defs/resource"
+      }
+    },
+    "links": {
+      "type": "array",
+      "items": {
+        "$ref": "summary.schema.json#/$defs/link"
+      }
+    }
+  },
+  "$defs": {
+    "outcome": {
+      "type": "object",
+      "properties": {
+        "worked": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "What succeeded"
+        },
+        "failed": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "What didn't work"
+        },
+        "surprised": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Unexpected findings"
+        }
+      }
+    }
+  }
+}`;
+
 /**
  * Initialize a new Algerknown knowledge base
  * 
@@ -165,26 +518,26 @@ export function updateSchemas(targetDir: string = process.cwd()): void {
 }
 
 /**
- * Copy a single file's bytes to `dest`, replacing it atomically (write to a
- * sibling temp file, then rename over the destination).
- */
-function copyFileAtomic(src: string, dest: string): void {
-  const tmpDest = path.join(
-    path.dirname(dest),
-    `.${path.basename(dest)}.tmp-${process.pid}-${Math.random().toString(36).slice(2)}`
-  );
-  fs.copyFileSync(src, tmpDest);
-  fs.renameSync(tmpDest, dest);
-}
-
-/**
- * Write all package schema files to a directory, byte-for-byte identical to
- * packages/core/schemas/*.json — the package's only hand-edited schema source.
+ * Write all schema files to a directory
  */
 function writeSchemas(schemasPath: string): void {
-  for (const filename of SCHEMA_FILENAMES) {
-    copyFileAtomic(path.join(PACKAGE_SCHEMAS_DIR, filename), path.join(schemasPath, filename));
-  }
+  fs.writeFileSync(
+    path.join(schemasPath, 'index.schema.json'),
+    INDEX_SCHEMA,
+    'utf-8'
+  );
+
+  fs.writeFileSync(
+    path.join(schemasPath, 'summary.schema.json'),
+    SUMMARY_SCHEMA,
+    'utf-8'
+  );
+
+  fs.writeFileSync(
+    path.join(schemasPath, 'entry.schema.json'),
+    ENTRY_SCHEMA,
+    'utf-8'
+  );
 }
 
 /**

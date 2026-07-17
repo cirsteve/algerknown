@@ -7,8 +7,6 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import { spawn } from 'node:child_process';
 import { resolveEntryPath, readEntry, validate, entryExists } from '@algerknown/core';
-import { checkGovernedTarget } from '../governance/boundary-check.js';
-import { reportGovernedRefusal } from '../governance/messages.js';
 
 export const editCommand = new Command('edit')
   .description('Edit an entry in your default editor')
@@ -24,11 +22,6 @@ export const editCommand = new Command('edit')
       if (!entryPath) {
         console.error(chalk.red(`Error: Could not resolve path for: ${id}`));
         process.exit(1);
-      }
-
-      const boundary = checkGovernedTarget(id);
-      if (boundary.governed) {
-        reportGovernedRefusal(id, boundary.namespace);
       }
 
       // Get editor from environment

@@ -6,8 +6,6 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import { addLink, removeLink, entryExists, type Relationship } from '@algerknown/core';
-import { checkGovernedTarget } from '../governance/boundary-check.js';
-import { reportGovernedRefusal } from '../governance/messages.js';
 
 const VALID_RELATIONSHIPS: Relationship[] = [
   'evolved_into',
@@ -47,11 +45,6 @@ export const linkCommand = new Command('link')
         process.exit(1);
       }
 
-      const boundary = checkGovernedTarget(from);
-      if (boundary.governed) {
-        reportGovernedRefusal(from, boundary.namespace);
-      }
-
       // Validate relationship
       if (!VALID_RELATIONSHIPS.includes(relationship)) {
         console.error(chalk.red(`Error: Invalid relationship: ${relationship}`));
@@ -82,11 +75,6 @@ export const unlinkCommand = new Command('unlink')
       if (!entryExists(from)) {
         console.error(chalk.red(`Error: Source entry not found: ${from}`));
         process.exit(1);
-      }
-
-      const boundary = checkGovernedTarget(from);
-      if (boundary.governed) {
-        reportGovernedRefusal(from, boundary.namespace);
       }
 
       const removed = removeLink(from, to, options.relationship);

@@ -18,17 +18,6 @@ export function formatRelativeTime(epochSeconds: number): string {
   return new Date(epochSeconds * 1000).toLocaleDateString();
 }
 
-export function formatRelativeTimeIso(iso: string): string {
-  const then = Date.parse(iso);
-  if (isNaN(then)) return iso;
-  const diff = (Date.now() - then) / 1000;
-  if (diff < 60) return 'just now';
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  if (diff < 86400 * 7) return `${Math.floor(diff / 86400)}d ago`;
-  return new Date(then).toLocaleDateString();
-}
-
 export function safeJsonPreview(raw: string | null, maxLen = 120): string {
   if (!raw) return '\u2014';
   try {

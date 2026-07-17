@@ -4,10 +4,7 @@ services:
   rag-backend:
     build: .
     ports:
-      # Host-published port stays loopback-only; the container listens on
-      # 0.0.0.0 below only because Docker's port publishing can't reach a
-      # process bound to the container's own 127.0.0.1.
-      - "127.0.0.1:4735:4735"
+      - "4735:4735"
     volumes:
       # Mount content directory (read-write for ingest updates)
       - ../content-agn:/app/content-agn
@@ -17,21 +14,6 @@ services:
       - CONTENT_DIR=/app/content-agn
       - MEMORY_DB_PATH=/app/memory_db/memory.db
       - TRACER_DB_PATH=/app/memory_db/traces.db
-      # Documented override of the image's loopback default (see
-      # docs/springfield-deployment.md) - required for the host port
-      # publish above to reach the container.
-      - RAG_HOST=0.0.0.0
-      # The governed write API (packages/web, container algerknown-web, port
-      # 2393) runs in a separate container. The image default targets this
-      # container's own loopback and cannot reach it, so ingest-proposal
-      # persistence needs the governance container's address on the shared
-      # Docker network. On the Springfield/willie deployment both containers
-      # join the `springfield` network and address each other by service name,
-      # so the default below is correct there; override in .env for other
-      # topologies. GOVERNANCE_PROCESSOR_SECRET must also be set in .env (it
-      # must match algerknown-web's GOVERNANCE_PROCESSOR_SECRET) or generated
-      # candidates are skipped.
-      - GOVERNANCE_API_URL=${GOVERNANCE_API_URL:-http://algerknown-web:2393/api/governance}
     env_file:
       - .env
     restart: unless-stopped

@@ -1,7 +1,6 @@
 import { Router, Request, Response } from 'express';
 import * as core from '@algerknown/core';
 import { getZkbPath } from '../utils/zkb-path.js';
-import { respondIfGoverned } from '../utils/governed-check.js';
 
 const router = Router();
 
@@ -75,8 +74,6 @@ router.post('/', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'id and type are required' });
     }
 
-    if (respondIfGoverned(zkbPath, entryData.id, res)) return;
-
     // Strip last_ingested - it's auto-populated by the RAG system, not user-provided
     const { last_ingested, ...entryWithoutIngested } = entryData as core.AnyEntry & { last_ingested?: string };
     const cleanEntry = entryWithoutIngested as core.AnyEntry;
@@ -111,8 +108,6 @@ router.put('/:id', async (req: Request, res: Response) => {
     if (!existingEntry) {
       return res.status(404).json({ error: 'Entry not found' });
     }
-
-    if (respondIfGoverned(zkbPath, req.params.id, res)) return;
 
     const updatedEntry = {
       ...existingEntry,
@@ -150,8 +145,6 @@ router.delete('/:id', async (req: Request, res: Response) => {
     if (!entry) {
       return res.status(404).json({ error: 'Entry not found' });
     }
-
-    if (respondIfGoverned(zkbPath, req.params.id, res)) return;
 
     // Delete entry
     core.deleteEntry(req.params.id, zkbPath);

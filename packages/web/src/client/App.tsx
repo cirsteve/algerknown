@@ -1,7 +1,6 @@
 import { Routes, Route } from 'react-router-dom';
 import { MainLayout } from './components/templates/MainLayout';
 import { JobsProvider } from './context/JobsContext';
-import { GovernanceAuthProvider, GovernanceGate } from './auth';
 import { Dashboard } from './pages/Dashboard';
 import { EntryList } from './pages/EntryList';
 import { EntryDetail } from './pages/EntryDetail';
@@ -18,29 +17,25 @@ import { TracesPage } from './pages/TracesPage';
 
 export default function App() {
   return (
-    <GovernanceAuthProvider>
-      <GovernanceGate>
-        <JobsProvider>
-          <MainLayout>
-            <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/entries" element={<EntryList />} />
-              <Route path="/entries/new" element={<EntryNew />} />
-              <Route path="/summaries/new" element={<SummaryNew />} />
-              <Route path="/entries/:id" element={<EntryDetail />} />
-              <Route path="/entries/:id/edit" element={<EntryEdit />} />
-              <Route path="/search" element={<Search />} />
-              <Route path="/graph" element={<GraphView />} />
-              <Route path="/graph/:id" element={<GraphView />} />
-              <Route path="/ask" element={<AskPage />} />
-              <Route path="/ingest" element={<IngestPage />} />
-              <Route path="/changes" element={<ChangesPage />} />
-              <Route path="/jobs" element={<JobsPage />} />
-              <Route path="/traces" element={<TracesPage />} />
-            </Routes>
-          </MainLayout>
-        </JobsProvider>
-      </GovernanceGate>
-    </GovernanceAuthProvider>
+    <JobsProvider>
+      <MainLayout>
+        <Routes>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/entries" element={<EntryList />} />
+          <Route path="/entries/new" element={<EntryNew />} />
+          <Route path="/summaries/new" element={<SummaryNew />} />
+          <Route path="/entries/:id" element={<EntryDetail />} />
+          <Route path="/entries/:id/edit" element={<EntryEdit />} />
+          <Route path="/search" element={<Search />} />
+          <Route path="/graph" element={<GraphView />} />
+          <Route path="/graph/:id" element={<GraphView />} />
+          <Route path="/ask" element={<AskPage />} />
+          <Route path="/ingest" element={<IngestPage />} />
+          <Route path="/changes" element={<ChangesPage />} />
+          <Route path="/jobs" element={<JobsPage />} />
+          <Route path="/traces" element={<TracesPage />} />
+        </Routes>
+      </MainLayout>
+    </JobsProvider>
   );
 }

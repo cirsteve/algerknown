@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, useSearchParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { api, Entry, Link as EntryLink } from '../lib/api';
 import { HistoryTab } from '../components/HistoryTab';
 
@@ -8,18 +8,13 @@ type TabType = 'content' | 'history';
 export function EntryDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
   const [entry, setEntry] = useState<Entry | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deleting, setDeleting] = useState(false);
-  // A governed history deep link (?node=&namespace=&history=1, e.g. from a
-  // proposal's diff or ChangesPage) opens straight to the History tab.
-  const governedNodeId = searchParams.get('node') ?? undefined;
-  const governedNamespace = searchParams.get('namespace') ?? undefined;
-  const [activeTab, setActiveTab] = useState<TabType>(searchParams.get('history') === '1' ? 'history' : 'content');
+  const [activeTab, setActiveTab] = useState<TabType>('content');
 
   useEffect(() => {
     async function loadData() {
@@ -451,7 +446,7 @@ export function EntryDetail() {
           )}
         </>
       ) : (
-        <HistoryTab entryId={id!} governedNamespace={governedNamespace} governedNodeId={governedNodeId} />
+        <HistoryTab entryId={id!} />
       )}
     </div>
   );

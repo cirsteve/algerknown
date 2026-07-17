@@ -1,8 +1,6 @@
 fastapi>=0.104.0
 uvicorn[standard]>=0.24.0
 openai>=1.6.0
-# Vendored from rankonelabs/jig commit
-# 2c7efc978c2756a11bfdccc3da3309a3c01a941b; see wheels/README.md.
 jig[anthropic] @ file:wheels/jig-0.1.0-py3-none-any.whl
 ruamel.yaml>=0.18.5
 python-dotenv>=1.0.0

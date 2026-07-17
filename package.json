@@ -7,17 +7,11 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build --workspace=@algerknown/core && npm run build --workspace=@algerknown/governed && npm run build --workspace=@algerknown/cli --workspace=@algerknown/web",
+    "build": "npm run build --workspaces",
     "dev:cli": "npm run dev --workspace=@algerknown/cli",
     "dev:web": "npm run dev --workspace=@algerknown/web",
-    "test": "npm run build && npm run test --workspaces --if-present",
-    "lint": "npm run lint --workspaces --if-present",
-    "test:phase2:rails": "npm run test --workspace=@algerknown/governed -- tests/write tests/domain tests/proposals tests/ports tests/acceptance",
-    "test:phase2:conformance": "npm run test --workspace=@algerknown/governed -- tests/conformance tests/sqlite tests/adapters tests/read-models tests/boundary tests/config tests/auth",
-    "test:phase2:boundary": "npm run test --workspace=@algerknown/web -- tests/governance tests/auth && npm run test --workspace=@algerknown/cli -- tests/governance && (cd rag-backend && python3 -m pytest tests/test_governance_integration.py tests/test_writer.py -q)",
-    "test:phase2:recovery": "npm run test --workspace=@algerknown/web -- tests/recovery",
-    "test:phase2": "npm run test:phase2:rails && npm run test:phase2:conformance && npm run test:phase2:boundary && npm run test:phase2:recovery && node scripts/governance/build-acceptance-report.mjs",
-    "demo:phase2": "node scripts/governance/run-demo.mjs"
+    "test": "npm run test --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present"
   },
   "keywords": [
     "knowledge-base",

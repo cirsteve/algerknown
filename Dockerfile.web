@@ -2,32 +2,21 @@ FROM node:lts-slim AS build
 WORKDIR /app
 COPY package*.json ./
 COPY packages/core/package*.json ./packages/core/
-COPY packages/governed/package*.json ./packages/governed/
 COPY packages/web/package*.json ./packages/web/
 RUN npm ci
 COPY packages/core ./packages/core
-COPY packages/governed ./packages/governed
 COPY packages/web ./packages/web
 ARG VITE_RAG_API_URL=http://localhost:4735
 ENV VITE_RAG_API_URL=$VITE_RAG_API_URL
-RUN npm run build --workspace=@algerknown/core \
-  && npm run build --workspace=@algerknown/governed \
-  && npm run build --workspace=@algerknown/web
+RUN npm run build --workspace=@algerknown/core && npm run build --workspace=@algerknown/web
 
 FROM node:lts-slim
 WORKDIR /app
 COPY --from=build /app/package*.json ./
 COPY --from=build /app/packages/core/package*.json ./packages/core/
-COPY --from=build /app/packages/governed/package*.json ./packages/governed/
 COPY --from=build /app/packages/web/package*.json ./packages/web/
 RUN npm ci --omit=dev
 COPY --from=build /app/packages/core/dist ./packages/core/dist
-COPY --from=build /app/packages/governed/dist ./packages/governed/dist
 COPY --from=build /app/packages/web/dist ./packages/web/dist
 EXPOSE 2393
-# Loopback by default. Container-to-container/host-published access needs
-# WEB_HOST=0.0.0.0, set only in documented Compose/run configuration
-# alongside a 127.0.0.1-qualified host port mapping (see
-# docs/springfield-deployment.md) - never hardcoded here.
-ENV WEB_HOST=127.0.0.1
 CMD ["node", "packages/web/dist/server/index.js"]

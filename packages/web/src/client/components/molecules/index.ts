@@ -12,7 +12,7 @@ export { SearchForm } from './SearchForm';
 export { StatCard } from './StatCard';
 export { AlertBox } from './AlertBox';
 export { TabBar, Tab } from './TabBar';
-export { ChangeItem, GovernedRevisionItem } from './ChangeItem';
+export { ChangeItem } from './ChangeItem';
 export { NavItem } from './NavItem';
 export { MessageBubble } from './MessageBubble';
 export { ConfirmDialog } from './ConfirmDialog';

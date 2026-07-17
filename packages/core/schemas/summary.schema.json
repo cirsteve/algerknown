@@ -312,8 +312,7 @@
         },
         "immutable_ref": {
           "type": "string",
-          "pattern": "^(?:[0-9a-fA-F]{40}|sha256:[0-9a-fA-F]{64}|10\\.\\d{4,}/\\S+|\\d{4}\\.\\d{4,5}v\\d+|https://web\\.archive\\.org/web/\\d{14}/\\S+)$",
-          "description": "Pinned reference, anchored to exactly one of: 40-hex git SHA, sha256:<64 hex>, DOI (10.NNNN+/suffix), versioned arXiv id (YYYY.NNNN[N]vN), or a Wayback Machine URL with a 14-digit timestamp and original URL"
+          "description": "Pinned reference: git commit/blob hash, content digest, versioned document id, or archived snapshot identifier"
         }
       }
     },
@@ -333,7 +332,7 @@
         },
         "status": {
           "type": "string",
-          "enum": ["supported", "qualified", "uncertain", "shipped", "experimental", "planned", "deprecated"],
+          "enum": ["shipped", "experimental", "planned", "deprecated"],
           "description": "Deployment status of the fact"
         },
         "safe_phrasings": {
@@ -400,20 +399,19 @@
         },
         "exact_phrase": {
           "type": "string",
-          "description": "Exact literal, case-sensitive substring to match against the original text"
+          "description": "Exact literal string to match"
         },
         "normalized_phrase": {
           "type": "string",
-          "description": "Literal substring matched after canonical Unicode normalization (NFKC + full case fold + whitespace collapse) of both pattern and text"
+          "description": "Phrase matched after whitespace normalization and case folding"
         },
         "regex": {
           "type": "string",
-          "description": "Portable regex pattern (see docs/regex-grammar.md); searched, not fully matched, against line-normalized original text"
+          "description": "Regular expression pattern; only flags i, m, s are permitted"
         },
         "flags": {
           "type": "string",
-          "enum": ["", "i", "m", "s", "im", "is", "mi", "ms", "si", "sm", "ims", "ism", "mis", "msi", "sim", "smi"],
-          "description": "Optional regex flags; only i, m, and s are permitted, each at most once, in any authored order. Only meaningful alongside regex."
+          "description": "Optional regex flags; only i, m, s are supported"
         },
         "forbidden_phrasings": {
           "type": "array",
@@ -438,21 +436,7 @@
           },
           "description": "Optional references to dossier resources (res-* ids only)"
         }
-      },
-      "oneOf": [
-        {
-          "required": ["exact_phrase"],
-          "properties": { "normalized_phrase": false, "regex": false, "flags": false }
-        },
-        {
-          "required": ["normalized_phrase"],
-          "properties": { "exact_phrase": false, "regex": false, "flags": false }
-        },
-        {
-          "required": ["regex"],
-          "properties": { "exact_phrase": false, "normalized_phrase": false }
-        }
-      ]
+      }
     },
     "dossierKnownGap": {
       "type": "object",
