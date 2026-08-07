@@ -57,3 +57,5 @@ rag-backend/*.db
 rag-backend/*.db-journal
 *.egg-info/
 .eggs/
+
+comms/
