@@ -2,8 +2,6 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import rehypeRaw from 'rehype-raw';
-import rehypeSanitize from 'rehype-sanitize';
 import { api, type Primer, type PrimerSource } from '../lib/api';
 
 export function PrimerDetail() {
@@ -30,7 +28,7 @@ export function PrimerDetail() {
       <p className="mt-1 text-xs text-slate-500">Updated {new Date(source.mtime).toLocaleString()}</p>
     </header>
     <article className="primer-markdown rounded-lg bg-slate-800 p-6 md:p-10">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw, rehypeSanitize]}>{source.content}</ReactMarkdown>
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>{source.content}</ReactMarkdown>
     </article>
   </div>;
 }
