@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://algerknown.dev/schemas/primer.schema.json",
+  "title": "Algerknown Primer",
+  "description": "A primer distilling context from an external source document, with embedded notes",
+  "type": "object",
+  "required": ["id", "type", "topic", "status", "source"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier for this primer",
+      "pattern": "^[a-z0-9-]+$"
+    },
+    "type": {
+      "type": "string",
+      "const": "primer"
+    },
+    "topic": {
+      "type": "string",
+      "description": "Human-readable topic name"
+    },
+    "status": {
+      "$ref": "summary.schema.json#/$defs/status"
+    },
+    "source": {
+      "$ref": "#/$defs/source"
+    },
+    "document": {
+      "type": "string",
+      "description": "Title of the source document this primer distills"
+    },
+    "section": {
+      "type": "string",
+      "description": "Section within the source document this primer covers"
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/note"
+      }
+    },
+    "links": {
+      "type": "array",
+      "items": {
+        "$ref": "summary.schema.json#/$defs/link"
+      }
+    },
+    "last_ingested": {
+      "type": "string",
+      "format": "date",
+      "description": "Date this entry was last ingested into the RAG system (auto-populated)"
+    }
+  },
+  "$defs": {
+    "source": {
+      "type": "object",
+      "required": ["path"],
+      "additionalProperties": false,
+      "properties": {
+        "repo": {
+          "type": "string",
+          "description": "Repository URL or name"
+        },
+        "path": {
+          "type": "string",
+          "description": "Canonical absolute path to the source file"
+        },
+        "notes": {
+          "type": "string"
+        },
+        "commit": {
+          "type": "string",
+          "description": "Specific commit hash"
+        }
+      }
+    },
+    "note": {
+      "type": "object",
+      "required": ["id", "body", "created_at"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+$",
+          "description": "Unique identifier for this note within the primer"
+        },
+        "body": {
+          "type": "string",
+          "description": "Note content"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp the note was created"
+        }
+      }
+    }
+  }
+}

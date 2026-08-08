@@ -238,7 +238,7 @@ export function filterByStatus(
  * @returns Array of matching entries
  */
 export function filterByType(
-  type: 'summary' | 'entry',
+  type: AnyEntry['type'],
   root?: string
 ): AnyEntry[] {
   const kbRoot = root ?? findRoot();

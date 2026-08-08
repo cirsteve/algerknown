@@ -6,8 +6,20 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import yaml from 'js-yaml';
-import type { AnyEntry, Summary, Entry, Index } from './types.js';
-import { findRoot, getIndexPath, getSummariesDir, getEntriesDir, getAlgerknownDir } from './config.js';
+import type { AnyEntry, Primer, Index } from './types.js';
+import { findRoot, getIndexPath, getSummariesDir, getEntriesDir, getPrimersDir, SCHEMA_FILENAME_BY_TYPE } from './config.js';
+import { assertAllowedSourcePath } from './source-guard.js';
+
+/**
+ * Maps an entry's type to the directory its files live in. A Record keyed
+ * by AnyEntry['type'] forces this map to be updated whenever a new entry
+ * type is added to the domain, instead of silently falling through.
+ */
+const ENTRY_DIR_BY_TYPE: Record<AnyEntry['type'], (root: string) => string> = {
+  summary: getSummariesDir,
+  entry: getEntriesDir,
+  primer: getPrimersDir,
+};
 
 /**
  * Read and parse a YAML file
@@ -107,11 +119,7 @@ export function readEntry(id: string, root?: string): AnyEntry | null {
  * Determine the file path for a new entry
  */
 function getEntryFilePath(entry: AnyEntry, root: string): string {
-  if (entry.type === 'summary') {
-    return path.join(getSummariesDir(root), `${entry.id}.yaml`);
-  } else {
-    return path.join(getEntriesDir(root), `${entry.id}.yaml`);
-  }
+  return path.join(ENTRY_DIR_BY_TYPE[entry.type](root), `${entry.id}.yaml`);
 }
 
 /**
@@ -129,35 +137,41 @@ function getRelativePath(entryPath: string, root: string): string {
  */
 export function writeEntry(entry: AnyEntry, root?: string): void {
   const kbRoot = root ?? findRoot();
-  
+
+  // Every primer write must go through source-path authorization before
+  // anything is persisted, whether creating or updating. The persisted
+  // record stores the guard's canonical path, so an in-root symlink alias
+  // the caller passed in never ends up on disk in place of its target.
+  const entryToPersist: AnyEntry = entry.type === 'primer'
+    ? { ...entry, source: { ...entry.source, path: assertAllowedSourcePath(entry.source.path) } }
+    : entry;
+
   // Determine file path
-  const existingPath = resolveEntryPath(entry.id, kbRoot);
-  const entryPath = existingPath ?? getEntryFilePath(entry, kbRoot);
-  
+  const existingPath = resolveEntryPath(entryToPersist.id, kbRoot);
+  const entryPath = existingPath ?? getEntryFilePath(entryToPersist, kbRoot);
+
   // Add yaml-language-server comment
-  const schemaRef = entry.type === 'summary' 
-    ? '../.algerknown/schemas/summary.schema.json'
-    : '../.algerknown/schemas/entry.schema.json';
-  
-  const content = `# yaml-language-server: $schema=${schemaRef}\n${yaml.dump(entry, {
+  const schemaRef = `../.algerknown/schemas/${SCHEMA_FILENAME_BY_TYPE[entryToPersist.type]}`;
+
+  const content = `# yaml-language-server: $schema=${schemaRef}\n${yaml.dump(entryToPersist, {
     indent: 2,
     lineWidth: 120,
     noRefs: true,
   })}`;
-  
+
   // Ensure directory exists
   const dir = path.dirname(entryPath);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
-  
+
   fs.writeFileSync(entryPath, content, 'utf-8');
-  
+
   // Update index
   const index = getIndex(kbRoot);
-  index.entries[entry.id] = {
+  index.entries[entryToPersist.id] = {
     path: getRelativePath(entryPath, kbRoot),
-    type: entry.type,
+    type: entryToPersist.type,
   };
   saveIndex(index, kbRoot);
 }
@@ -194,7 +208,7 @@ export function deleteEntry(id: string, root?: string): boolean {
  * @param root - Knowledge base root (optional)
  * @returns Array of {id, path, type}
  */
-export function listEntries(root?: string): Array<{ id: string; path: string; type: 'summary' | 'entry' }> {
+export function listEntries(root?: string): Array<{ id: string; path: string; type: AnyEntry['type'] }> {
   const kbRoot = root ?? findRoot();
   const index = getIndex(kbRoot);
   
@@ -227,4 +241,19 @@ export function entryExists(id: string, root?: string): boolean {
   const kbRoot = root ?? findRoot();
   const index = getIndex(kbRoot);
   return id in index.entries;
+}
+
+/**
+ * Read the raw content a primer's source.path points to.
+ *
+ * Runs the same source-path authorization guard as writeEntry before
+ * touching the filesystem. Never writes or copies the source - it only
+ * returns guarded content.
+ *
+ * @param primer - Primer whose source should be read
+ * @returns the raw file content at primer.source.path
+ */
+export function readPrimerSource(primer: Primer): string {
+  const canonicalPath = assertAllowedSourcePath(primer.source.path);
+  return fs.readFileSync(canonicalPath, 'utf-8');
 }

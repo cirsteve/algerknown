@@ -17,6 +17,7 @@ COPY --from=build /app/packages/core/package*.json ./packages/core/
 COPY --from=build /app/packages/web/package*.json ./packages/web/
 RUN npm ci --omit=dev
 COPY --from=build /app/packages/core/dist ./packages/core/dist
+COPY --from=build /app/packages/core/schemas ./packages/core/schemas
 COPY --from=build /app/packages/web/dist ./packages/web/dist
 EXPOSE 2393
 CMD ["node", "packages/web/dist/server/index.js"]

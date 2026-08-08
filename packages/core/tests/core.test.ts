@@ -16,14 +16,19 @@ import {
   deleteEntry,
   listEntries,
   validate,
+  validateAll,
   resetValidator,
   search,
   filterByTag,
+  filterByType,
   getLinks,
   addLink,
   removeLink,
+  readPrimerSource,
+  SourcePathError,
   type Summary,
   type Entry,
+  type Primer,
   type Dossier,
 } from '../src/index.js';
 
@@ -75,6 +80,8 @@ describe('Config Module', () => {
       expect(fs.existsSync(path.join(TEMP_TEST_PATH, '.algerknown', 'schemas'))).toBe(true);
       expect(fs.existsSync(path.join(TEMP_TEST_PATH, 'summaries'))).toBe(true);
       expect(fs.existsSync(path.join(TEMP_TEST_PATH, 'entries'))).toBe(true);
+      expect(fs.existsSync(path.join(TEMP_TEST_PATH, 'primers'))).toBe(true);
+      expect(fs.existsSync(path.join(TEMP_TEST_PATH, '.algerknown', 'schemas', 'primer.schema.json'))).toBe(true);
     });
 
     it('should find root after init', () => {
@@ -82,21 +89,42 @@ describe('Config Module', () => {
       expect(root).toBe(TEMP_TEST_PATH);
     });
 
-    it('should update schemas when called on existing repo', () => {
-      // Delete schemas to simulate cloning a repo without them
+    it('should update schemas and restore primers/ when called on an existing repo, without touching records or index', () => {
+      // Write a record and capture the index so we can prove neither is touched
+      writeEntry({
+        id: 'restore-check',
+        type: 'summary',
+        topic: 'Restore Check',
+        status: 'active',
+        summary: 'Present before schema restore.',
+      }, TEMP_TEST_PATH);
+      const indexBefore = getIndex(TEMP_TEST_PATH);
+      const recordBefore = readEntry('restore-check', TEMP_TEST_PATH);
+
+      // Delete schemas and primers/ to simulate cloning a repo without them
       const schemasPath = path.join(TEMP_TEST_PATH, '.algerknown', 'schemas');
+      const primersPath = path.join(TEMP_TEST_PATH, 'primers');
       if (fs.existsSync(schemasPath)) {
         fs.rmSync(schemasPath, { recursive: true });
       }
+      if (fs.existsSync(primersPath)) {
+        fs.rmSync(primersPath, { recursive: true });
+      }
       expect(fs.existsSync(schemasPath)).toBe(false);
+      expect(fs.existsSync(primersPath)).toBe(false);
 
-      // Re-run init - should restore schemas without error
+      // Re-run init - should restore schemas and primers/ without error
       init(TEMP_TEST_PATH);
 
       expect(fs.existsSync(schemasPath)).toBe(true);
       expect(fs.existsSync(path.join(schemasPath, 'summary.schema.json'))).toBe(true);
       expect(fs.existsSync(path.join(schemasPath, 'entry.schema.json'))).toBe(true);
       expect(fs.existsSync(path.join(schemasPath, 'index.schema.json'))).toBe(true);
+      expect(fs.existsSync(path.join(schemasPath, 'primer.schema.json'))).toBe(true);
+      expect(fs.existsSync(primersPath)).toBe(true);
+
+      expect(getIndex(TEMP_TEST_PATH)).toEqual(indexBefore);
+      expect(readEntry('restore-check', TEMP_TEST_PATH)).toEqual(recordBefore);
     });
   });
 });
@@ -659,5 +687,335 @@ describe('Dossier Validation', () => {
     };
     const result = validate(entry, DOSSIER_TEST_PATH);
     expect(result.valid).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Primer tests
+// ---------------------------------------------------------------------------
+
+const PRIMER_TEST_PATH = path.join(os.tmpdir(), 'algerknown-primer-test-' + Date.now());
+const CONTENT_ROOT_PATH = path.join(os.tmpdir(), 'algerknown-content-root-' + Date.now());
+const CONTENT_ROOT_SIBLING_PATH = CONTENT_ROOT_PATH + '-sibling';
+const OUTSIDE_ROOT_PATH = path.join(os.tmpdir(), 'algerknown-outside-root-' + Date.now());
+
+describe('Primer', () => {
+  let originalContentRoots: string | undefined;
+
+  beforeAll(() => {
+    originalContentRoots = process.env.ALGERKNOWN_CONTENT_ROOTS;
+
+    if (fs.existsSync(PRIMER_TEST_PATH)) fs.rmSync(PRIMER_TEST_PATH, { recursive: true });
+    fs.mkdirSync(PRIMER_TEST_PATH, { recursive: true });
+    init(PRIMER_TEST_PATH);
+    resetValidator();
+
+    fs.mkdirSync(CONTENT_ROOT_PATH, { recursive: true });
+    fs.mkdirSync(CONTENT_ROOT_SIBLING_PATH, { recursive: true });
+    fs.mkdirSync(OUTSIDE_ROOT_PATH, { recursive: true });
+    fs.mkdirSync(path.join(CONTENT_ROOT_PATH, 'a-dir'), { recursive: true });
+
+    fs.writeFileSync(path.join(CONTENT_ROOT_PATH, 'doc.md'), '# In-root doc\n', 'utf-8');
+    fs.writeFileSync(path.join(CONTENT_ROOT_SIBLING_PATH, 'sibling.md'), '# Sibling doc\n', 'utf-8');
+    fs.writeFileSync(path.join(OUTSIDE_ROOT_PATH, 'outside.md'), '# Outside doc\n', 'utf-8');
+
+    // In-root symlink that resolves to another in-root file (should be readable)
+    fs.symlinkSync(
+      path.join(CONTENT_ROOT_PATH, 'doc.md'),
+      path.join(CONTENT_ROOT_PATH, 'inside-link.md')
+    );
+    // In-root symlink that escapes to a file outside every allowed root (should be rejected)
+    fs.symlinkSync(
+      path.join(OUTSIDE_ROOT_PATH, 'outside.md'),
+      path.join(CONTENT_ROOT_PATH, 'escaping-link.md')
+    );
+  });
+
+  afterAll(() => {
+    if (originalContentRoots === undefined) {
+      delete process.env.ALGERKNOWN_CONTENT_ROOTS;
+    } else {
+      process.env.ALGERKNOWN_CONTENT_ROOTS = originalContentRoots;
+    }
+    for (const p of [PRIMER_TEST_PATH, CONTENT_ROOT_PATH, CONTENT_ROOT_SIBLING_PATH, OUTSIDE_ROOT_PATH]) {
+      if (fs.existsSync(p)) fs.rmSync(p, { recursive: true });
+    }
+    resetValidator();
+  });
+
+  describe('with ALGERKNOWN_CONTENT_ROOTS configured', () => {
+    beforeAll(() => {
+      process.env.ALGERKNOWN_CONTENT_ROOTS = CONTENT_ROOT_PATH;
+    });
+
+    it('writes, indexes, and reads back a valid primer losslessly', () => {
+      const primer: Primer = {
+        id: 'primer-doc',
+        type: 'primer',
+        topic: 'A Primer',
+        status: 'active',
+        document: 'The Source Document',
+        section: 'Introduction',
+        source: { path: path.join(CONTENT_ROOT_PATH, 'doc.md') },
+        notes: [
+          { id: 'note-one', body: 'The key takeaway.', created_at: '2026-07-01T12:00:00Z' },
+        ],
+      };
+
+      writeEntry(primer, PRIMER_TEST_PATH);
+
+      expect(fs.existsSync(path.join(PRIMER_TEST_PATH, 'primers', 'primer-doc.yaml'))).toBe(true);
+
+      const index = getIndex(PRIMER_TEST_PATH);
+      expect(index.entries['primer-doc']).toEqual({ path: 'primers/primer-doc.yaml', type: 'primer' });
+
+      const read = readEntry('primer-doc', PRIMER_TEST_PATH) as Primer;
+      expect(read).toEqual(primer);
+
+      const result = validate(primer, PRIMER_TEST_PATH);
+      expect(result.valid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+
+      const allResults = validateAll(PRIMER_TEST_PATH);
+      expect(allResults.get('primer-doc')?.valid).toBe(true);
+
+      expect(filterByType('primer', PRIMER_TEST_PATH).some(e => e.id === 'primer-doc')).toBe(true);
+    });
+
+    it('reads primer source content without writing or copying it', () => {
+      const primer: Primer = {
+        id: 'primer-read-source',
+        type: 'primer',
+        topic: 'Read Source',
+        status: 'active',
+        source: { path: path.join(CONTENT_ROOT_PATH, 'doc.md') },
+      };
+
+      const content = readPrimerSource(primer);
+      expect(content).toBe('# In-root doc\n');
+
+      // readPrimerSource must not persist the primer record or copy the source
+      expect(fs.existsSync(path.join(PRIMER_TEST_PATH, 'primers', 'primer-read-source.yaml'))).toBe(false);
+    });
+
+    it('reads through an in-root symlink that resolves within the allowed root', () => {
+      const primer: Primer = {
+        id: 'primer-inside-link',
+        type: 'primer',
+        topic: 'Inside Link',
+        status: 'active',
+        source: { path: path.join(CONTENT_ROOT_PATH, 'inside-link.md') },
+      };
+
+      expect(readPrimerSource(primer)).toBe('# In-root doc\n');
+    });
+
+    it('persists the canonical path when the caller passes an in-root symlink alias', () => {
+      const aliasPath = path.join(CONTENT_ROOT_PATH, 'inside-link.md');
+      const canonicalPath = fs.realpathSync(path.join(CONTENT_ROOT_PATH, 'doc.md'));
+
+      const primer: Primer = {
+        id: 'primer-canonicalizes-alias',
+        type: 'primer',
+        topic: 'Canonicalizes Alias',
+        status: 'active',
+        source: { path: aliasPath },
+      };
+
+      writeEntry(primer, PRIMER_TEST_PATH);
+
+      const read = readEntry('primer-canonicalizes-alias', PRIMER_TEST_PATH) as Primer;
+      expect(read.source.path).toBe(canonicalPath);
+      expect(read.source.path).not.toBe(aliasPath);
+    });
+
+    it('rejects an in-root symlink that resolves outside every allowed root', () => {
+      const primer: Primer = {
+        id: 'primer-escaping-link',
+        type: 'primer',
+        topic: 'Escaping Link',
+        status: 'active',
+        source: { path: path.join(CONTENT_ROOT_PATH, 'escaping-link.md') },
+      };
+
+      expect(() => readPrimerSource(primer)).toThrow(SourcePathError);
+      expect(() => writeEntry(primer, PRIMER_TEST_PATH)).toThrow(SourcePathError);
+    });
+
+    it('rejects a relative persisted source path', () => {
+      const primer: Primer = {
+        id: 'primer-relative',
+        type: 'primer',
+        topic: 'Relative Source',
+        status: 'active',
+        source: { path: 'doc.md' },
+      };
+
+      expect(() => writeEntry(primer, PRIMER_TEST_PATH)).toThrow(SourcePathError);
+      expect(() => readPrimerSource(primer)).toThrow(SourcePathError);
+    });
+
+    it('rejects a file outside every allowed root', () => {
+      const primer: Primer = {
+        id: 'primer-outside',
+        type: 'primer',
+        topic: 'Outside Root',
+        status: 'active',
+        source: { path: path.join(OUTSIDE_ROOT_PATH, 'outside.md') },
+      };
+
+      expect(() => writeEntry(primer, PRIMER_TEST_PATH)).toThrow(SourcePathError);
+    });
+
+    it('rejects a file in a similarly-prefixed sibling directory', () => {
+      const primer: Primer = {
+        id: 'primer-sibling',
+        type: 'primer',
+        topic: 'Sibling Root',
+        status: 'active',
+        source: { path: path.join(CONTENT_ROOT_SIBLING_PATH, 'sibling.md') },
+      };
+
+      expect(() => writeEntry(primer, PRIMER_TEST_PATH)).toThrow(SourcePathError);
+    });
+
+    it('rejects a missing candidate file', () => {
+      const primer: Primer = {
+        id: 'primer-missing',
+        type: 'primer',
+        topic: 'Missing File',
+        status: 'active',
+        source: { path: path.join(CONTENT_ROOT_PATH, 'does-not-exist.md') },
+      };
+
+      expect(() => writeEntry(primer, PRIMER_TEST_PATH)).toThrow(SourcePathError);
+    });
+
+    it('rejects a directory candidate (not a regular file)', () => {
+      const primer: Primer = {
+        id: 'primer-dir',
+        type: 'primer',
+        topic: 'Directory Candidate',
+        status: 'active',
+        source: { path: path.join(CONTENT_ROOT_PATH, 'a-dir') },
+      };
+
+      expect(() => writeEntry(primer, PRIMER_TEST_PATH)).toThrow(SourcePathError);
+    });
+  });
+
+  describe('without ALGERKNOWN_CONTENT_ROOTS configured', () => {
+    beforeAll(() => {
+      delete process.env.ALGERKNOWN_CONTENT_ROOTS;
+    });
+
+    it('rejects every primer write and read', () => {
+      const primer: Primer = {
+        id: 'primer-no-roots',
+        type: 'primer',
+        topic: 'No Roots',
+        status: 'active',
+        source: { path: path.join(CONTENT_ROOT_PATH, 'doc.md') },
+      };
+
+      expect(() => writeEntry(primer, PRIMER_TEST_PATH)).toThrow(SourcePathError);
+      expect(() => readPrimerSource(primer)).toThrow(SourcePathError);
+    });
+  });
+
+  describe('with ALGERKNOWN_CONTENT_ROOTS pointing at a regular file', () => {
+    beforeAll(() => {
+      // The configured root itself must be a directory - a file at that
+      // path must not become an authorized single-file passthrough.
+      process.env.ALGERKNOWN_CONTENT_ROOTS = path.join(CONTENT_ROOT_PATH, 'doc.md');
+    });
+
+    it('rejects every primer write and read', () => {
+      const primer: Primer = {
+        id: 'primer-root-is-file',
+        type: 'primer',
+        topic: 'Root Is File',
+        status: 'active',
+        source: { path: path.join(CONTENT_ROOT_PATH, 'doc.md') },
+      };
+
+      expect(() => writeEntry(primer, PRIMER_TEST_PATH)).toThrow(SourcePathError);
+      expect(() => readPrimerSource(primer)).toThrow(SourcePathError);
+    });
+  });
+
+  describe('schema validation', () => {
+    it('rejects a primer missing source.path', () => {
+      const invalid = {
+        id: 'primer-missing-source',
+        type: 'primer',
+        topic: 'Missing Source',
+        status: 'active',
+        source: {},
+      };
+
+      const result = validate(invalid as any, PRIMER_TEST_PATH);
+      expect(result.valid).toBe(false);
+      expect(result.errors.length).toBeGreaterThan(0);
+    });
+
+    it('rejects a primer note with a malformed timestamp', () => {
+      const invalid = {
+        id: 'primer-bad-timestamp',
+        type: 'primer',
+        topic: 'Bad Timestamp',
+        status: 'active',
+        source: { path: '/some/absolute/path.md' },
+        notes: [{ id: 'note-one', body: 'A note.', created_at: 'not-a-timestamp' }],
+      };
+
+      const result = validate(invalid as any, PRIMER_TEST_PATH);
+      expect(result.valid).toBe(false);
+      expect(result.errors.length).toBeGreaterThan(0);
+    });
+
+    it('rejects a primer with an undeclared field', () => {
+      const invalid = {
+        id: 'primer-undeclared-field',
+        type: 'primer',
+        topic: 'Undeclared Field',
+        status: 'active',
+        source: { path: '/some/absolute/path.md' },
+        unexpected_field: 'not allowed',
+      };
+
+      const result = validate(invalid as any, PRIMER_TEST_PATH);
+      expect(result.valid).toBe(false);
+      expect(result.errors.length).toBeGreaterThan(0);
+    });
+
+    it('rejects a primer with an invalid id', () => {
+      const invalid = {
+        id: 'INVALID_ID',
+        type: 'primer',
+        topic: 'Invalid Id',
+        status: 'active',
+        source: { path: '/some/absolute/path.md' },
+      };
+
+      const result = validate(invalid as any, PRIMER_TEST_PATH);
+      expect(result.valid).toBe(false);
+      expect(result.errors.length).toBeGreaterThan(0);
+    });
+
+    it('rejects a primer note with an undeclared field', () => {
+      const invalid = {
+        id: 'primer-note-undeclared',
+        type: 'primer',
+        topic: 'Note Undeclared Field',
+        status: 'active',
+        source: { path: '/some/absolute/path.md' },
+        notes: [{ id: 'note-one', body: 'A note.', created_at: '2026-07-01T12:00:00Z', author: 'nope' }],
+      };
+
+      const result = validate(invalid as any, PRIMER_TEST_PATH);
+      expect(result.valid).toBe(false);
+      expect(result.errors.length).toBeGreaterThan(0);
+    });
   });
 });

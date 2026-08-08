@@ -16,6 +16,8 @@ export type {
   Outcome,
   Summary,
   Entry,
+  PrimerNote,
+  Primer,
   AnyEntry,
   IndexEntry,
   Index,
@@ -36,7 +38,7 @@ export type {
   Dossier,
 } from './types.js';
 
-export { isSummary, isEntry } from './types.js';
+export { isSummary, isEntry, isPrimer } from './types.js';
 
 // Config
 export {
@@ -50,6 +52,7 @@ export {
   getSchemaPath,
   getSummariesDir,
   getEntriesDir,
+  getPrimersDir,
 } from './config.js';
 
 // Store
@@ -63,7 +66,14 @@ export {
   readAllEntries,
   entryExists,
   resolveEntryPath,
+  readPrimerSource,
 } from './store.js';
+
+// Source Guard
+export {
+  assertAllowedSourcePath,
+  SourcePathError,
+} from './source-guard.js';
 
 // Index Manager
 export {
