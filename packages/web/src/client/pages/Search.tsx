@@ -4,7 +4,7 @@ import { api, SearchResult } from '../lib/api';
 
 export function Search() {
   const [query, setQuery] = useState('');
-  const [typeFilter, setTypeFilter] = useState<'summary' | 'entry' | ''>('');
+  const [typeFilter, setTypeFilter] = useState<'summary' | 'entry' | 'primer' | ''>('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
@@ -42,12 +42,13 @@ export function Search() {
           />
           <select
             value={typeFilter}
-            onChange={(e) => setTypeFilter(e.target.value as 'summary' | 'entry' | '')}
+            onChange={(e) => setTypeFilter(e.target.value as 'summary' | 'entry' | 'primer' | '')}
             className="bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-slate-100"
           >
             <option value="">All Types</option>
             <option value="summary">Summaries</option>
             <option value="entry">Entries</option>
+            <option value="primer">Primers</option>
           </select>
           <button
             type="submit"
@@ -69,7 +70,7 @@ export function Search() {
         {results.map(result => (
           <Link
             key={result.id}
-            to={`/entries/${result.id}`}
+            to={result.type === 'primer' ? `/primers/${encodeURIComponent(result.id)}` : `/entries/${encodeURIComponent(result.id)}`}
             className="block bg-slate-800 rounded-lg p-4 hover:bg-slate-700 transition-colors"
           >
             <div className="flex items-start justify-between">
@@ -84,9 +85,11 @@ export function Search() {
               </div>
               <div className="flex items-center gap-2 ml-4">
                 <span className={`entry-type-badge ${
-                  result.type === 'summary' 
+                  result.type === 'summary'
                     ? 'bg-blue-500/20 text-blue-300'
-                    : 'bg-green-500/20 text-green-300'
+                    : result.type === 'primer'
+                      ? 'bg-cyan-500/20 text-cyan-300'
+                      : 'bg-green-500/20 text-green-300'
                 }`}>
                   {result.type}
                 </span>

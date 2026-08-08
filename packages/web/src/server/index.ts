@@ -7,6 +7,7 @@ import { entriesRouter } from './routes/entries.js';
 import { linksRouter } from './routes/links.js';
 import { searchRouter } from './routes/search.js';
 import { configRouter } from './routes/config.js';
+import { primersRouter } from './routes/primers.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -43,6 +44,7 @@ app.use('/api/entries', entriesRouter);
 app.use('/api/links', linksRouter);
 app.use('/api/search', searchRouter);
 app.use('/api/config', configRouter);
+app.use('/api/primers', primersRouter);
 
 // Proxy RAG backend requests
 const RAG_BACKEND_URL = process.env.RAG_BACKEND_URL || 'http://localhost:4735';

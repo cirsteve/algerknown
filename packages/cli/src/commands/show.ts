@@ -6,7 +6,7 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import yaml from 'js-yaml';
-import { readEntry, getLinks, getBacklinks, entryExists, isSummary, isEntry } from '@algerknown/core';
+import { readEntry, getLinks, getBacklinks, entryExists, isSummary, isEntry, isPrimer } from '@algerknown/core';
 
 export const showCommand = new Command('show')
   .description('Display details of an entry')
@@ -163,6 +163,19 @@ export const showCommand = new Command('show')
             for (const s of entry.outcome.surprised) console.log(`    ! ${s}`);
           }
         }
+      }
+
+      if (isPrimer(entry)) {
+        if (entry.document) console.log(`${chalk.cyan('Document:')} ${entry.document}`);
+        if (entry.section) console.log(`${chalk.cyan('Section:')} ${entry.section}`);
+
+        console.log('');
+        console.log(chalk.cyan('Source:'));
+        console.log(`  Path: ${entry.source.path}`);
+        if (entry.source.repo) console.log(`  Repo: ${entry.source.repo}`);
+        if (entry.source.commit) console.log(`  Commit: ${entry.source.commit}`);
+        if (entry.source.notes) console.log(chalk.dim(`  Notes: ${entry.source.notes}`));
+
       }
 
       // Links

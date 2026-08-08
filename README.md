@@ -22,6 +22,7 @@ algerknown/                      # Public app repo
 │   │   └── schemas/             # JSON Schema definitions (source of truth)
 │   │       ├── summary.schema.json
 │   │       ├── entry.schema.json
+│   │       ├── primer.schema.json
 │   │       └── index.schema.json
 │   ├── cli/                     # Command-line interface
 │   └── web/                     # Express API + React frontend
@@ -39,7 +40,8 @@ content-agn/                     # Private content repo
 ├── .algerknown/
 │   └── schemas/                 # Copied from app during init (gitignored)
 ├── entries/                     # Journal entries (tracked)
-└── summaries/                   # Topic summaries (tracked)
+├── summaries/                   # Topic summaries (tracked)
+└── primers/                     # Primers distilling external source docs (tracked)
 ```
 
 ## Installation
@@ -66,8 +68,16 @@ agn init
 # Add entries interactively
 agn add
 
+# Add a primer distilling an external source document
+# The --source path is resolved against your current directory, canonicalized,
+# and must fall within an allowed ALGERKNOWN_CONTENT_ROOTS directory (see below)
+agn add primer --source ./docs/some-report.md
+
 # List all entries
 agn list
+
+# List only primers
+agn list --type primer
 
 # Show entry details
 agn show <id>
@@ -172,8 +182,15 @@ my-knowledge-base/
 │   ├── index.yaml      # Maps IDs to file paths
 │   └── schemas/        # JSON Schema validation files
 ├── summaries/          # Topic summaries (aggregated knowledge)
-└── entries/            # Journal entries (point-in-time records)
+├── entries/            # Journal entries (point-in-time records)
+└── primers/            # Primers distilling external source documents
 ```
+
+`agn init` is safe to re-run against an existing knowledge base: if `index.yaml`
+already exists it leaves your content and index untouched and only refreshes
+`.algerknown/schemas/` (and restores `primers/` if it's missing, e.g. after
+cloning an older content repo checkout). Run it again any time the app's
+schemas change.
 
 ## Entry Types
 
@@ -217,6 +234,23 @@ outcome:
     - "Proving time only increased by 200ms"
 ```
 
+### Primer
+
+A primer points Algerknown at an external Markdown document for reading in the
+web viewer. `source.path` is always a canonical absolute
+path — the CLI resolves and canonicalizes a relative `--source` value against
+your current directory before it's written, and validation rejects anything
+that isn't already absolute.
+
+```yaml
+id: "semaphore-whitepaper"
+type: "primer"
+topic: "Semaphore V4 Whitepaper"
+status: "active"
+source:
+  path: "/data/docs/semaphore-v4-whitepaper.md"
+```
+
 ## Relationship Types
 
 Link entries together with typed relationships:
@@ -258,6 +292,45 @@ Your content repo's `.gitignore` should include:
 ```
 
 This ignores the schemas (they're copied fresh on `agn init`).
+
+## Primer Source Roots
+
+Primers point at an external source document rather than copying it into the
+knowledge base, so every write and read of `source.path` is checked against
+an allowlist of directories: `ALGERKNOWN_CONTENT_ROOTS`. This variable must
+be set — there's no fallback to the KB root or the process's working
+directory — and holds one or more absolute directories separated by the
+operating system's path delimiter (`:` on POSIX, `;` on Windows):
+
+```bash
+export ALGERKNOWN_CONTENT_ROOTS=/home/you/docs:/home/you/papers
+```
+
+A primer's `source.path` (whether typed at the `--source` flag or supplied
+via `--raw`) is only accepted if it resolves (after following
+symlinks) inside one of these roots and points at a real file. Paths outside
+every configured root, or pointing at a file that doesn't exist, are
+rejected before anything is written — no partial primer record is created.
+
+**Container deployments:** mount each content root **read-only** into the
+container at the *same path* it has on the host, and point
+`ALGERKNOWN_CONTENT_ROOTS` at that in-container path:
+
+```bash
+docker run \
+  -v /home/you/docs:/home/you/docs:ro \
+  -e ALGERKNOWN_CONTENT_ROOTS=/home/you/docs \
+  -e ALGERKNOWN_KB_ROOT=/data/content-agn \
+  -v /home/you/content-agn:/data/content-agn \
+  algerknown-web
+```
+
+Matching host and container paths matters because `source.path` is persisted
+in the primer's YAML as a plain absolute path — if the CLI writes it from the
+host (e.g. `/home/you/docs/report.md`) but the web/RAG containers mount that
+directory somewhere else, the stored path won't resolve inside the
+container. Keep the mount path identical everywhere a given content root is
+used, whether that's your host shell, the web container, or the RAG backend.
 
 ## Development
 

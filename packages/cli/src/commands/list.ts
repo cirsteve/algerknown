@@ -11,7 +11,7 @@ import { listEntries, readEntry, filterByType, filterByTag, filterByStatus, type
 export const listCommand = new Command('list')
   .alias('ls')
   .description('List all entries in the knowledge base')
-  .option('-t, --type <type>', 'Filter by type (summary or entry)')
+  .option('-t, --type <type>', 'Filter by type (summary, entry, or primer)')
   .option('--tag <tag>', 'Filter by tag')
   .option('-s, --status <status>', 'Filter by status')
   .option('--json', 'Output as JSON')
@@ -79,9 +79,15 @@ export const listCommand = new Command('list')
 
         const statusColor = statusColors[full.status] || chalk.white;
 
+        const typeColors: Record<typeof full.type, (s: string) => string> = {
+          summary: chalk.magenta,
+          entry: chalk.blue,
+          primer: chalk.cyan,
+        };
+
         table.push([
           full.id,
-          full.type === 'summary' ? chalk.magenta('summary') : chalk.blue('entry'),
+          typeColors[full.type](full.type),
           full.topic.slice(0, 40) + (full.topic.length > 40 ? '...' : ''),
           statusColor(full.status),
           (full.tags || []).join(', ').slice(0, 30),

@@ -879,6 +879,26 @@ describe('Primer', () => {
       expect(() => writeEntry(primer, PRIMER_TEST_PATH)).toThrow(SourcePathError);
     });
 
+    it('accepts multiple content roots separated by the OS path delimiter', () => {
+      process.env.ALGERKNOWN_CONTENT_ROOTS = [
+        CONTENT_ROOT_PATH,
+        CONTENT_ROOT_SIBLING_PATH,
+      ].join(path.delimiter);
+      const primer: Primer = {
+        id: 'primer-second-root',
+        type: 'primer',
+        topic: 'Second Root',
+        status: 'active',
+        source: { path: path.join(CONTENT_ROOT_SIBLING_PATH, 'sibling.md') },
+      };
+
+      try {
+        expect(() => writeEntry(primer, PRIMER_TEST_PATH)).not.toThrow();
+      } finally {
+        process.env.ALGERKNOWN_CONTENT_ROOTS = CONTENT_ROOT_PATH;
+      }
+    });
+
     it('rejects a missing candidate file', () => {
       const primer: Primer = {
         id: 'primer-missing',
