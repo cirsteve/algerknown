@@ -22,11 +22,11 @@ function getContentRoots(): string[] {
   const raw = process.env.ALGERKNOWN_CONTENT_ROOTS;
   if (!raw || raw.trim() === '') {
     throw new SourcePathError(
-      'ALGERKNOWN_CONTENT_ROOTS must be set to a colon-separated list of absolute directories'
+      `ALGERKNOWN_CONTENT_ROOTS must be set to a ${JSON.stringify(path.delimiter)}-separated list of absolute directories`
     );
   }
 
-  const parts = raw.split(':').map(p => p.trim()).filter(p => p.length > 0);
+  const parts = raw.split(path.delimiter).map(p => p.trim()).filter(p => p.length > 0);
   if (parts.length === 0) {
     throw new SourcePathError(
       'ALGERKNOWN_CONTENT_ROOTS must contain at least one absolute directory'

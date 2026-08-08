@@ -299,14 +299,15 @@ Primers point at an external source document rather than copying it into the
 knowledge base, so every write and read of `source.path` is checked against
 an allowlist of directories: `ALGERKNOWN_CONTENT_ROOTS`. This variable must
 be set — there's no fallback to the KB root or the process's working
-directory — and holds one or more absolute directories, colon-separated:
+directory — and holds one or more absolute directories separated by the
+operating system's path delimiter (`:` on POSIX, `;` on Windows):
 
 ```bash
 export ALGERKNOWN_CONTENT_ROOTS=/home/you/docs:/home/you/papers
 ```
 
 A primer's `source.path` (whether typed at the `--source` flag or supplied
-via `--raw`/`--json`) is only accepted if it resolves (after following
+via `--raw`) is only accepted if it resolves (after following
 symlinks) inside one of these roots and points at a real file. Paths outside
 every configured root, or pointing at a file that doesn't exist, are
 rejected before anything is written — no partial primer record is created.
