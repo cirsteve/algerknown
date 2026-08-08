@@ -236,34 +236,19 @@ outcome:
 
 ### Primer
 
-A primer distilling context from an external source document, with embedded
-notes anchored to that document. `source.path` is always a canonical absolute
+A primer points Algerknown at an external Markdown document for reading in the
+web viewer. `source.path` is always a canonical absolute
 path — the CLI resolves and canonicalizes a relative `--source` value against
 your current directory before it's written, and validation rejects anything
-that isn't already absolute. `notes` may apply to the whole document (no
-`anchor`), to a specific heading (`anchor` set), and/or carry a `resolution`
-once addressed.
+that isn't already absolute.
 
 ```yaml
 id: "semaphore-whitepaper"
 type: "primer"
 topic: "Semaphore V4 Whitepaper"
 status: "active"
-document: "Semaphore V4: Anonymous Signaling"
-section: "Nullifier Design"
 source:
-  path: "/data/docs/semaphore-v4-whitepaper.pdf"
-  repo: "semaphore-protocol/semaphore"
-  commit: "a1b2c3d4"
-notes:
-  - id: "nullifier-uniqueness"
-    body: "Nullifiers are scoped per-epoch, not per-signal."
-    created_at: "2026-01-14T10:00:00Z"
-    anchor: "nullifier-design"
-  - id: "open-question-batching"
-    body: "Unclear whether batched proofs share a nullifier space."
-    created_at: "2026-01-14T10:05:00Z"
-    resolution: "Confirmed with maintainers: each proof still gets its own nullifier."
+  path: "/data/docs/semaphore-v4-whitepaper.md"
 ```
 
 ## Relationship Types

@@ -228,16 +228,6 @@ async function createPrimer(resolvedSource: string): Promise<Primer> {
     },
     {
       type: 'input',
-      name: 'document',
-      message: 'Source document title (optional):',
-    },
-    {
-      type: 'input',
-      name: 'section',
-      message: 'Section within source document (optional):',
-    },
-    {
-      type: 'input',
       name: 'tags',
       message: 'Tags (comma-separated):',
       filter: (input: string) =>
@@ -245,30 +235,6 @@ async function createPrimer(resolvedSource: string): Promise<Primer> {
           .split(',')
           .map((t) => t.trim().toLowerCase())
           .filter((t) => t.length > 0),
-    },
-    {
-      type: 'confirm',
-      name: 'addProvenance',
-      message: 'Add Artifact provenance (repo/commit/notes)?',
-      default: false,
-    },
-    {
-      type: 'input',
-      name: 'repo',
-      message: 'Repository (optional):',
-      when: (ans) => ans.addProvenance,
-    },
-    {
-      type: 'input',
-      name: 'commit',
-      message: 'Commit hash (optional):',
-      when: (ans) => ans.addProvenance,
-    },
-    {
-      type: 'input',
-      name: 'sourceNotes',
-      message: 'Source notes (optional):',
-      when: (ans) => ans.addProvenance,
     },
   ]);
 
@@ -280,12 +246,7 @@ async function createPrimer(resolvedSource: string): Promise<Primer> {
     source: { path: resolvedSource },
   };
 
-  if (answers.document) primer.document = answers.document;
-  if (answers.section) primer.section = answers.section;
   if (answers.tags.length > 0) primer.tags = answers.tags;
-  if (answers.repo) primer.source.repo = answers.repo;
-  if (answers.commit) primer.source.commit = answers.commit;
-  if (answers.sourceNotes) primer.source.notes = answers.sourceNotes;
 
   return primer;
 }

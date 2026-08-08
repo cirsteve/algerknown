@@ -176,17 +176,6 @@ export const showCommand = new Command('show')
         if (entry.source.commit) console.log(`  Commit: ${entry.source.commit}`);
         if (entry.source.notes) console.log(chalk.dim(`  Notes: ${entry.source.notes}`));
 
-        if (entry.notes && entry.notes.length > 0) {
-          console.log('');
-          console.log(chalk.cyan('Notes:'));
-          for (const note of entry.notes) {
-            const scope = note.anchor ? chalk.blue(`§ ${note.anchor}`) : chalk.dim('(document-level)');
-            const resolvedBadge = note.resolution ? chalk.green(' [resolved]') : chalk.yellow(' [open]');
-            console.log(`  • ${scope}${resolvedBadge} ${chalk.dim(note.created_at)}`);
-            console.log(`    ${note.body}`);
-            if (note.resolution) console.log(chalk.dim(`    Resolution: ${note.resolution}`));
-          }
-        }
       }
 
       // Links
