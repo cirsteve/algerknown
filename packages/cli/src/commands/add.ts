@@ -13,6 +13,7 @@ import {
   writeEntry,
   validate,
   entryExists,
+  assertAllowedSourcePath,
   type Summary,
   type Entry,
   type Primer,
@@ -309,9 +310,10 @@ export const addCommand = new Command('add')
             console.error(chalk.red('Error: agn add primer requires --source <path> pointing at the document this primer distills.'));
             process.exit(1);
           }
-          const resolvedSource = path.isAbsolute(options.source)
+          const candidateSource = path.isAbsolute(options.source)
             ? options.source
             : path.resolve(process.cwd(), options.source);
+          const resolvedSource = assertAllowedSourcePath(candidateSource);
           entry = await createPrimer(resolvedSource);
         } else {
           console.error(chalk.red(`Error: Unknown type "${type}". Use "summary", "entry", or "primer".`));
