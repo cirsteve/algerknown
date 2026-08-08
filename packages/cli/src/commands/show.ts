@@ -6,7 +6,7 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import yaml from 'js-yaml';
-import { readEntry, getLinks, getBacklinks, entryExists, isSummary, isEntry } from '@algerknown/core';
+import { readEntry, getLinks, getBacklinks, entryExists, isSummary, isEntry, isPrimer } from '@algerknown/core';
 
 export const showCommand = new Command('show')
   .description('Display details of an entry')
@@ -161,6 +161,30 @@ export const showCommand = new Command('show')
           if (entry.outcome.surprised && entry.outcome.surprised.length > 0) {
             console.log(chalk.yellow('  Surprised:'));
             for (const s of entry.outcome.surprised) console.log(`    ! ${s}`);
+          }
+        }
+      }
+
+      if (isPrimer(entry)) {
+        if (entry.document) console.log(`${chalk.cyan('Document:')} ${entry.document}`);
+        if (entry.section) console.log(`${chalk.cyan('Section:')} ${entry.section}`);
+
+        console.log('');
+        console.log(chalk.cyan('Source:'));
+        console.log(`  Path: ${entry.source.path}`);
+        if (entry.source.repo) console.log(`  Repo: ${entry.source.repo}`);
+        if (entry.source.commit) console.log(`  Commit: ${entry.source.commit}`);
+        if (entry.source.notes) console.log(chalk.dim(`  Notes: ${entry.source.notes}`));
+
+        if (entry.notes && entry.notes.length > 0) {
+          console.log('');
+          console.log(chalk.cyan('Notes:'));
+          for (const note of entry.notes) {
+            const scope = note.anchor ? chalk.blue(`§ ${note.anchor}`) : chalk.dim('(document-level)');
+            const resolvedBadge = note.resolution ? chalk.green(' [resolved]') : chalk.yellow(' [open]');
+            console.log(`  • ${scope}${resolvedBadge} ${chalk.dim(note.created_at)}`);
+            console.log(`    ${note.body}`);
+            if (note.resolution) console.log(chalk.dim(`    Resolution: ${note.resolution}`));
           }
         }
       }
