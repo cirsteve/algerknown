@@ -9,7 +9,7 @@ import addFormats from 'ajv-formats';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { AnyEntry, ValidationResult, ValidationError, Summary, Dossier, DossierEvidence, DossierFact, DossierResource, DossierProhibition, DossierKnownGap } from './types.js';
-import { findRoot, getSchemasDir } from './config.js';
+import { findRoot, getSchemasDir, SCHEMA_FILENAME_BY_TYPE } from './config.js';
 
 // Singleton AJV instance (lazy-loaded per root)
 let ajvInstance: Ajv2020 | null = null;
@@ -328,9 +328,7 @@ export function validate(entry: AnyEntry, root?: string): ValidationResult {
   const ajv = getAjv(kbRoot);
 
   // Determine which schema to use
-  const schemaFile = entry.type === 'summary'
-    ? 'summary.schema.json'
-    : 'entry.schema.json';
+  const schemaFile = SCHEMA_FILENAME_BY_TYPE[entry.type];
 
   const validateFn = ajv.getSchema(schemaFile);
 

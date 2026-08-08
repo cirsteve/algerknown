@@ -205,15 +205,37 @@ export interface Entry {
   last_ingested?: string; // Date this entry was last ingested into the RAG system (auto-populated)
 }
 
+// ============== Primer ==============
+
+export interface PrimerNote {
+  id: string;
+  body: string;
+  created_at: string; // ISO date-time
+}
+
+export interface Primer {
+  id: string;
+  type: 'primer';
+  topic: string;
+  status: Status;
+  source: Artifact;
+  document?: string;
+  section?: string;
+  tags?: string[];
+  notes?: PrimerNote[];
+  links?: Link[];
+  last_ingested?: string; // Date this entry was last ingested into the RAG system (auto-populated)
+}
+
 // ============== Union Type ==============
 
-export type AnyEntry = Summary | Entry;
+export type AnyEntry = Summary | Entry | Primer;
 
 // ============== Index ==============
 
 export interface IndexEntry {
   path: string;
-  type: 'summary' | 'entry';
+  type: 'summary' | 'entry' | 'primer';
 }
 
 export interface Index {
@@ -238,7 +260,7 @@ export interface ValidationResult {
 
 export interface SearchResult {
   id: string;
-  type: 'summary' | 'entry';
+  type: 'summary' | 'entry' | 'primer';
   topic: string;
   snippet: string;
   score: number;
@@ -252,4 +274,8 @@ export function isSummary(entry: AnyEntry): entry is Summary {
 
 export function isEntry(entry: AnyEntry): entry is Entry {
   return entry.type === 'entry';
+}
+
+export function isPrimer(entry: AnyEntry): entry is Primer {
+  return entry.type === 'primer';
 }

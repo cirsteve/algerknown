@@ -6,8 +6,20 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import yaml from 'js-yaml';
-import type { AnyEntry, Summary, Entry, Index } from './types.js';
-import { findRoot, getIndexPath, getSummariesDir, getEntriesDir, getAlgerknownDir } from './config.js';
+import type { AnyEntry, Primer, Index } from './types.js';
+import { findRoot, getIndexPath, getSummariesDir, getEntriesDir, getPrimersDir, SCHEMA_FILENAME_BY_TYPE } from './config.js';
+import { assertAllowedSourcePath } from './source-guard.js';
+
+/**
+ * Maps an entry's type to the directory its files live in. A Record keyed
+ * by AnyEntry['type'] forces this map to be updated whenever a new entry
+ * type is added to the domain, instead of silently falling through.
+ */
+const ENTRY_DIR_BY_TYPE: Record<AnyEntry['type'], (root: string) => string> = {
+  summary: getSummariesDir,
+  entry: getEntriesDir,
+  primer: getPrimersDir,
+};
 
 /**
  * Read and parse a YAML file
@@ -107,11 +119,7 @@ export function readEntry(id: string, root?: string): AnyEntry | null {
  * Determine the file path for a new entry
  */
 function getEntryFilePath(entry: AnyEntry, root: string): string {
-  if (entry.type === 'summary') {
-    return path.join(getSummariesDir(root), `${entry.id}.yaml`);
-  } else {
-    return path.join(getEntriesDir(root), `${entry.id}.yaml`);
-  }
+  return path.join(ENTRY_DIR_BY_TYPE[entry.type](root), `${entry.id}.yaml`);
 }
 
 /**
@@ -129,16 +137,20 @@ function getRelativePath(entryPath: string, root: string): string {
  */
 export function writeEntry(entry: AnyEntry, root?: string): void {
   const kbRoot = root ?? findRoot();
-  
+
+  // Every primer write must go through source-path authorization before
+  // anything is persisted, whether creating or updating.
+  if (entry.type === 'primer') {
+    assertAllowedSourcePath(entry.source.path);
+  }
+
   // Determine file path
   const existingPath = resolveEntryPath(entry.id, kbRoot);
   const entryPath = existingPath ?? getEntryFilePath(entry, kbRoot);
-  
+
   // Add yaml-language-server comment
-  const schemaRef = entry.type === 'summary' 
-    ? '../.algerknown/schemas/summary.schema.json'
-    : '../.algerknown/schemas/entry.schema.json';
-  
+  const schemaRef = `../.algerknown/schemas/${SCHEMA_FILENAME_BY_TYPE[entry.type]}`;
+
   const content = `# yaml-language-server: $schema=${schemaRef}\n${yaml.dump(entry, {
     indent: 2,
     lineWidth: 120,
@@ -194,7 +206,7 @@ export function deleteEntry(id: string, root?: string): boolean {
  * @param root - Knowledge base root (optional)
  * @returns Array of {id, path, type}
  */
-export function listEntries(root?: string): Array<{ id: string; path: string; type: 'summary' | 'entry' }> {
+export function listEntries(root?: string): Array<{ id: string; path: string; type: AnyEntry['type'] }> {
   const kbRoot = root ?? findRoot();
   const index = getIndex(kbRoot);
   
@@ -227,4 +239,19 @@ export function entryExists(id: string, root?: string): boolean {
   const kbRoot = root ?? findRoot();
   const index = getIndex(kbRoot);
   return id in index.entries;
+}
+
+/**
+ * Read the raw content a primer's source.path points to.
+ *
+ * Runs the same source-path authorization guard as writeEntry before
+ * touching the filesystem. Never writes or copies the source - it only
+ * returns guarded content.
+ *
+ * @param primer - Primer whose source should be read
+ * @returns the raw file content at primer.source.path
+ */
+export function readPrimerSource(primer: Primer): string {
+  const canonicalPath = assertAllowedSourcePath(primer.source.path);
+  return fs.readFileSync(canonicalPath, 'utf-8');
 }

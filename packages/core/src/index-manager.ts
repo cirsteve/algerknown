@@ -5,7 +5,7 @@
  */
 
 import { getIndex, saveIndex, listEntries, entryExists } from './store.js';
-import type { Index, IndexEntry } from './types.js';
+import type { AnyEntry, Index, IndexEntry } from './types.js';
 import { findRoot } from './config.js';
 
 // Re-export core index functions
@@ -20,9 +20,9 @@ export { getIndex, saveIndex, listEntries, entryExists };
  * @param root - Knowledge base root (optional)
  */
 export function addToIndex(
-  id: string, 
-  relativePath: string, 
-  type: 'summary' | 'entry',
+  id: string,
+  relativePath: string,
+  type: AnyEntry['type'],
   root?: string
 ): void {
   const kbRoot = root ?? findRoot();
