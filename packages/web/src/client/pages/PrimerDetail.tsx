@@ -12,9 +12,22 @@ export function PrimerDetail() {
 
   useEffect(() => {
     if (!id) return;
+    let isActive = true;
+    setPrimer(null);
+    setSource(null);
+    setError(null);
+
     Promise.all([api.getPrimer(id), api.getPrimerSource(id)])
-      .then(([nextPrimer, nextSource]) => { setPrimer(nextPrimer); setSource(nextSource); })
-      .catch((reason: Error) => setError(reason.message));
+      .then(([nextPrimer, nextSource]) => {
+        if (!isActive) return;
+        setPrimer(nextPrimer);
+        setSource(nextSource);
+      })
+      .catch((reason: unknown) => {
+        if (isActive) setError(reason instanceof Error ? reason.message : 'Failed to load primer');
+      });
+
+    return () => { isActive = false; };
   }, [id]);
 
   if (error) return <div className="rounded-lg bg-red-500/20 p-4 text-red-300">Error: {error}</div>;
