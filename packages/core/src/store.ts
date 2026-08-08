@@ -139,37 +139,39 @@ export function writeEntry(entry: AnyEntry, root?: string): void {
   const kbRoot = root ?? findRoot();
 
   // Every primer write must go through source-path authorization before
-  // anything is persisted, whether creating or updating.
-  if (entry.type === 'primer') {
-    assertAllowedSourcePath(entry.source.path);
-  }
+  // anything is persisted, whether creating or updating. The persisted
+  // record stores the guard's canonical path, so an in-root symlink alias
+  // the caller passed in never ends up on disk in place of its target.
+  const entryToPersist: AnyEntry = entry.type === 'primer'
+    ? { ...entry, source: { ...entry.source, path: assertAllowedSourcePath(entry.source.path) } }
+    : entry;
 
   // Determine file path
-  const existingPath = resolveEntryPath(entry.id, kbRoot);
-  const entryPath = existingPath ?? getEntryFilePath(entry, kbRoot);
+  const existingPath = resolveEntryPath(entryToPersist.id, kbRoot);
+  const entryPath = existingPath ?? getEntryFilePath(entryToPersist, kbRoot);
 
   // Add yaml-language-server comment
-  const schemaRef = `../.algerknown/schemas/${SCHEMA_FILENAME_BY_TYPE[entry.type]}`;
+  const schemaRef = `../.algerknown/schemas/${SCHEMA_FILENAME_BY_TYPE[entryToPersist.type]}`;
 
-  const content = `# yaml-language-server: $schema=${schemaRef}\n${yaml.dump(entry, {
+  const content = `# yaml-language-server: $schema=${schemaRef}\n${yaml.dump(entryToPersist, {
     indent: 2,
     lineWidth: 120,
     noRefs: true,
   })}`;
-  
+
   // Ensure directory exists
   const dir = path.dirname(entryPath);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
-  
+
   fs.writeFileSync(entryPath, content, 'utf-8');
-  
+
   // Update index
   const index = getIndex(kbRoot);
-  index.entries[entry.id] = {
+  index.entries[entryToPersist.id] = {
     path: getRelativePath(entryPath, kbRoot),
-    type: entry.type,
+    type: entryToPersist.type,
   };
   saveIndex(index, kbRoot);
 }

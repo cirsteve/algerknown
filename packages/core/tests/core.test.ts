@@ -810,6 +810,25 @@ describe('Primer', () => {
       expect(readPrimerSource(primer)).toBe('# In-root doc\n');
     });
 
+    it('persists the canonical path when the caller passes an in-root symlink alias', () => {
+      const aliasPath = path.join(CONTENT_ROOT_PATH, 'inside-link.md');
+      const canonicalPath = fs.realpathSync(path.join(CONTENT_ROOT_PATH, 'doc.md'));
+
+      const primer: Primer = {
+        id: 'primer-canonicalizes-alias',
+        type: 'primer',
+        topic: 'Canonicalizes Alias',
+        status: 'active',
+        source: { path: aliasPath },
+      };
+
+      writeEntry(primer, PRIMER_TEST_PATH);
+
+      const read = readEntry('primer-canonicalizes-alias', PRIMER_TEST_PATH) as Primer;
+      expect(read.source.path).toBe(canonicalPath);
+      expect(read.source.path).not.toBe(aliasPath);
+    });
+
     it('rejects an in-root symlink that resolves outside every allowed root', () => {
       const primer: Primer = {
         id: 'primer-escaping-link',
@@ -895,6 +914,27 @@ describe('Primer', () => {
         id: 'primer-no-roots',
         type: 'primer',
         topic: 'No Roots',
+        status: 'active',
+        source: { path: path.join(CONTENT_ROOT_PATH, 'doc.md') },
+      };
+
+      expect(() => writeEntry(primer, PRIMER_TEST_PATH)).toThrow(SourcePathError);
+      expect(() => readPrimerSource(primer)).toThrow(SourcePathError);
+    });
+  });
+
+  describe('with ALGERKNOWN_CONTENT_ROOTS pointing at a regular file', () => {
+    beforeAll(() => {
+      // The configured root itself must be a directory - a file at that
+      // path must not become an authorized single-file passthrough.
+      process.env.ALGERKNOWN_CONTENT_ROOTS = path.join(CONTENT_ROOT_PATH, 'doc.md');
+    });
+
+    it('rejects every primer write and read', () => {
+      const primer: Primer = {
+        id: 'primer-root-is-file',
+        type: 'primer',
+        topic: 'Root Is File',
         status: 'active',
         source: { path: path.join(CONTENT_ROOT_PATH, 'doc.md') },
       };

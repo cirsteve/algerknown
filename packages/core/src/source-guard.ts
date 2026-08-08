@@ -37,11 +37,16 @@ function getContentRoots(): string[] {
     if (!path.isAbsolute(part)) {
       throw new SourcePathError(`ALGERKNOWN_CONTENT_ROOTS entry is not an absolute path: ${part}`);
     }
+    let real: string;
     try {
-      return fs.realpathSync(part);
+      real = fs.realpathSync(part);
     } catch {
       throw new SourcePathError(`ALGERKNOWN_CONTENT_ROOTS directory does not exist: ${part}`);
     }
+    if (!fs.statSync(real).isDirectory()) {
+      throw new SourcePathError(`ALGERKNOWN_CONTENT_ROOTS entry is not a directory: ${part}`);
+    }
+    return real;
   });
 }
 
