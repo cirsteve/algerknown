@@ -54,7 +54,7 @@ async function apiRequest<T>(
 export interface IndexEntryRef {
   id: string;
   path: string;
-  type: 'summary' | 'entry';
+  type: 'summary' | 'entry' | 'primer';
   last_ingested?: string | null;
 }
 
@@ -76,9 +76,27 @@ export interface Entry {
   [key: string]: unknown;
 }
 
+export interface PrimerSummary {
+  id: string;
+  topic: string;
+  status: string;
+  tags?: string[];
+  source: { path: string; repo?: string; commit?: string; notes?: string };
+}
+
+export interface Primer extends PrimerSummary {
+  type: 'primer';
+}
+
+export interface PrimerSource {
+  content: string;
+  path: string;
+  mtime: string;
+}
+
 export interface SearchResult {
   id: string;
-  type: 'summary' | 'entry';
+  type: 'summary' | 'entry' | 'primer';
   topic: string;
   snippet: string;
   score: number;
@@ -95,6 +113,9 @@ export interface ValidationError {
 }
 
 export const api = {
+  getPrimers: () => apiRequest<PrimerSummary[]>('/primers'),
+  getPrimer: (id: string) => apiRequest<Primer>(`/primers/${encodeURIComponent(id)}`),
+  getPrimerSource: (id: string) => apiRequest<PrimerSource>(`/primers/${encodeURIComponent(id)}/source`),
   // Entries
   getEntries: () => apiRequest<IndexEntryRef[]>('/entries'),
   getEntry: (id: string) => apiRequest<Entry>(`/entries/${id}`),
@@ -121,7 +142,7 @@ export const api = {
     }),
 
   // Search
-  search: (query: string, type?: 'summary' | 'entry') => 
+  search: (query: string, type?: 'summary' | 'entry' | 'primer') =>
     apiRequest<SearchResult[]>(`/search?q=${encodeURIComponent(query)}${type ? `&type=${type}` : ''}`),
   getTypes: () => apiRequest<string[]>('/search/types'),
   getByType: (type: 'summary' | 'entry') => apiRequest<Entry[]>(`/search/by-type/${type}`),
