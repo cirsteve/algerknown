@@ -7,18 +7,26 @@ import { getZkbPath } from '../utils/zkb-path.js';
 const router = Router();
 
 router.post('/', (req: Request, res: Response) => {
-  const root = getZkbPath(req);
-  const { content, ...input } = req.body as Partial<core.Primer> & { content?: unknown };
+  let createdSourcePath: string | null = null;
 
   try {
-    if (!input.id || !input.topic || !input.status) {
+    const root = getZkbPath(req);
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+      return res.status(400).json({ error: 'Request body must be a JSON object' });
+    }
+    const { content, ...input } = req.body as Partial<core.Primer> & { content?: unknown };
+    const id = input.id?.trim();
+    const topic = input.topic?.trim();
+    const status = input.status?.trim() as core.Status | undefined;
+
+    if (!id || !topic || !status) {
       return res.status(400).json({ error: 'id, topic, and status are required' });
     }
-    if (!/^[a-z0-9-]+$/.test(input.id)) {
+    if (!/^[a-z0-9-]+$/.test(id)) {
       return res.status(400).json({ error: 'id must contain only lowercase letters, numbers, and hyphens' });
     }
-    if (core.entryExists(input.id, root)) {
-      return res.status(409).json({ error: `An entry with ID "${input.id}" already exists` });
+    if (core.entryExists(id, root)) {
+      return res.status(409).json({ error: `An entry with ID "${id}" already exists` });
     }
 
     const hasPastedContent = typeof content === 'string' && content.trim().length > 0;
@@ -28,25 +36,25 @@ router.post('/', (req: Request, res: Response) => {
     }
 
     let sourcePath: string;
-    let createdSourcePath: string | null = null;
     if (hasPastedContent) {
       const sourceDir = path.join(root, 'primer-sources');
-      sourcePath = path.join(sourceDir, `${input.id}.md`);
+      sourcePath = path.join(sourceDir, `${id}.md`);
       if (fs.existsSync(sourcePath)) {
-        return res.status(409).json({ error: `A pasted source already exists for "${input.id}"` });
+        return res.status(409).json({ error: `A pasted source already exists for "${id}"` });
       }
       fs.mkdirSync(sourceDir, { recursive: true });
       fs.writeFileSync(sourcePath, content as string, { encoding: 'utf8', flag: 'wx' });
       createdSourcePath = sourcePath;
+      sourcePath = core.assertAllowedSourcePath(sourcePath);
     } else {
       sourcePath = core.assertAllowedSourcePath(suppliedPath!);
     }
 
     const primer: core.Primer = {
-      id: input.id,
+      id,
       type: 'primer',
-      topic: input.topic,
-      status: input.status,
+      topic,
+      status,
       source: { ...input.source, path: sourcePath },
       ...(input.document ? { document: input.document } : {}),
       ...(input.section ? { section: input.section } : {}),
@@ -58,15 +66,15 @@ router.post('/', (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Validation failed', details: validation.errors });
     }
 
-    try {
-      core.writeEntry(primer, root);
-    } catch (error) {
-      if (createdSourcePath && fs.existsSync(createdSourcePath)) fs.unlinkSync(createdSourcePath);
-      throw error;
-    }
+    core.writeEntry(primer, root);
     res.status(201).json(primer);
   } catch (error) {
-    res.status(400).json({ error: (error as Error).message });
+    if (createdSourcePath && fs.existsSync(createdSourcePath)) fs.unlinkSync(createdSourcePath);
+    if (error instanceof core.SourcePathError) {
+      return res.status(400).json({ error: error.message });
+    }
+    console.error('Failed to create primer:', error);
+    res.status(500).json({ error: 'Failed to create primer' });
   }
 });
 

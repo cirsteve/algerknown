@@ -58,12 +58,12 @@ export function PrimerNew() {
 
     <div className="space-y-4 rounded-lg bg-slate-800 p-6">
       <div>
-        <label className="mb-1 block text-sm font-medium text-slate-400">Topic *</label>
-        <input value={topic} onChange={event => setTopic(event.target.value)} className={inputClass} placeholder="e.g. Database migration guide" />
+        <label htmlFor="primer-topic" className="mb-1 block text-sm font-medium text-slate-400">Topic *</label>
+        <input id="primer-topic" value={topic} onChange={event => setTopic(event.target.value)} className={inputClass} placeholder="e.g. Database migration guide" />
       </div>
       <div>
-        <label className="mb-1 block text-sm font-medium text-slate-400">ID</label>
-        <input value={customId || slugify(topic)} onChange={event => setCustomId(event.target.value)} className={inputClass} placeholder="generated-from-topic" />
+        <label htmlFor="primer-id" className="mb-1 block text-sm font-medium text-slate-400">ID</label>
+        <input id="primer-id" value={customId || slugify(topic)} onChange={event => setCustomId(event.target.value)} className={inputClass} placeholder="generated-from-topic" />
         {!validId && id && <p className="mt-1 text-xs text-red-400">Use lowercase letters, numbers, and hyphens only.</p>}
       </div>
 
@@ -75,19 +75,21 @@ export function PrimerNew() {
           </button>)}
         </div>
         {mode === 'paste' ? <>
-          <textarea value={content} onChange={event => setContent(event.target.value)} rows={14} className={`${inputClass} font-mono text-sm`} placeholder="# Document title\n\nPaste Markdown here..." />
+          <label htmlFor="primer-content" className="mb-1 block text-sm text-slate-400">Markdown content</label>
+          <textarea id="primer-content" value={content} onChange={event => setContent(event.target.value)} rows={14} className={`${inputClass} font-mono text-sm`} placeholder="# Document title\n\nPaste Markdown here..." />
           <p className="mt-1 text-xs text-slate-500">Saved in the knowledge base under primer-sources/{id || '<id>'}.md.</p>
         </> : <>
-          <input value={sourcePath} onChange={event => setSourcePath(event.target.value)} className={`${inputClass} font-mono text-sm`} placeholder="/absolute/path/to/document.md" />
+          <label htmlFor="primer-source-path" className="mb-1 block text-sm text-slate-400">Source path</label>
+          <input id="primer-source-path" value={sourcePath} onChange={event => setSourcePath(event.target.value)} className={`${inputClass} font-mono text-sm`} placeholder="/absolute/path/to/document.md" />
           <p className="mt-1 text-xs text-slate-500">The file must be visible to the server inside an ALGERKNOWN_CONTENT_ROOTS directory.</p>
         </>}
       </fieldset>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <div><label className="mb-1 block text-sm font-medium text-slate-400">Document title</label><input value={document} onChange={event => setDocument(event.target.value)} className={inputClass} /></div>
-        <div><label className="mb-1 block text-sm font-medium text-slate-400">Section</label><input value={section} onChange={event => setSection(event.target.value)} className={inputClass} /></div>
-        <div><label className="mb-1 block text-sm font-medium text-slate-400">Tags</label><input value={tagsInput} onChange={event => setTagsInput(event.target.value)} className={inputClass} placeholder="docs, architecture" /></div>
-        <div><label className="mb-1 block text-sm font-medium text-slate-400">Status</label><select value={status} onChange={event => setStatus(event.target.value)} className={inputClass}><option value="active">Active</option><option value="planned">Planned</option><option value="reference">Reference</option><option value="archived">Archived</option><option value="blocked">Blocked</option></select></div>
+        <div><label htmlFor="primer-document" className="mb-1 block text-sm font-medium text-slate-400">Document title</label><input id="primer-document" value={document} onChange={event => setDocument(event.target.value)} className={inputClass} /></div>
+        <div><label htmlFor="primer-section" className="mb-1 block text-sm font-medium text-slate-400">Section</label><input id="primer-section" value={section} onChange={event => setSection(event.target.value)} className={inputClass} /></div>
+        <div><label htmlFor="primer-tags" className="mb-1 block text-sm font-medium text-slate-400">Tags</label><input id="primer-tags" value={tagsInput} onChange={event => setTagsInput(event.target.value)} className={inputClass} placeholder="docs, architecture" /></div>
+        <div><label htmlFor="primer-status" className="mb-1 block text-sm font-medium text-slate-400">Status</label><select id="primer-status" value={status} onChange={event => setStatus(event.target.value)} className={inputClass}><option value="active">Active</option><option value="planned">Planned</option><option value="reference">Reference</option><option value="archived">Archived</option><option value="blocked">Blocked</option></select></div>
       </div>
     </div>
 
