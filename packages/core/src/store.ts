@@ -47,7 +47,21 @@ function writeYamlFile<T>(filePath: string, data: T): void {
     fs.mkdirSync(dir, { recursive: true });
   }
   
-  fs.writeFileSync(filePath, content, 'utf-8');
+  writeFileAtomic(filePath, content);
+}
+
+/** Write a complete file beside its destination, then atomically replace it. */
+function writeFileAtomic(filePath: string, content: string): void {
+  const tempPath = path.join(
+    path.dirname(filePath),
+    `.${path.basename(filePath)}.${process.pid}.${Date.now()}.tmp`,
+  );
+  try {
+    fs.writeFileSync(tempPath, content, 'utf-8');
+    fs.renameSync(tempPath, filePath);
+  } finally {
+    if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+  }
 }
 
 /**
@@ -78,7 +92,7 @@ export function saveIndex(index: Index, root?: string): void {
     noRefs: true,
   })}`;
   
-  fs.writeFileSync(indexPath, content, 'utf-8');
+  writeFileAtomic(indexPath, content);
 }
 
 /**
@@ -165,15 +179,26 @@ export function writeEntry(entry: AnyEntry, root?: string): void {
     fs.mkdirSync(dir, { recursive: true });
   }
 
-  fs.writeFileSync(entryPath, content, 'utf-8');
+  const previousEntry = fs.existsSync(entryPath) ? fs.readFileSync(entryPath, 'utf-8') : null;
+  try {
+    writeFileAtomic(entryPath, content);
 
-  // Update index
-  const index = getIndex(kbRoot);
-  index.entries[entryToPersist.id] = {
-    path: getRelativePath(entryPath, kbRoot),
-    type: entryToPersist.type,
-  };
-  saveIndex(index, kbRoot);
+    // saveIndex also uses atomic replacement, so a failed index write leaves
+    // the previous index intact and this entry write can be rolled back.
+    const index = getIndex(kbRoot);
+    index.entries[entryToPersist.id] = {
+      path: getRelativePath(entryPath, kbRoot),
+      type: entryToPersist.type,
+    };
+    saveIndex(index, kbRoot);
+  } catch (error) {
+    if (previousEntry === null) {
+      if (fs.existsSync(entryPath)) fs.unlinkSync(entryPath);
+    } else {
+      writeFileAtomic(entryPath, previousEntry);
+    }
+    throw error;
+  }
 }
 
 /**

@@ -86,6 +86,19 @@ export interface PrimerSummary {
 
 export interface Primer extends PrimerSummary {
   type: 'primer';
+  document?: string;
+  section?: string;
+}
+
+export interface CreatePrimerInput {
+  id: string;
+  topic: string;
+  status: string;
+  tags?: string[];
+  document?: string;
+  section?: string;
+  source: { path?: string; repo?: string; commit?: string; notes?: string };
+  content?: string;
 }
 
 export interface PrimerSource {
@@ -116,6 +129,8 @@ export const api = {
   getPrimers: () => apiRequest<PrimerSummary[]>('/primers'),
   getPrimer: (id: string) => apiRequest<Primer>(`/primers/${encodeURIComponent(id)}`),
   getPrimerSource: (id: string) => apiRequest<PrimerSource>(`/primers/${encodeURIComponent(id)}/source`),
+  createPrimer: (primer: CreatePrimerInput) =>
+    apiRequest<Primer>('/primers', { method: 'POST', body: JSON.stringify(primer) }),
   // Entries
   getEntries: () => apiRequest<IndexEntryRef[]>('/entries'),
   getEntry: (id: string) => apiRequest<Entry>(`/entries/${id}`),

@@ -15,7 +15,10 @@ export function PrimerList() {
   if (error) return <div className="rounded-lg bg-red-500/20 p-4 text-red-300">Error: {error}</div>;
 
   return <div className="space-y-6">
-    <h1 className="text-2xl font-bold text-slate-100">Primers</h1>
+    <div className="flex items-center justify-between">
+      <h1 className="text-2xl font-bold text-slate-100">Primers</h1>
+      <Link to="/primers/new" className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500">New Primer</Link>
+    </div>
     {primers.length === 0 ? <p className="text-slate-400">No primers found.</p> :
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
         {primers.map((primer) => <Link key={primer.id} to={`/primers/${encodeURIComponent(primer.id)}`} className="entry-card block">
