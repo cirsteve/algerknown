@@ -16,6 +16,7 @@ import { JobsPage } from './pages/JobsPage';
 import { TracesPage } from './pages/TracesPage';
 import { PrimerList } from './pages/PrimerList';
 import { PrimerDetail } from './pages/PrimerDetail';
+import { PrimerNew } from './pages/PrimerNew';
 
 export default function App() {
   return (
@@ -25,6 +26,7 @@ export default function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/entries" element={<EntryList />} />
           <Route path="/primers" element={<PrimerList />} />
+          <Route path="/primers/new" element={<PrimerNew />} />
           <Route path="/primers/:id" element={<PrimerDetail />} />
           <Route path="/entries/new" element={<EntryNew />} />
           <Route path="/summaries/new" element={<SummaryNew />} />
