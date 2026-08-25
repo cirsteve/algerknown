@@ -12,34 +12,34 @@ interface StatCardProps {
 
 const variantStyles = {
   default: {
-    card: 'bg-slate-800',
-    value: 'text-slate-100',
-    label: 'text-slate-400',
+    card: 'bg-surface-raised border border-edge',
+    value: 'text-content-strong',
+    label: 'text-content-muted',
   },
   primary: {
-    card: 'bg-sky-900/30 border border-sky-800',
-    value: 'text-sky-400',
-    label: 'text-sky-300',
+    card: 'bg-sky-50 border border-sky-200 dark:bg-sky-900/30 dark:border-sky-800',
+    value: 'text-sky-800 dark:text-sky-300',
+    label: 'text-sky-700 dark:text-sky-400',
   },
   success: {
-    card: 'bg-green-900/30 border border-green-800',
-    value: 'text-green-400',
-    label: 'text-green-300',
+    card: 'bg-green-50 border border-green-200 dark:bg-green-900/30 dark:border-green-800',
+    value: 'text-green-800 dark:text-green-300',
+    label: 'text-green-700 dark:text-green-400',
   },
   warning: {
-    card: 'bg-yellow-900/30 border border-yellow-800',
-    value: 'text-yellow-400',
-    label: 'text-yellow-300',
+    card: 'bg-yellow-50 border border-yellow-300 dark:bg-yellow-900/30 dark:border-yellow-800',
+    value: 'text-yellow-800 dark:text-yellow-300',
+    label: 'text-yellow-700 dark:text-yellow-400',
   },
   danger: {
-    card: 'bg-red-900/30 border border-red-800',
-    value: 'text-red-400',
-    label: 'text-red-300',
+    card: 'bg-red-50 border border-red-200 dark:bg-red-900/30 dark:border-red-800',
+    value: 'text-red-800 dark:text-red-300',
+    label: 'text-red-700 dark:text-red-400',
   },
   info: {
-    card: 'bg-blue-900/30 border border-blue-800',
-    value: 'text-blue-400',
-    label: 'text-blue-300',
+    card: 'bg-blue-50 border border-blue-200 dark:bg-blue-900/30 dark:border-blue-800',
+    value: 'text-blue-800 dark:text-blue-300',
+    label: 'text-blue-700 dark:text-blue-400',
   },
 };
 
@@ -71,7 +71,14 @@ export function StatCard({
   );
 
   if (to) {
-    return <Link to={to}>{content}</Link>;
+    return (
+      <Link
+        to={to}
+        className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+      >
+        {content}
+      </Link>
+    );
   }
 
   return content;
