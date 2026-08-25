@@ -5,11 +5,12 @@ interface StatusIndicatorProps {
   className?: string;
 }
 
+// Solid dots: the light scheme needs a darker shade to stay visible on white.
 const statusColors = {
-  online: 'bg-green-500',
-  offline: 'bg-red-500',
-  checking: 'bg-yellow-500',
-  unknown: 'bg-yellow-500',
+  online: 'bg-green-600 dark:bg-green-500',
+  offline: 'bg-red-600 dark:bg-red-500',
+  checking: 'bg-yellow-600 dark:bg-yellow-500',
+  unknown: 'bg-yellow-600 dark:bg-yellow-500',
 };
 
 const sizeStyles = {
@@ -71,7 +72,7 @@ export function ConnectionStatus({
   return (
     <div className={`flex items-center gap-2 ${className}`}>
       <StatusIndicator status={status} />
-      {label && <span className="text-sm text-slate-400">{label}</span>}
+      {label && <span className="text-sm text-content-muted">{label}</span>}
     </div>
   );
 }

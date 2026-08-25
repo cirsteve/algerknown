@@ -55,7 +55,7 @@ export function LoadingState({
   return (
     <div className={`flex flex-col items-center justify-center gap-3 py-8 ${className}`}>
       <Spinner size={size} />
-      {message && <p className="text-slate-400 text-sm">{message}</p>}
+      {message && <p className="text-content-muted text-sm">{message}</p>}
     </div>
   );
 }
