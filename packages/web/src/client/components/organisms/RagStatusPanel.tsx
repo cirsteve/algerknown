@@ -55,17 +55,15 @@ export function RagStatusPanel({
         : 'RAG Offline';
 
   return (
-    <div className={`flex items-center gap-2 ${className}`}>
+    /* The status readout sits next to a page title on wide screens and under it
+       on narrow ones; wrapping keeps the Retry button on the row rather than
+       pushing the label out of the viewport. */
+    <div className={`flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 ${className}`}>
       <StatusIndicator status={connectionStatus} />
-      <span className="text-sm text-slate-400">{statusLabel}</span>
-      
+      <span className="text-sm text-content-muted">{statusLabel}</span>
+
       {showRetry && !ragConnected && ragConnected !== null && !checking && (
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={checkConnection}
-          className="text-sky-400"
-        >
+        <Button variant="ghost" size="sm" onClick={checkConnection}>
           Retry
         </Button>
       )}
@@ -87,9 +85,9 @@ export function RagOfflineNotice({ className = '' }: RagOfflineNoticeProps) {
       title="RAG Backend Offline"
       className={className}
     >
-      <p>
+      <p className="break-words">
         The RAG backend is not available. Start it with{' '}
-        <code className="bg-slate-800 px-2 py-1 rounded">docker-compose up</code> in the
+        <code className="rounded bg-surface-sunken px-2 py-1 text-content">docker-compose up</code> in the
         rag-backend directory.
       </p>
     </AlertBox>
