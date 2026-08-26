@@ -40,6 +40,17 @@ const FOCUSABLE_SELECTOR = [
   '[tabindex]:not([tabindex="-1"])',
 ].join(', ');
 
+/*
+ * Deliberately not `offsetParent !== null`: that is null for everything inside a
+ * `position: fixed` subtree, which is exactly where the drawer lives, so it
+ * would empty the tab ring instead of filtering it.
+ */
+function isVisible(element: HTMLElement): boolean {
+  if (element.hasAttribute('hidden')) return false;
+  const style = window.getComputedStyle(element);
+  return style.display !== 'none' && style.visibility !== 'hidden';
+}
+
 /**
  * Polls the RAG backend once for the whole shell.
  *
@@ -329,7 +340,7 @@ export function Sidebar({ navItems, className = '' }: SidebarProps) {
 
     const focusable = Array.from(
       container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)
-    ).filter(element => element.offsetParent !== null);
+    ).filter(isVisible);
 
     if (focusable.length === 0) {
       event.preventDefault();
