@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent } from 'react';
+import { useState } from 'react';
 import { useTraces, useTraceDetail } from '../../hooks/useTraces';
 import { PIPELINE_COLORS, SPAN_KIND_COLORS } from '../../lib/designTokens';
 import { formatDuration, formatTimestamp, safeJsonPreview, safePrettyJson } from '../../lib/format';
@@ -30,37 +30,38 @@ function SpanRow({ span, depth }: { span: Span; depth: number }) {
 
   const toggle = () => hasDetail && setExpanded(!expanded);
 
-  // The row is a table row, so it cannot be a <button>; it takes the button's
-  // keyboard contract instead rather than being unreachable without a mouse.
-  const handleKeyDown = (event: KeyboardEvent<HTMLTableRowElement>) => {
-    if (!hasDetail) return;
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      setExpanded(!expanded);
-    }
-  };
-
   return (
     <>
+      {/*
+       * The row stays a row. `<tr>` admits only `role="row"`, so giving it the
+       * button role would take the span out of the table for a screen reader;
+       * the disclosure lives on a real <button> in the first cell instead, which
+       * is what carries the keyboard contract and `aria-expanded`. The row keeps
+       * its click handler purely as a larger mouse target.
+       */}
       <tr
-        className={`transition-colors hover:bg-surface-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent ${
-          hasDetail ? 'cursor-pointer' : ''
-        }`}
+        className={`transition-colors hover:bg-surface-hover ${hasDetail ? 'cursor-pointer' : ''}`}
         onClick={toggle}
-        onKeyDown={handleKeyDown}
-        tabIndex={hasDetail ? 0 : undefined}
-        role={hasDetail ? 'button' : undefined}
-        aria-expanded={hasDetail ? expanded : undefined}
       >
         <td className={cell} style={{ paddingLeft: `${16 + indent}px` }}>
-          <div className="flex items-center gap-2">
-            {hasDetail && (
+          {hasDetail ? (
+            <button
+              type="button"
+              aria-expanded={expanded}
+              onClick={(event) => {
+                event.stopPropagation(); // the row would otherwise toggle it back
+                setExpanded(!expanded);
+              }}
+              className="flex items-center gap-2 rounded text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            >
               <span aria-hidden="true" className="text-xs text-content-subtle">
                 {expanded ? '▼' : '▶'}
               </span>
-            )}
+              <span className="text-sm text-content">{span.name}</span>
+            </button>
+          ) : (
             <span className="text-sm text-content">{span.name}</span>
-          </div>
+          )}
         </td>
         <td className={cell}>
           <Badge

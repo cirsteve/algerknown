@@ -17,7 +17,8 @@ const panel = 'min-w-0 rounded-lg border border-edge bg-surface-raised p-4 sm:p-
 const smallButton = `rounded px-3 py-1 text-sm font-medium transition-colors ${focusRing}`;
 const neutralButton = `rounded-lg bg-control px-4 py-2 text-sm text-content transition-colors hover:bg-control-hover ${focusRing}`;
 
-/* Proposal edit fields sit on the sunken surface inside an already-raised card. */
+/* Proposal edit rows are sunken panels inside an already-raised card, so the
+   fields themselves take the raised surface to lift back off that row. */
 const editField =
   'w-full rounded border border-edge bg-surface-raised px-2 py-1 text-content transition-colors placeholder:text-content-subtle focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/40';
 

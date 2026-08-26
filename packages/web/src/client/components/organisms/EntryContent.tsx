@@ -83,9 +83,11 @@ function FieldDisplay({ name, value }: FieldDisplayProps) {
 
   return (
     <div className="min-w-0">
-      <label className="text-sm uppercase tracking-wide text-content-muted">
+      {/* A div, not a <label>: this names a read-only field, and there is no
+          control for a label to be associated with. */}
+      <div className="text-sm uppercase tracking-wide text-content-muted">
         {formatLabel(name)}
-      </label>
+      </div>
       <div className="mt-1 min-w-0 text-content">
         {renderValue(value)}
       </div>

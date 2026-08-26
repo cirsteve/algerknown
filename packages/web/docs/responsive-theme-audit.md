@@ -28,7 +28,7 @@ Then, in the browser devtools device toolbar, walk the table below. For each cel
 | D1 | No document-level horizontal scroll | `document.documentElement.scrollWidth <= window.innerWidth`. Wide content scrolls *inside* its own region, never the page. |
 | D2 | Every primary action is reachable | The route's main control (submit, filter, approve, retry, theme toggle) is on screen and tappable without zooming. |
 | D3 | Readable contrast in both themes | No slate-on-slate pairing surviving into light mode; body text, muted text, borders, links, and semantic (success/warn/error) states all legible. |
-| D4 | Visible keyboard focus | Tab through the route: every focusable control shows a focus ring against its own background, in both themes. |
+| D4 | Visible keyboard focus | Tab through the route: every control that can take focus shows a ring against its own background, in both themes. Measure with `el.focus({focusVisible: true})` — plain programmatic focus does not engage `:focus-visible`, so it under-reports. Skip controls that are hidden at that width or `disabled` in that state; neither can take focus, and counting them either way says nothing about what a keyboard user sees. |
 
 A one-line console helper for D1:
 
@@ -98,9 +98,10 @@ All **136 cells** — 17 routes x 4 widths x 2 themes — pass the four invarian
 | Invariant | Result |
 |---|---|
 | D1 no document-level horizontal scroll | 136/136. `documentElement.scrollWidth` never exceeded the viewport at any width in either theme. |
+| Table row semantics | 136/136 cells carry no `role` or `tabindex` on a `<tr>`. `<tr>` admits only `role="row"`, so the disclosure on a jobs or span row is a real `<button>` inside the first cell rather than a role on the row itself. |
 | D2 primary action reachable | Confirmed per route; the composer, submit, filter and approve controls stack full width below `sm`. |
 | D3 readable contrast in both themes | Body resolves to white/slate-900 in light and slate-900/slate-100 in dark on every route; no slate-on-slate pairing survives into light mode. |
-| D4 visible keyboard focus | 649 focusable elements across all routes in both themes; every one carries focus-visible ring styling. |
+| D4 visible keyboard focus | 1,422 visible controls measured across all cells. Every one that can take focus paints a ring. The only ones that do not are `disabled` in the state audited (the composer and its submit while RAG is offline, submits on an empty form); each carries the ring classes for its enabled state. |
 
 Spot checks worth recording:
 

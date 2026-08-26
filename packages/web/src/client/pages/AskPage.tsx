@@ -131,7 +131,10 @@ export function AskPage() {
           <Link
             key={i}
             to={`/entries/${entryId}`}
-            className="rounded-sm underline underline-offset-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-current"
+            /* renderContent is only ever passed for assistant bubbles, which sit
+               on the raised surface, so the surface link tokens apply - matching
+               how MessageBubble styles its own source links. */
+            className="rounded-sm text-link underline underline-offset-2 transition-colors hover:text-link-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
             [{entryId}]
           </Link>

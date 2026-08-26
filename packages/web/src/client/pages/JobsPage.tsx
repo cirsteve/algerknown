@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import useSWR from 'swr';
 import type { JobResponse } from '../hooks/useJob';
@@ -39,32 +39,35 @@ function JobRow({ job }: { job: JobResponse }) {
   const duration = job.updated_at - job.created_at;
   const isActive = job.status === 'pending' || job.status === 'running';
 
-  // A table row cannot be a <button>, so it takes the button's keyboard
-  // contract instead rather than being mouse-only.
-  const handleKeyDown = (event: KeyboardEvent<HTMLTableRowElement>) => {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      setExpanded(!expanded);
-    }
-  };
-
   return (
     <>
+      {/*
+       * The row stays a row. `<tr>` admits only `role="row"`, so giving it the
+       * button role would take the job out of the table for a screen reader; the
+       * disclosure lives on a real <button> in the first cell instead, which is
+       * what carries the keyboard contract and `aria-expanded`. The row keeps its
+       * click handler purely as a larger mouse target.
+       */}
       <tr
-        className="cursor-pointer border-b border-edge transition-colors hover:bg-surface-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
+        className="cursor-pointer border-b border-edge transition-colors hover:bg-surface-hover"
         onClick={() => setExpanded(!expanded)}
-        onKeyDown={handleKeyDown}
-        tabIndex={0}
-        role="button"
-        aria-expanded={expanded}
       >
         <td className={cell}>
-          <div className="flex items-center gap-2">
+          <button
+            type="button"
+            aria-expanded={expanded}
+            aria-label={`Details for ${job.type} job ${job.job_id}`}
+            onClick={(event) => {
+              event.stopPropagation(); // the row would otherwise toggle it back
+              setExpanded(!expanded);
+            }}
+            className="flex items-center gap-2 rounded text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
             <span aria-hidden="true" className="text-xs text-content-subtle">
               {expanded ? '▼' : '▶'}
             </span>
             <Badge label={job.type} className={JOB_TYPE_COLORS[job.type] || ''} />
-          </div>
+          </button>
         </td>
         <td className={cell}>
           <Badge label={job.status} className={JOB_STATUS_COLORS[job.status] || ''} />
