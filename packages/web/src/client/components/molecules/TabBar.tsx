@@ -4,16 +4,19 @@ interface TabProps {
   active: boolean;
   onClick: () => void;
   children: ReactNode;
+  disabled?: boolean;
   className?: string;
 }
 
 /**
  * Tab molecule - Individual tab button
  */
-export function Tab({ active, onClick, children, className = '' }: TabProps) {
+export function Tab({ active, onClick, children, disabled = false, className = '' }: TabProps) {
   return (
     <button
+      type="button"
       onClick={onClick}
+      disabled={disabled}
       className={`
         px-4 py-2 text-sm font-medium transition-colors rounded-t
         focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent

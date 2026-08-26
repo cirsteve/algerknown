@@ -104,8 +104,24 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
     setPrefersDark(query.matches);
 
     const handleChange = (event: MediaQueryListEvent) => setPrefersDark(event.matches);
-    query.addEventListener('change', handleChange);
-    return () => query.removeEventListener('change', handleChange);
+
+    // Safari < 14 and other older engines expose only the legacy listener API,
+    // where `addEventListener` is undefined. Subscribing must never throw out of
+    // this effect - losing live updates is survivable, a failed mount is not.
+    try {
+      if (typeof query.addEventListener === 'function') {
+        query.addEventListener('change', handleChange);
+        return () => query.removeEventListener('change', handleChange);
+      }
+      if (typeof query.addListener === 'function') {
+        query.addListener(handleChange);
+        return () => query.removeListener(handleChange);
+      }
+    } catch {
+      /* no usable listener API - System keeps the scheme it resolved to above */
+    }
+
+    return undefined;
   }, [preference]);
 
   const theme: EffectiveTheme =
@@ -149,15 +165,17 @@ interface ThemeToggleProps {
 /**
  * ThemeToggle - Visible Light/Dark/System control.
  *
- * A radio group so keyboard and screen-reader users get the "one of three"
- * semantics; switching applies immediately, without a reload.
+ * A pressed-button group rather than an ARIA radio group: the radio roles imply
+ * arrow-key navigation and a roving tabindex, and `aria-pressed` describes what
+ * plain Tab traversal actually does here. Switching applies immediately, without
+ * a reload.
  */
 export function ThemeToggle({ className = '' }: ThemeToggleProps) {
   const { preference, setPreference } = useTheme();
 
   return (
     <div
-      role="radiogroup"
+      role="group"
       aria-label="Color theme"
       className={`inline-flex items-center gap-1 rounded-lg border border-edge bg-surface-raised p-1 ${className}`}
     >
@@ -167,8 +185,7 @@ export function ThemeToggle({ className = '' }: ThemeToggleProps) {
           <button
             key={option.value}
             type="button"
-            role="radio"
-            aria-checked={selected}
+            aria-pressed={selected}
             title={`${option.label} theme`}
             onClick={() => setPreference(option.value)}
             className={`

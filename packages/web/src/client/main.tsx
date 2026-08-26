@@ -25,5 +25,9 @@ function render() {
 }
 
 // Initialize ZKB path from server before rendering; a failure there must not
-// leave the visitor staring at a blank page.
-initZkbPath().catch(() => undefined).then(render);
+// leave the visitor staring at a blank page, but it does need to be diagnosable.
+initZkbPath()
+  .catch((error) => {
+    console.error('Failed to initialize ZKB path from server', error);
+  })
+  .then(render);
