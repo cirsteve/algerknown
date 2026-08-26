@@ -3,7 +3,48 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
     <title>Algerknown - Knowledge Base</title>
+    <script>
+      /*
+       * Pre-paint theme bootstrap. Runs synchronously before the stylesheet and
+       * the app bundle so a reload never flashes the opposite scheme. Keep the
+       * storage key and the resolution rules in sync with
+       * src/client/context/ThemeContext.tsx.
+       *
+       * Everything is guarded: a blocked or malformed localStorage falls back to
+       * the System preference, and any failure here must not stop the app from
+       * starting.
+       */
+      (function () {
+        try {
+          var preference = 'system';
+          try {
+            var stored = window.localStorage.getItem('algerknown-theme');
+            if (stored === 'light' || stored === 'dark' || stored === 'system') {
+              preference = stored;
+            }
+          } catch (storageError) {
+            /* storage unavailable (private mode, blocked cookies) - use System */
+          }
+
+          var dark = preference === 'dark';
+          if (preference === 'system') {
+            try {
+              dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            } catch (mediaError) {
+              dark = false;
+            }
+          }
+
+          var root = document.documentElement;
+          root.classList.toggle('dark', dark);
+          root.style.colorScheme = dark ? 'dark' : 'light';
+        } catch (error) {
+          /* never block startup on theme initialization */
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

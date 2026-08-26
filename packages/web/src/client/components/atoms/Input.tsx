@@ -1,6 +1,15 @@
 import { InputHTMLAttributes, TextareaHTMLAttributes, SelectHTMLAttributes, ReactNode, forwardRef } from 'react';
 
-const baseInputStyles = 'w-full bg-slate-800 border border-slate-600 rounded-lg text-slate-100 focus:outline-none focus:border-sky-500 transition-colors';
+const baseInputStyles = [
+  'w-full rounded-lg border border-edge bg-surface-raised text-content transition-colors',
+  'placeholder:text-content-subtle',
+  'hover:border-edge-strong',
+  'focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/40',
+  'disabled:cursor-not-allowed disabled:opacity-60 disabled:bg-surface-muted disabled:hover:border-edge',
+].join(' ');
+const errorInputStyles =
+  'border-red-500 hover:border-red-500 focus:border-red-500 focus:ring-red-500/40 dark:border-red-400 dark:hover:border-red-400 dark:focus:border-red-400';
+
 const sizeStyles = {
   sm: 'px-2 py-1.5 text-sm',
   md: 'px-3 py-2 text-sm',
@@ -21,7 +30,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(({
   className = '',
   ...props 
 }, ref) => {
-  const errorStyles = error ? 'border-red-500 focus:border-red-500' : '';
+  const errorStyles = error ? errorInputStyles : '';
   
   return (
     <input
@@ -48,7 +57,7 @@ export const TextArea = forwardRef<HTMLTextAreaElement, TextAreaProps>(({
   className = '',
   ...props 
 }, ref) => {
-  const errorStyles = error ? 'border-red-500 focus:border-red-500' : '';
+  const errorStyles = error ? errorInputStyles : '';
   
   return (
     <textarea
@@ -111,13 +120,13 @@ export function FormField({ label, htmlFor, error, hint, children }: FormFieldPr
     <div className="space-y-1">
       <label 
         htmlFor={htmlFor}
-        className="block text-sm font-medium text-slate-400"
+        className="block text-sm font-medium text-content-muted"
       >
         {label}
       </label>
       {children}
-      {error && <p className="text-sm text-red-400">{error}</p>}
-      {hint && !error && <p className="text-sm text-slate-500">{hint}</p>}
+      {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+      {hint && !error && <p className="text-sm text-content-subtle">{hint}</p>}
     </div>
   );
 }

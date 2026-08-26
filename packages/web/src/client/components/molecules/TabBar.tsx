@@ -4,21 +4,26 @@ interface TabProps {
   active: boolean;
   onClick: () => void;
   children: ReactNode;
+  disabled?: boolean;
   className?: string;
 }
 
 /**
  * Tab molecule - Individual tab button
  */
-export function Tab({ active, onClick, children, className = '' }: TabProps) {
+export function Tab({ active, onClick, children, disabled = false, className = '' }: TabProps) {
   return (
     <button
+      type="button"
       onClick={onClick}
+      disabled={disabled}
       className={`
-        px-4 py-2 text-sm font-medium transition-colors
+        px-4 py-2 text-sm font-medium transition-colors rounded-t
+        focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent
+        disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none
         ${active 
-          ? 'text-sky-400 border-b-2 border-sky-400' 
-          : 'text-slate-400 hover:text-slate-200 border-b-2 border-transparent'
+          ? 'text-link border-b-2 border-link' 
+          : 'text-content-muted hover:text-content hover:border-edge-strong border-b-2 border-transparent'
         }
         ${className}
       `}
@@ -38,7 +43,7 @@ interface TabBarProps {
  */
 export function TabBar({ children, className = '' }: TabBarProps) {
   return (
-    <div className={`flex border-b border-slate-700 ${className}`}>
+    <div className={`flex border-b border-edge ${className}`}>
       {children}
     </div>
   );

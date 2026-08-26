@@ -50,18 +50,18 @@ export function ConfirmDialog({
     }
   };
 
-  const titleColor = variant === 'danger' ? 'text-red-400' : 
-                     variant === 'warning' ? 'text-yellow-400' : 
-                     'text-slate-200';
+  const titleColor = variant === 'danger' ? 'text-red-700 dark:text-red-400' : 
+                     variant === 'warning' ? 'text-yellow-700 dark:text-yellow-400' : 
+                     'text-content-strong';
 
   const confirmVariant = variant === 'danger' ? 'danger' : 
                          variant === 'warning' ? 'secondary' : 
                          'primary';
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+    <div className="fixed inset-0 bg-slate-900/60 dark:bg-black/70 flex items-center justify-center z-50">
       <div 
-        className="bg-slate-800 rounded-lg p-6 max-w-md w-full mx-4 space-y-4"
+        className="bg-surface-raised border border-edge shadow-xl rounded-lg p-6 max-w-md w-full mx-4 space-y-4"
         role="dialog"
         aria-modal="true"
         aria-labelledby="dialog-title"
@@ -70,16 +70,16 @@ export function ConfirmDialog({
           {title}
         </h2>
         
-        <div className="text-slate-300">
+        <div className="text-content-muted">
           {message}
         </div>
 
         {confirmText && (
           <div className="space-y-2">
             {confirmTextLabel && (
-              <p className="text-sm text-slate-400">{confirmTextLabel}</p>
+              <p className="text-sm text-content-muted">{confirmTextLabel}</p>
             )}
-            <p className="font-mono text-sm bg-slate-900 p-2 rounded text-slate-100">
+            <p className="font-mono text-sm bg-surface-sunken border border-edge p-2 rounded text-content">
               {confirmText}
             </p>
             <Input
