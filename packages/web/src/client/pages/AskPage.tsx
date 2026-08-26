@@ -3,6 +3,10 @@ import { Link } from 'react-router-dom';
 import { ragApi, checkRagConnection, type QueryResult } from '../lib/ragApi';
 import { useJob } from '../hooks/useJob';
 import { useJobsContext } from '../context/JobsContext';
+import { ChatLayout, EmptyChatState } from '../components/templates/ChatLayout';
+import { MessageBubble, MessageList } from '../components/molecules/MessageBubble';
+import { StatusIndicator } from '../components/atoms/StatusIndicator';
+import { Button } from '../components/atoms/Button';
 
 interface Message {
   id: string;
@@ -11,6 +15,12 @@ interface Message {
   sources?: string[];
   timestamp: Date;
 }
+
+const SUGGESTIONS = [
+  'What do I know about nullifiers?',
+  'What are my open questions about ZKML?',
+  'How does ARC compare to ACT?',
+];
 
 export function AskPage() {
   const [query, setQuery] = useState('');
@@ -50,7 +60,7 @@ export function AskPage() {
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: `Error: ${job.error || 'Failed to get response'}`,
+        content: `Error: ${job.error || 'Query failed'}`,
         timestamp: new Date(),
       };
       setMessages(prev => [...prev, errorMessage]);
@@ -121,7 +131,7 @@ export function AskPage() {
           <Link
             key={i}
             to={`/entries/${entryId}`}
-            className="text-sky-400 hover:text-sky-300 hover:underline"
+            className="rounded-sm underline underline-offset-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-current"
           >
             [{entryId}]
           </Link>
@@ -131,131 +141,96 @@ export function AskPage() {
     });
   };
 
-  return (
-    <div className="flex flex-col h-[calc(100vh-8rem)]">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-100">Ask</h1>
-          <p className="text-sm text-slate-400 mt-1">
-            Query your knowledge base with natural language
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <div
-            className={`w-2 h-2 rounded-full ${
-              ragConnected === null
-                ? 'bg-yellow-500'
-                : ragConnected
-                ? 'bg-green-500'
-                : 'bg-red-500'
-            }`}
-          />
-          <span className="text-sm text-slate-400">
-            {ragConnected === null
-              ? 'Checking...'
-              : ragConnected
-              ? `RAG Online (${documentsIndexed} docs)`
-              : 'RAG Offline'}
-          </span>
-          {!ragConnected && ragConnected !== null && (
-            <button
-              onClick={checkConnection}
-              className="text-sm text-sky-400 hover:text-sky-300"
-            >
-              Retry
-            </button>
-          )}
-        </div>
-      </div>
+  const statusLabel =
+    ragConnected === null
+      ? 'Checking...'
+      : ragConnected
+        ? `RAG Online (${documentsIndexed} docs)`
+        : 'RAG Offline';
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto space-y-4 mb-4 pr-2">
-        {messages.length === 0 && !currentJobId && (
-          <div className="text-center text-slate-500 mt-8">
-            <p className="text-lg mb-2">Ask a question about your knowledge base</p>
-            <div className="text-sm space-y-1">
-              <p>Try: "What do I know about nullifiers?"</p>
-              <p>Try: "What are my open questions about ZKML?"</p>
-              <p>Try: "How does ARC compare to ACT?"</p>
-            </div>
-          </div>
-        )}
-
-        {messages.map(message => (
-          <div
-            key={message.id}
-            className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-          >
-            <div
-              className={`max-w-[80%] rounded-lg p-4 ${
-                message.role === 'user'
-                  ? 'bg-sky-600 text-white'
-                  : 'bg-slate-800 text-slate-100'
-              }`}
-            >
-              <div className="whitespace-pre-wrap">
-                {message.role === 'assistant'
-                  ? renderContent(message.content)
-                  : message.content}
-              </div>
-
-              {message.sources && message.sources.length > 0 && (
-                <div className="mt-3 pt-3 border-t border-slate-700">
-                  <div className="text-xs text-slate-400 mb-1">Sources:</div>
-                  <div className="flex flex-wrap gap-1">
-                    {message.sources.map(source => (
-                      <Link
-                        key={source}
-                        to={`/entries/${source}`}
-                        className="text-xs bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded"
-                      >
-                        {source}
-                      </Link>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        ))}
-
-        {currentJobId && (
-          <div className="flex justify-start">
-            <div className="bg-slate-800 rounded-lg p-4">
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 bg-sky-500 rounded-full animate-pulse" />
-                <div className="w-2 h-2 bg-sky-500 rounded-full animate-pulse delay-75" />
-                <div className="w-2 h-2 bg-sky-500 rounded-full animate-pulse delay-150" />
-                <span className="text-slate-400 text-sm ml-2">
-                  {progress || 'Thinking...'}
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        <div ref={messagesEndRef} />
-      </div>
-
-      {/* Input */}
-      <form onSubmit={handleSubmit} className="flex gap-3">
-        <input
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Ask a question..."
-          disabled={!ragConnected || !!currentJobId}
-          className="flex-1 bg-slate-800 border border-slate-600 rounded-lg px-4 py-3 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-sky-500 disabled:opacity-50"
-        />
-        <button
-          type="submit"
-          disabled={!ragConnected || !query.trim() || !!currentJobId}
-          className="bg-sky-500 hover:bg-sky-400 disabled:bg-slate-600 disabled:cursor-not-allowed px-6 py-3 rounded-lg font-medium transition-colors"
-        >
-          Ask
-        </button>
-      </form>
+  const header = (
+    <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+      <StatusIndicator
+        status={ragConnected === null ? 'unknown' : ragConnected ? 'online' : 'offline'}
+      />
+      <span className="text-sm text-content-muted">{statusLabel}</span>
+      {!ragConnected && ragConnected !== null && (
+        <Button variant="ghost" size="sm" onClick={checkConnection}>
+          Retry
+        </Button>
+      )}
     </div>
+  );
+
+  const messageArea = (
+    <MessageList>
+      {messages.length === 0 && !currentJobId && (
+        <EmptyChatState
+          title="Ask a question about your knowledge base"
+          suggestions={SUGGESTIONS}
+        />
+      )}
+
+      {messages.map(message => (
+        <MessageBubble
+          key={message.id}
+          role={message.role}
+          content={message.content}
+          sources={message.sources}
+          renderContent={message.role === 'assistant' ? renderContent : undefined}
+        />
+      ))}
+
+      {currentJobId && (
+        <div className="flex justify-start">
+          <div className="rounded-lg border border-edge bg-surface-raised p-4">
+            <div className="flex items-center gap-2">
+              <div className="h-2 w-2 animate-pulse rounded-full bg-accent" />
+              <div className="delay-75 h-2 w-2 animate-pulse rounded-full bg-accent" />
+              <div className="delay-150 h-2 w-2 animate-pulse rounded-full bg-accent" />
+              <span className="ml-2 break-words text-sm text-content-muted">
+                {progress || 'Thinking...'}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div ref={messagesEndRef} />
+    </MessageList>
+  );
+
+  /* The composer keeps its <form> so Enter submits natively; only the layout
+     changes - the field and the button share a row from `sm` and stack below,
+     where a 6rem button beside the field would leave nothing to type in. */
+  const input = (
+    <form onSubmit={handleSubmit} className="flex flex-col gap-3 sm:flex-row">
+      <input
+        type="text"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Ask a question..."
+        aria-label="Ask a question"
+        disabled={!ragConnected || !!currentJobId}
+        className="w-full rounded-lg border border-edge bg-surface-raised px-4 py-3 text-content transition-colors placeholder:text-content-subtle hover:border-edge-strong focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/40 disabled:cursor-not-allowed disabled:bg-surface-muted disabled:opacity-60 sm:flex-1"
+      />
+      <button
+        type="submit"
+        disabled={!ragConnected || !query.trim() || !!currentJobId}
+        className="rounded-lg bg-accent px-6 py-3 font-medium text-accent-fg transition-colors hover:bg-accent-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface disabled:cursor-not-allowed disabled:bg-control disabled:text-content-subtle sm:shrink-0"
+      >
+        Ask
+      </button>
+    </form>
+  );
+
+  return (
+    <ChatLayout
+      title="Ask"
+      subtitle="Query your knowledge base with natural language"
+      header={header}
+      messages={messageArea}
+      input={input}
+    />
   );
 }

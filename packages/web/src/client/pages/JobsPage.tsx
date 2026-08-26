@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type KeyboardEvent } from 'react';
 import { Link } from 'react-router-dom';
 import useSWR from 'swr';
 import type { JobResponse } from '../hooks/useJob';
@@ -12,6 +12,14 @@ const fetcher = (url: string) =>
   });
 
 type StatusFilter = 'all' | 'running' | 'complete' | 'failed';
+
+/*
+ * The jobs table keeps real columns rather than reflowing to cards - status,
+ * duration and age only read as a table - so below `min-w` it scrolls inside its
+ * own bordered region while the page stays inside the viewport.
+ */
+const JOBS_TABLE_MIN_WIDTH = 'min-w-[44rem]';
+const cell = 'px-3 py-3 sm:px-4';
 
 function Badge({ label, className = '' }: { label: string; className?: string }) {
   return (
@@ -31,53 +39,67 @@ function JobRow({ job }: { job: JobResponse }) {
   const duration = job.updated_at - job.created_at;
   const isActive = job.status === 'pending' || job.status === 'running';
 
+  // A table row cannot be a <button>, so it takes the button's keyboard
+  // contract instead rather than being mouse-only.
+  const handleKeyDown = (event: KeyboardEvent<HTMLTableRowElement>) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      setExpanded(!expanded);
+    }
+  };
+
   return (
     <>
       <tr
-        className="border-b border-slate-700 hover:bg-slate-800/50 cursor-pointer transition-colors"
+        className="cursor-pointer border-b border-edge transition-colors hover:bg-surface-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
         onClick={() => setExpanded(!expanded)}
+        onKeyDown={handleKeyDown}
+        tabIndex={0}
+        role="button"
+        aria-expanded={expanded}
       >
-        <td className="px-4 py-3">
+        <td className={cell}>
           <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-500">
-              {expanded ? '\u25BC' : '\u25B6'}
+            <span aria-hidden="true" className="text-xs text-content-subtle">
+              {expanded ? '▼' : '▶'}
             </span>
             <Badge label={job.type} className={JOB_TYPE_COLORS[job.type] || ''} />
           </div>
         </td>
-        <td className="px-4 py-3">
+        <td className={cell}>
           <Badge label={job.status} className={JOB_STATUS_COLORS[job.status] || ''} />
         </td>
-        <td className="px-4 py-3 text-sm text-slate-300">
+        <td className={`${cell} text-sm text-content`}>
           <div className="flex items-center gap-2">
             {isActive && (
-              <span className="w-2 h-2 bg-sky-500 rounded-full animate-pulse" />
+              <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-accent" />
             )}
-            {job.progress}
+            <span className="break-words">{job.progress}</span>
           </div>
         </td>
-        <td className="px-4 py-3 text-sm text-slate-400 font-mono">
+        <td className={`${cell} font-mono text-sm text-content-muted`}>
           {formatDuration(duration * 1000)}
         </td>
-        <td className="px-4 py-3 text-sm text-slate-500">
+        <td className={`${cell} whitespace-nowrap text-sm text-content-subtle`}>
           {formatRelativeTime(job.created_at)}
         </td>
       </tr>
       {expanded && (
         <tr>
-          <td colSpan={5} className="px-4 py-3 bg-slate-900/50">
+          <td colSpan={5} className={`bg-surface-sunken ${cell}`}>
             <div className="space-y-3 text-sm">
-              <div className="flex gap-6 text-xs text-slate-500">
-                <span>Job ID: <code className="text-slate-400">{job.job_id}</code></span>
+              {/* The three metadata facts only fit one row from `sm`. */}
+              <div className="flex flex-col gap-1 text-xs text-content-subtle sm:flex-row sm:flex-wrap sm:gap-6">
+                <span className="break-all">Job ID: <code className="text-content-muted">{job.job_id}</code></span>
                 <span>Created: {new Date(job.created_at * 1000).toLocaleString()}</span>
                 <span>Updated: {new Date(job.updated_at * 1000).toLocaleString()}</span>
               </div>
 
-              <div className="flex gap-4">
+              <div className="flex flex-wrap gap-4">
                 {job.trace_id && (
                   <Link
                     to={`/traces?highlight=${job.trace_id}`}
-                    className="text-sky-400 hover:text-sky-300 text-sm"
+                    className="rounded-sm text-sm text-link transition-colors hover:text-link-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                     onClick={e => e.stopPropagation()}
                   >
                     View Trace &rarr;
@@ -90,7 +112,7 @@ function JobRow({ job }: { job: JobResponse }) {
                 ) && (
                   <Link
                     to={`/ingest?job=${job.job_id}`}
-                    className="text-amber-400 hover:text-amber-300 text-sm"
+                    className="rounded-sm text-sm text-amber-700 transition-colors hover:text-amber-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent dark:text-amber-400 dark:hover:text-amber-300"
                     onClick={e => e.stopPropagation()}
                   >
                     {job.status === 'complete' ? 'Review Proposals' : 'Resume Ingest'} &rarr;
@@ -99,16 +121,16 @@ function JobRow({ job }: { job: JobResponse }) {
               </div>
 
               {job.error && (
-                <div className="bg-red-900/30 border border-red-700 rounded p-3">
-                  <div className="text-xs font-medium text-red-400 mb-1">Error</div>
-                  <div className="text-red-300">{job.error}</div>
+                <div className="rounded border border-red-300 bg-red-50 p-3 dark:border-red-700 dark:bg-red-900/30">
+                  <div className="mb-1 text-xs font-medium text-red-700 dark:text-red-400">Error</div>
+                  <div className="break-words text-red-900 dark:text-red-300">{job.error}</div>
                 </div>
               )}
 
               {job.result != null && (
                 <div>
-                  <div className="text-xs font-medium text-slate-500 mb-1">Result</div>
-                  <pre className="max-h-48 overflow-auto rounded bg-slate-800 p-3 font-mono text-xs text-slate-300">
+                  <div className="mb-1 text-xs font-medium text-content-subtle">Result</div>
+                  <pre className="max-h-48 overflow-auto rounded border border-edge bg-surface-raised p-3 font-mono text-xs text-content">
                     {JSON.stringify(job.result, null, 2)}
                   </pre>
                 </div>
@@ -156,69 +178,75 @@ export function JobsPage() {
     { key: 'failed', label: 'Failed', count: failedCount },
   ];
 
+  const statCard = 'min-w-0 rounded-lg border border-edge bg-surface-raised p-4';
+
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-slate-100">Jobs</h1>
-        <p className="text-sm text-slate-400 mt-1">
+        <h1 className="text-xl font-bold text-content-strong sm:text-2xl">Jobs</h1>
+        <p className="mt-1 text-sm text-content-muted">
           Monitor background query and ingest jobs
         </p>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-3 gap-4">
-        <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
-          <div className="text-xs text-slate-500 mb-1">Running</div>
-          <div className="text-2xl font-bold text-sky-400">{runningCount}</div>
+      {/* Stats - three tiles do not fit 320px, so the third wraps below. */}
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+        <div className={statCard}>
+          <div className="mb-1 text-xs text-content-subtle">Running</div>
+          <div className="text-2xl font-bold text-sky-700 dark:text-sky-400">{runningCount}</div>
         </div>
-        <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
-          <div className="text-xs text-slate-500 mb-1">Completed</div>
-          <div className="text-2xl font-bold text-green-400">{completedCount}</div>
+        <div className={statCard}>
+          <div className="mb-1 text-xs text-content-subtle">Completed</div>
+          <div className="text-2xl font-bold text-green-700 dark:text-green-400">{completedCount}</div>
         </div>
-        <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
-          <div className="text-xs text-slate-500 mb-1">Failed</div>
-          <div className="text-2xl font-bold text-red-400">{failedCount}</div>
+        <div className={statCard}>
+          <div className="mb-1 text-xs text-content-subtle">Failed</div>
+          <div className="text-2xl font-bold text-red-700 dark:text-red-400">{failedCount}</div>
         </div>
       </div>
 
-      {/* Filter tabs */}
-      <div className="flex gap-1 bg-slate-800 rounded-lg p-1 w-fit">
-        {filters.map(f => (
-          <button
-            key={f.key}
-            onClick={() => setFilter(f.key)}
-            className={`px-4 py-1.5 rounded-md text-sm transition-colors ${
-              filter === f.key
-                ? 'bg-slate-700 text-slate-100'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            {f.label} ({f.count})
-          </button>
-        ))}
+      {/* Filter tabs - four labelled counts are wider than 320px, so the strip
+          scrolls inside itself instead of the page. */}
+      <div className="-mx-1 overflow-x-auto px-1 pb-1">
+        <div className="flex w-max gap-1 rounded-lg bg-surface-raised p-1">
+          {filters.map(f => (
+            <button
+              key={f.key}
+              onClick={() => setFilter(f.key)}
+              aria-pressed={filter === f.key}
+              className={`whitespace-nowrap rounded-md px-4 py-1.5 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+                filter === f.key
+                  ? 'bg-control text-content'
+                  : 'text-content-muted hover:bg-surface-hover hover:text-content'
+              }`}
+            >
+              {f.label} ({f.count})
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Jobs table */}
       {isLoading ? (
-        <div className="text-sm text-slate-400">Loading jobs...</div>
+        <div className="text-sm text-content-muted">Loading jobs...</div>
       ) : error ? (
-        <div className="text-sm text-red-400">Failed to load jobs: {error.message}</div>
+        <div className="break-words text-sm text-red-700 dark:text-red-400">Failed to load jobs: {error.message}</div>
       ) : filtered.length === 0 ? (
-        <div className="bg-slate-800 rounded-lg p-8 text-center text-slate-500">
+        <div className="rounded-lg border border-edge bg-surface-raised p-6 text-center text-content-muted sm:p-8">
           {jobs.length === 0
             ? 'No jobs yet. Submit a query or ingest to get started.'
             : 'No jobs match the current filter.'}
         </div>
       ) : (
-        <div className="rounded-lg border border-slate-700 overflow-hidden">
-          <table className="w-full">
-            <thead className="bg-slate-800 text-xs text-slate-500 border-b border-slate-700">
+        <div className="overflow-x-auto rounded-lg border border-edge">
+          <table className={`w-full ${JOBS_TABLE_MIN_WIDTH}`}>
+            <thead className="border-b border-edge bg-surface-hover text-xs text-content-muted">
               <tr>
-                <th className="px-4 py-2 text-left">Type</th>
-                <th className="px-4 py-2 text-left">Status</th>
-                <th className="px-4 py-2 text-left">Progress</th>
-                <th className="px-4 py-2 text-left">Duration</th>
-                <th className="px-4 py-2 text-left">Created</th>
+                <th className={`${cell} py-2 text-left`}>Type</th>
+                <th className={`${cell} py-2 text-left`}>Status</th>
+                <th className={`${cell} py-2 text-left`}>Progress</th>
+                <th className={`${cell} py-2 text-left`}>Duration</th>
+                <th className={`${cell} py-2 text-left`}>Created</th>
               </tr>
             </thead>
             <tbody>
