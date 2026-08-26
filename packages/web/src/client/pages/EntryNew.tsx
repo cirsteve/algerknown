@@ -2,8 +2,15 @@ import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { parseContent } from '../lib/parseContent';
+import { AlertBox } from '../components/molecules/AlertBox';
 
 type InputMode = 'upload' | 'paste';
+
+const fieldStyles =
+    'w-full rounded-lg border border-edge bg-surface-raised text-content transition-colors placeholder:text-content-subtle hover:border-edge-strong focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/40';
+
+const modeButton =
+    'rounded-lg px-4 py-2 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface';
 
 export function EntryNew() {
     const navigate = useNavigate();
@@ -97,46 +104,46 @@ export function EntryNew() {
         setError(null);
     };
 
-    return (
-        <div className="space-y-6">
-            <h1 className="text-2xl font-bold text-slate-100">New Entry</h1>
+    const modeStyles = (value: InputMode) =>
+        mode === value
+            ? 'bg-accent text-accent-fg'
+            : 'bg-control text-content hover:bg-control-hover';
 
-            {/* Mode Toggle */}
-            <div className="flex gap-2">
+    return (
+        <div className="min-w-0 space-y-6">
+            <h1 className="text-xl font-bold text-content-strong sm:text-2xl">New Entry</h1>
+
+            {/* Mode Toggle - wraps rather than overflowing at 320px */}
+            <div className="flex flex-wrap gap-2">
                 <button
                     onClick={() => { setMode('paste'); clearAll(); }}
-                    className={`px-4 py-2 rounded-lg text-sm transition-colors ${
-                        mode === 'paste'
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-                    }`}
+                    aria-pressed={mode === 'paste'}
+                    className={`${modeButton} ${modeStyles('paste')}`}
                 >
                     Paste
                 </button>
                 <button
                     onClick={() => { setMode('upload'); clearAll(); }}
-                    className={`px-4 py-2 rounded-lg text-sm transition-colors ${
-                        mode === 'upload'
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-                    }`}
+                    aria-pressed={mode === 'upload'}
+                    className={`${modeButton} ${modeStyles('upload')}`}
                 >
                     Upload File
                 </button>
             </div>
 
             {error && (
-                <div className="bg-red-500/20 text-red-300 p-4 rounded-lg">
-                    {error}
-                </div>
+                <AlertBox variant="error">
+                    <span className="block break-words">{error}</span>
+                </AlertBox>
             )}
 
             {mode === 'paste' ? (
                 <div className="space-y-2">
-                    <label className="block text-sm font-medium text-slate-400">
+                    <label htmlFor="entry-paste" className="block text-sm font-medium text-content-muted">
                         Paste markdown with YAML frontmatter
                     </label>
                     <textarea
+                        id="entry-paste"
                         value={pasteContent}
                         onChange={handlePasteChange}
                         placeholder={`---
@@ -147,15 +154,15 @@ topic: My Topic
 
 Content here...`}
                         rows={12}
-                        className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-slate-100 font-mono text-sm focus:border-blue-500 focus:outline-none"
+                        className={`${fieldStyles} px-3 py-2 font-mono text-sm`}
                     />
                 </div>
             ) : (
                 <div
-                    className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
+                    className={`rounded-lg border-2 border-dashed p-6 text-center transition-colors sm:p-8 ${
                         dragActive
-                            ? 'border-blue-500 bg-blue-500/10'
-                            : 'border-slate-600 hover:border-slate-500'
+                            ? 'border-accent bg-accent/10'
+                            : 'border-edge-strong hover:border-content-subtle'
                     }`}
                     onDragEnter={(e) => { e.preventDefault(); setDragActive(true); }}
                     onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
@@ -166,21 +173,23 @@ Content here...`}
                         type="file"
                         accept=".md,.yaml,.yml"
                         onChange={handleFileInput}
-                        className="hidden"
+                        className="peer sr-only"
                         id="file-input"
                     />
+                    {/* `sr-only` rather than `hidden` keeps the input focusable, and
+                        the peer ring shows where the keyboard focus actually is. */}
                     <label
                         htmlFor="file-input"
-                        className="cursor-pointer"
+                        className="block cursor-pointer rounded-lg p-1 peer-focus-visible:ring-2 peer-focus-visible:ring-accent"
                     >
-                        <div className="text-slate-400 mb-2">
+                        <div className="mb-2 break-words text-content-muted">
                             {file ? (
-                                <span className="text-slate-200">{file.name}</span>
+                                <span className="text-content">{file.name}</span>
                             ) : (
-                                <>Drop a markdown file here or <span className="text-blue-400 underline">browse</span></>
+                                <>Drop a markdown file here or <span className="text-link underline">browse</span></>
                             )}
                         </div>
-                        <p className="text-xs text-slate-500">
+                        <p className="text-xs text-content-subtle">
                             Expects YAML frontmatter with id, type, topic fields
                         </p>
                     </label>
@@ -188,49 +197,49 @@ Content here...`}
             )}
 
             {preview && (
-                <div className="space-y-4">
-                    <h2 className="text-lg font-semibold text-slate-200">Preview</h2>
-                    <div className="bg-slate-800 rounded-lg p-4 space-y-3">
-                        <div className="grid grid-cols-2 gap-4 text-sm">
-                            <div>
-                                <span className="text-slate-400">ID:</span>{' '}
-                                <span className="text-slate-100">{preview.frontmatter.id}</span>
+                <div className="min-w-0 space-y-4">
+                    <h2 className="text-lg font-semibold text-content-strong">Preview</h2>
+                    <div className="min-w-0 space-y-3 rounded-lg border border-edge bg-surface-raised p-4">
+                        <div className="grid grid-cols-1 gap-x-4 gap-y-2 text-sm sm:grid-cols-2">
+                            <div className="min-w-0 break-words">
+                                <span className="text-content-muted">ID:</span>{' '}
+                                <span className="text-content">{preview.frontmatter.id}</span>
                             </div>
-                            <div>
-                                <span className="text-slate-400">Type:</span>{' '}
-                                <span className="text-slate-100">{preview.frontmatter.type}</span>
+                            <div className="min-w-0 break-words">
+                                <span className="text-content-muted">Type:</span>{' '}
+                                <span className="text-content">{preview.frontmatter.type}</span>
                             </div>
-                            <div>
-                                <span className="text-slate-400">Topic:</span>{' '}
-                                <span className="text-slate-100">{preview.frontmatter.topic || '(not set)'}</span>
+                            <div className="min-w-0 break-words">
+                                <span className="text-content-muted">Topic:</span>{' '}
+                                <span className="text-content">{preview.frontmatter.topic || '(not set)'}</span>
                             </div>
-                            <div>
-                                <span className="text-slate-400">Status:</span>{' '}
-                                <span className="text-slate-100">{preview.frontmatter.status || 'active'}</span>
+                            <div className="min-w-0 break-words">
+                                <span className="text-content-muted">Status:</span>{' '}
+                                <span className="text-content">{preview.frontmatter.status || 'active'}</span>
                             </div>
                         </div>
                         {preview.content && (
-                            <div>
-                                <span className="text-slate-400 text-sm">Content preview:</span>
-                                <pre className="mt-1 text-xs text-slate-300 bg-slate-900 p-2 rounded max-h-40 overflow-auto">
+                            <div className="min-w-0">
+                                <span className="text-sm text-content-muted">Content preview:</span>
+                                <pre className="mt-1 max-h-40 overflow-auto rounded border border-edge bg-surface-sunken p-2 text-xs text-content">
                                     {preview.content.slice(0, 500)}{preview.content.length > 500 ? '...' : ''}
                                 </pre>
                             </div>
                         )}
                     </div>
 
-                    <div className="flex gap-3">
+                    <div className="flex flex-wrap gap-3">
                         <button
                             onClick={handleSubmit}
                             disabled={loading}
-                            className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 px-4 py-2 rounded-lg text-sm"
+                            className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-fg transition-colors hover:bg-accent-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface disabled:cursor-not-allowed disabled:opacity-50"
                         >
                             {loading ? 'Creating...' : 'Create Entry'}
                         </button>
                         <button
                             type="button"
                             onClick={clearAll}
-                            className="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg text-sm"
+                            className="rounded-lg bg-control px-4 py-2 text-sm text-content transition-colors hover:bg-control-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
                         >
                             Clear
                         </button>
@@ -238,9 +247,9 @@ Content here...`}
                 </div>
             )}
 
-            <div className="text-sm text-slate-500 space-y-2">
-                <p className="font-medium text-slate-400">Expected format:</p>
-                <pre className="bg-slate-800 p-3 rounded text-xs overflow-auto">{`---
+            <div className="min-w-0 space-y-2 text-sm text-content-subtle">
+                <p className="font-medium text-content-muted">Expected format:</p>
+                <pre className="overflow-auto rounded border border-edge bg-surface-raised p-3 text-xs text-content">{`---
 id: my-entry-slug
 type: entry
 topic: My Topic

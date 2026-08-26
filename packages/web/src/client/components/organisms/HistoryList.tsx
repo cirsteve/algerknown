@@ -55,7 +55,7 @@ export function HistoryList({ entryId, className = '' }: HistoryListProps) {
     return (
       <AlertBox variant="warning" className={className}>
         History requires RAG backend. Start it with{' '}
-        <code className="bg-slate-800 px-1 rounded">docker-compose up</code>
+        <code className="rounded bg-surface-sunken px-1 text-content">docker-compose up</code>
       </AlertBox>
     );
   }

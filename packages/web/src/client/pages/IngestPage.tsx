@@ -4,8 +4,25 @@ import { ragApi, ProposalData, checkRagConnection, type IngestResult } from '../
 import { api, IndexEntryRef } from '../lib/api';
 import { useJob } from '../hooks/useJob';
 import { useJobsContext } from '../context/JobsContext';
+import { StatusIndicator } from '../components/atoms/StatusIndicator';
+import { AlertBox } from '../components/molecules/AlertBox';
 
 type IngestState = 'idle' | 'selecting' | 'ingesting' | 'reviewing' | 'applying';
+
+const focusRing =
+  'focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface';
+
+const panel = 'min-w-0 rounded-lg border border-edge bg-surface-raised p-4 sm:p-6';
+
+const smallButton = `rounded px-3 py-1 text-sm font-medium transition-colors ${focusRing}`;
+const neutralButton = `rounded-lg bg-control px-4 py-2 text-sm text-content transition-colors hover:bg-control-hover ${focusRing}`;
+
+/* Proposal edit rows are sunken panels inside an already-raised card, so the
+   fields themselves take the raised surface to lift back off that row. */
+const editField =
+  'w-full rounded border border-edge bg-surface-raised px-2 py-1 text-content transition-colors placeholder:text-content-subtle focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/40';
+
+const removeButton = `shrink-0 rounded px-2 text-sm text-red-700 transition-colors hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 ${focusRing}`;
 
 export function IngestPage() {
   const location = useLocation();
@@ -266,39 +283,41 @@ export function IngestPage() {
     return (
       <div
         key={index}
-        className={`border rounded-lg p-4 transition-colors ${
+        className={`min-w-0 rounded-lg border p-4 transition-colors ${
           isApproved
-            ? 'border-green-500 bg-green-900/20'
+            ? 'border-green-500 bg-green-50 dark:bg-green-900/20'
             : isEditing
-            ? 'border-sky-500 bg-sky-900/20'
-            : 'border-slate-600 bg-slate-800'
+            ? 'border-accent bg-sky-50 dark:bg-sky-900/20'
+            : 'border-edge bg-surface-raised'
         }`}
       >
-        <div className="flex items-start justify-between mb-3">
-          <div>
+        {/* Target id and the Edit/Approve pair only share a row from `sm`;
+            below that the buttons move under the id rather than clipping it. */}
+        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
             <Link
               to={`/entries/${displayData.target_summary_id}`}
-              className="font-medium text-sky-400 hover:text-sky-300"
+              className={`break-all font-medium text-link transition-colors hover:text-link-hover ${focusRing}`}
             >
               {displayData.target_summary_id}
             </Link>
-            <div className="text-xs text-slate-500 mt-1">
+            <div className="mt-1 break-words text-xs text-content-subtle">
               Match: {((displayData.match_score || 0) * 100).toFixed(0)}% ({displayData.match_reason})
-              {hasEdits && <span className="ml-2 text-amber-400">(edited)</span>}
+              {hasEdits && <span className="ml-2 text-amber-700 dark:text-amber-400">(edited)</span>}
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2 sm:shrink-0">
             {isEditing ? (
               <>
                 <button
                   onClick={saveEditing}
-                  className="px-3 py-1 rounded text-sm font-medium bg-sky-600 hover:bg-sky-500 text-white"
+                  className={`${smallButton} bg-accent text-accent-fg hover:bg-accent-hover`}
                 >
                   Done
                 </button>
                 <button
                   onClick={cancelEditing}
-                  className="px-3 py-1 rounded text-sm font-medium bg-slate-700 hover:bg-slate-600 text-slate-300"
+                  className={`${smallButton} bg-control text-content hover:bg-control-hover`}
                 >
                   Cancel
                 </button>
@@ -307,16 +326,17 @@ export function IngestPage() {
               <>
                 <button
                   onClick={() => startEditing(index)}
-                  className="px-3 py-1 rounded text-sm font-medium bg-slate-700 hover:bg-slate-600 text-slate-300"
+                  className={`${smallButton} bg-control text-content hover:bg-control-hover`}
                 >
                   Edit
                 </button>
                 <button
                   onClick={() => toggleProposal(index)}
-                  className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+                  aria-pressed={isApproved}
+                  className={`${smallButton} ${
                     isApproved
-                      ? 'bg-green-600 hover:bg-green-500 text-white'
-                      : 'bg-slate-700 hover:bg-slate-600 text-slate-300'
+                      ? 'bg-green-700 text-white hover:bg-green-800 dark:hover:bg-green-600'
+                      : 'bg-control text-content hover:bg-control-hover'
                   }`}
                 >
                   {isApproved ? '✓ Approved' : 'Approve'}
@@ -327,28 +347,29 @@ export function IngestPage() {
         </div>
 
         {displayData.rationale && (
-          <p className="text-sm text-slate-400 mb-3 italic">
+          <p className="mb-3 break-words text-sm italic text-content-muted">
             "{displayData.rationale}"
           </p>
         )}
 
         {displayData.new_learnings && displayData.new_learnings.length > 0 && (
           <div className="mb-3">
-            <div className="text-xs font-medium text-slate-500 mb-1">New Learnings:</div>
+            <div className="mb-1 text-xs font-medium text-content-subtle">New Learnings:</div>
             {displayData.new_learnings.map((learning, i) => (
-              <div key={i} className="text-sm bg-slate-900/50 rounded p-2 mb-1">
+              <div key={i} className="mb-1 min-w-0 rounded bg-surface-sunken p-2 text-sm">
                 {isEditing ? (
                   <div className="space-y-2">
                     <div className="flex gap-2">
                       <textarea
                         value={learning.insight}
                         onChange={e => updateLearning(i, 'insight', e.target.value)}
-                        className="flex-1 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-slate-200 text-sm"
+                        className={`${editField} text-sm`}
                         rows={2}
                       />
                       <button
                         onClick={() => removeLearning(i)}
-                        className="text-red-400 hover:text-red-300 text-sm px-2"
+                        aria-label="Remove learning"
+                        className={removeButton}
                       >
                         ✕
                       </button>
@@ -358,14 +379,14 @@ export function IngestPage() {
                       value={learning.context || ''}
                       onChange={e => updateLearning(i, 'context', e.target.value)}
                       placeholder="Context (optional)"
-                      className="w-full bg-slate-800 border border-slate-600 rounded px-2 py-1 text-slate-400 text-xs"
+                      className={`${editField} text-xs`}
                     />
                   </div>
                 ) : (
                   <>
-                    <div className="text-slate-200">{learning.insight}</div>
+                    <div className="break-words text-content">{learning.insight}</div>
                     {learning.context && (
-                      <div className="text-xs text-slate-500 mt-1">{learning.context}</div>
+                      <div className="mt-1 break-words text-xs text-content-subtle">{learning.context}</div>
                     )}
                   </>
                 )}
@@ -376,21 +397,22 @@ export function IngestPage() {
 
         {displayData.new_decisions && displayData.new_decisions.length > 0 && (
           <div className="mb-3">
-            <div className="text-xs font-medium text-slate-500 mb-1">New Decisions:</div>
+            <div className="mb-1 text-xs font-medium text-content-subtle">New Decisions:</div>
             {displayData.new_decisions.map((decision, i) => (
-              <div key={i} className="text-sm bg-slate-900/50 rounded p-2 mb-1">
+              <div key={i} className="mb-1 min-w-0 rounded bg-surface-sunken p-2 text-sm">
                 {isEditing ? (
                   <div className="space-y-2">
                     <div className="flex gap-2">
                       <textarea
                         value={decision.decision}
                         onChange={e => updateDecision(i, 'decision', e.target.value)}
-                        className="flex-1 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-slate-200 text-sm"
+                        className={`${editField} text-sm`}
                         rows={2}
                       />
                       <button
                         onClick={() => removeDecision(i)}
-                        className="text-red-400 hover:text-red-300 text-sm px-2"
+                        aria-label="Remove decision"
+                        className={removeButton}
                       >
                         ✕
                       </button>
@@ -400,14 +422,14 @@ export function IngestPage() {
                       value={decision.rationale || ''}
                       onChange={e => updateDecision(i, 'rationale', e.target.value)}
                       placeholder="Rationale (optional)"
-                      className="w-full bg-slate-800 border border-slate-600 rounded px-2 py-1 text-slate-400 text-xs"
+                      className={`${editField} text-xs`}
                     />
                   </div>
                 ) : (
                   <>
-                    <div className="text-slate-200">{decision.decision}</div>
+                    <div className="break-words text-content">{decision.decision}</div>
                     {decision.rationale && (
-                      <div className="text-xs text-slate-500 mt-1">{decision.rationale}</div>
+                      <div className="mt-1 break-words text-xs text-content-subtle">{decision.rationale}</div>
                     )}
                   </>
                 )}
@@ -418,20 +440,21 @@ export function IngestPage() {
 
         {displayData.new_open_questions && displayData.new_open_questions.length > 0 && (
           <div className="mb-3">
-            <div className="text-xs font-medium text-slate-500 mb-1">New Questions:</div>
+            <div className="mb-1 text-xs font-medium text-content-subtle">New Questions:</div>
             {displayData.new_open_questions.map((q, i) => (
-              <div key={i} className="text-sm text-slate-300 bg-slate-900/50 rounded p-2 mb-1">
+              <div key={i} className="mb-1 min-w-0 break-words rounded bg-surface-sunken p-2 text-sm text-content">
                 {isEditing ? (
                   <div className="flex gap-2">
                     <input
                       type="text"
                       value={q}
                       onChange={e => updateQuestion(i, e.target.value)}
-                      className="flex-1 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-slate-200 text-sm"
+                      className={`${editField} text-sm`}
                     />
                     <button
                       onClick={() => removeQuestion(i)}
-                      className="text-red-400 hover:text-red-300 text-sm px-2"
+                      aria-label="Remove question"
+                      className={removeButton}
                     >
                       ✕
                     </button>
@@ -446,28 +469,31 @@ export function IngestPage() {
 
         {displayData.new_links && displayData.new_links.length > 0 && (
           <div>
-            <div className="text-xs font-medium text-slate-500 mb-1">New Links:</div>
+            <div className="mb-1 text-xs font-medium text-content-subtle">New Links:</div>
             {displayData.new_links.map((link, i) => (
-              <div key={i} className="text-sm text-slate-300">
+              <div key={i} className="min-w-0 break-words text-sm text-content">
                 {isEditing ? (
-                  <div className="flex gap-2 mb-1">
+                  <div className="mb-1 flex flex-col gap-2 sm:flex-row">
                     <input
                       type="text"
                       value={link.id}
                       onChange={e => updateLink(i, 'id', e.target.value)}
                       placeholder="Link ID"
-                      className="w-1/3 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-slate-200 text-sm"
+                      aria-label="Link ID"
+                      className={`${editField} text-sm sm:w-1/3`}
                     />
                     <input
                       type="text"
                       value={link.relationship}
                       onChange={e => updateLink(i, 'relationship', e.target.value)}
                       placeholder="Relationship"
-                      className="flex-1 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-slate-200 text-sm"
+                      aria-label="Relationship"
+                      className={`${editField} text-sm`}
                     />
                     <button
                       onClick={() => removeLink(i)}
-                      className="text-red-400 hover:text-red-300 text-sm px-2"
+                      aria-label="Remove link"
+                      className={removeButton}
                     >
                       ✕
                     </button>
@@ -484,26 +510,20 @@ export function IngestPage() {
   };
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-100">Ingest</h1>
-          <p className="text-sm text-slate-400 mt-1">
+    <div className="min-w-0 space-y-6">
+      {/* Header - the status readout drops under the title at 320px */}
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-xl font-bold text-content-strong sm:text-2xl">Ingest</h1>
+          <p className="mt-1 text-sm text-content-muted">
             Add new entries and update related summaries
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <div
-            className={`w-2 h-2 rounded-full ${
-              ragConnected === null
-                ? 'bg-yellow-500'
-                : ragConnected
-                ? 'bg-green-500'
-                : 'bg-red-500'
-            }`}
+        <div className="flex items-center gap-2 sm:shrink-0">
+          <StatusIndicator
+            status={ragConnected === null ? 'unknown' : ragConnected ? 'online' : 'offline'}
           />
-          <span className="text-sm text-slate-400">
+          <span className="text-sm text-content-muted">
             {ragConnected === null
               ? 'Checking RAG...'
               : ragConnected
@@ -515,22 +535,23 @@ export function IngestPage() {
 
       {/* Error display */}
       {error && (
-        <div className="bg-red-900/50 border border-red-500 rounded-lg p-4 text-red-200">
-          {error}
-        </div>
+        <AlertBox variant="error">
+          <span className="block break-words">{error}</span>
+        </AlertBox>
       )}
 
       {/* Step: Select Entry */}
       {(state === 'idle' || state === 'selecting') && (
-        <div className="bg-slate-800 rounded-lg p-6">
-          <h2 className="text-lg font-medium text-slate-100 mb-4">
+        <div className={panel}>
+          <h2 className="mb-4 text-lg font-medium text-content-strong">
             1. Select an entry to ingest
           </h2>
 
           <select
+            aria-label="Entry to ingest"
             value={selectedEntry || ''}
             onChange={(e) => setSelectedEntry(e.target.value || null)}
-            className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-slate-100 mb-4"
+            className="mb-4 w-full rounded-lg border border-edge bg-surface-sunken px-4 py-3 text-content transition-colors hover:border-edge-strong focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/40"
           >
             <option value="">Select an entry...</option>
             {entries.map(entry => (
@@ -543,7 +564,7 @@ export function IngestPage() {
           <button
             onClick={() => { setState('selecting'); handleIngest(); }}
             disabled={!selectedEntry || !ragConnected}
-            className="bg-sky-500 hover:bg-sky-400 disabled:bg-slate-600 disabled:cursor-not-allowed px-6 py-3 rounded-lg font-medium transition-colors"
+            className={`w-full rounded-lg bg-accent px-6 py-3 font-medium text-accent-fg transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:bg-control disabled:text-content-subtle sm:w-auto ${focusRing}`}
           >
             Ingest Entry
           </button>
@@ -552,21 +573,21 @@ export function IngestPage() {
 
       {/* Step: Ingesting (async job in progress) */}
       {state === 'ingesting' && (
-        <div className="bg-slate-800 rounded-lg p-6">
-          <div className="flex items-center gap-3 mb-4">
+        <div className={panel}>
+          <div className="mb-4 flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-2">
-              <div className="w-3 h-3 bg-sky-500 rounded-full animate-pulse" />
-              <div className="w-3 h-3 bg-sky-500 rounded-full animate-pulse delay-75" />
-              <div className="w-3 h-3 bg-sky-500 rounded-full animate-pulse delay-150" />
+              <div className="h-3 w-3 animate-pulse rounded-full bg-accent" />
+              <div className="delay-75 h-3 w-3 animate-pulse rounded-full bg-accent" />
+              <div className="delay-150 h-3 w-3 animate-pulse rounded-full bg-accent" />
             </div>
-            <span className="text-slate-300">
+            <span className="min-w-0 break-words text-content">
               {progress || 'Starting...'}
             </span>
           </div>
           {progressDetail && progressDetail.total_steps > 0 && (
-            <div className="w-full bg-slate-700 rounded-full h-2">
+            <div className="h-2 w-full rounded-full bg-control">
               <div
-                className="bg-sky-500 h-2 rounded-full transition-all duration-500"
+                className="h-2 rounded-full bg-accent transition-all duration-500"
                 style={{ width: `${(progressDetail.current_step / progressDetail.total_steps) * 100}%` }}
               />
             </div>
@@ -576,22 +597,19 @@ export function IngestPage() {
 
       {/* Step: Review Proposals */}
       {state === 'reviewing' && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-medium text-slate-100">
+        <div className="min-w-0 space-y-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <h2 className="min-w-0 text-lg font-medium text-content-strong">
               2. Review Proposals ({proposals.length} found)
             </h2>
-            <div className="flex gap-2">
-              <button
-                onClick={handleReset}
-                className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm"
-              >
+            <div className="flex flex-wrap gap-2 sm:shrink-0">
+              <button onClick={handleReset} className={neutralButton}>
                 Start Over
               </button>
               <button
                 onClick={handleApplyApproved}
                 disabled={approvedProposals.size === 0 || loading}
-                className="px-4 py-2 bg-green-600 hover:bg-green-500 disabled:bg-slate-600 disabled:cursor-not-allowed rounded-lg text-sm font-medium"
+                className={`rounded-lg bg-green-700 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-green-800 disabled:cursor-not-allowed disabled:bg-control disabled:text-content-subtle dark:hover:bg-green-600 ${focusRing}`}
               >
                 Apply {approvedProposals.size} Approved
               </button>
@@ -599,7 +617,7 @@ export function IngestPage() {
           </div>
 
           {proposals.length === 0 ? (
-            <div className="bg-slate-800 rounded-lg p-6 text-center text-slate-400">
+            <div className={`${panel} text-center text-content-muted`}>
               No update proposals generated. The entry may not relate to existing summaries.
             </div>
           ) : (
@@ -612,26 +630,26 @@ export function IngestPage() {
 
       {/* Step: Applying */}
       {state === 'applying' && loading && (
-        <div className="bg-slate-800 rounded-lg p-6 text-center">
-          <div className="flex items-center justify-center gap-2 mb-4">
-            <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse" />
-            <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse delay-75" />
-            <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse delay-150" />
+        <div className={`${panel} text-center`}>
+          <div className="mb-4 flex items-center justify-center gap-2">
+            <div className="h-3 w-3 animate-pulse rounded-full bg-green-600 dark:bg-green-500" />
+            <div className="delay-75 h-3 w-3 animate-pulse rounded-full bg-green-600 dark:bg-green-500" />
+            <div className="delay-150 h-3 w-3 animate-pulse rounded-full bg-green-600 dark:bg-green-500" />
           </div>
-          <p className="text-slate-300">Applying approved proposals...</p>
+          <p className="text-content-muted">Applying approved proposals...</p>
         </div>
       )}
 
       {/* Step: Results */}
       {state === 'applying' && !loading && applyResults.length > 0 && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-medium text-slate-100">
+        <div className="min-w-0 space-y-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <h2 className="text-lg font-medium text-content-strong">
               3. Results
             </h2>
             <button
               onClick={handleReset}
-              className="px-4 py-2 bg-sky-500 hover:bg-sky-400 rounded-lg text-sm font-medium"
+              className={`rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-fg transition-colors hover:bg-accent-hover sm:shrink-0 ${focusRing}`}
             >
               Ingest Another
             </button>
@@ -641,23 +659,31 @@ export function IngestPage() {
             {applyResults.map((applyResult, index) => (
               <div
                 key={index}
-                className={`flex items-center justify-between p-4 rounded-lg ${
+                /* Target id and verdict only share a row from `sm`; an error
+                   message beside a long id does not fit 320px. */
+                className={`flex min-w-0 flex-col gap-2 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between ${
                   applyResult.success
-                    ? 'bg-green-900/30 border border-green-700'
-                    : 'bg-red-900/30 border border-red-700'
+                    ? 'border-green-300 bg-green-50 dark:border-green-700 dark:bg-green-900/30'
+                    : 'border-red-300 bg-red-50 dark:border-red-700 dark:bg-red-900/30'
                 }`}
               >
-                <div>
-                  <span className="font-medium">
+                <div className="min-w-0">
+                  <span className="break-all font-medium text-content">
                     {applyResult.proposal.target_summary_id}
                   </span>
                   {applyResult.error && (
-                    <span className="text-sm text-red-400 ml-2">
+                    <span className="ml-2 break-words text-sm text-red-700 dark:text-red-400">
                       {applyResult.error}
                     </span>
                   )}
                 </div>
-                <span className={applyResult.success ? 'text-green-400' : 'text-red-400'}>
+                <span
+                  className={`sm:shrink-0 ${
+                    applyResult.success
+                      ? 'text-green-700 dark:text-green-400'
+                      : 'text-red-700 dark:text-red-400'
+                  }`}
+                >
                   {applyResult.success ? '✓ Applied' : '✗ Failed'}
                 </span>
               </div>
