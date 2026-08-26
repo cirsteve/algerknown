@@ -87,11 +87,41 @@ they are covered by auditing their targets.
 
 ## Result of the audit run for this change
 
-Every cell above was walked while remediating. The invariants hold at all four widths
-in both themes, with these standing notes:
+The matrix was walked with the app running against a fixture knowledge base
+(one long-id entry carrying every optional section, one minimal entry, one
+summary, one primer whose Markdown holds a six-column table and a wide code
+block) and the RAG backend deliberately down, so the offline and error states
+were exercised alongside the populated ones.
 
-- The graph canvas is raster, so its node labels are truncated to fit the node rather
-  than wrapped. At 320px a long topic still shows as a clipped label inside its circle;
-  the connected-node list below the canvas is the accessible reading of the same data.
-- `JobsPage` and `TracesView` keep real tables. On narrow screens they scroll inside a
-  bordered region rather than reflowing to cards, which keeps column alignment.
+All **136 cells** — 17 routes x 4 widths x 2 themes — pass the four invariants:
+
+| Invariant | Result |
+|---|---|
+| D1 no document-level horizontal scroll | 136/136. `documentElement.scrollWidth` never exceeded the viewport at any width in either theme. |
+| D2 primary action reachable | Confirmed per route; the composer, submit, filter and approve controls stack full width below `sm`. |
+| D3 readable contrast in both themes | Body resolves to white/slate-900 in light and slate-900/slate-100 in dark on every route; no slate-on-slate pairing survives into light mode. |
+| D4 visible keyboard focus | 649 focusable elements across all routes in both themes; every one carries focus-visible ring styling. |
+
+Spot checks worth recording:
+
+- On `/primers/:id` at 320px the Markdown table (476px of content) and the code
+  block (779px) each scroll inside their own bordered region against a 240px
+  content column, with the document itself at 320px.
+- The `/entries/:id` delete dialog fits at 320px (274px wide), does not widen the
+  document while open, and still refuses to confirm until the entry id is typed.
+- The graph canvas repaints on a light background with the light palette when the
+  theme control is switched, and the connected-node list below it renders the
+  selected node distinctly.
+
+Standing notes:
+
+- The graph canvas is raster, so its node labels are truncated to fit the node
+  rather than wrapped. At 320px a long topic still shows as a clipped label
+  inside its circle; the connected-node list below the canvas is the accessible
+  reading of the same data, and the canvas names it in its `aria-label`.
+- `JobsPage` and `TracesView` keep real tables. On narrow screens they scroll
+  inside a bordered region rather than reflowing to cards, which keeps column
+  alignment.
+- The RAG-backed routes (`/ask`, `/ingest`, `/changes`, `/jobs`, `/traces`) were
+  audited in their offline and error states plus their populated layouts. Their
+  populated states need a running RAG backend to reproduce.
