@@ -6,7 +6,7 @@ import './index.css';
 import { ThemeProvider } from './context/ThemeContext';
 import { initZkbPath } from './lib/api';
 
-function render() {
+function render(): void {
   ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
       <ThemeProvider>

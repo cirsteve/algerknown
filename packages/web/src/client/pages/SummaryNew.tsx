@@ -146,7 +146,7 @@ export function SummaryNew() {
   const relevancePercent = (distance: number) =>
     Math.max(0, Math.round((1 - distance) * 100));
 
-  const relevanceColor = (relevance: number) =>
+  const relevanceColor = (relevance: number): string =>
     relevance >= 70
       ? 'text-green-700 dark:text-green-400'
       : relevance >= 40
