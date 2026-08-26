@@ -3,22 +3,21 @@ import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import './index.css';
-import { ThemeProvider, ThemeToggle } from './context/ThemeContext';
+import { ThemeProvider } from './context/ThemeContext';
 import { initZkbPath } from './lib/api';
 
 function render() {
   ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
       <ThemeProvider>
+        {/*
+          The theme control now lives in the app shell itself - the desktop
+          sidebar footer and the mobile header/drawer - so it is reachable from
+          every route without a floating control sitting on top of page content.
+        */}
         <BrowserRouter>
           <App />
         </BrowserRouter>
-        {/*
-          Floating until the app shell gains a header slot for it - the theme
-          control has to be reachable from every route for the preference to be
-          usable at all.
-        */}
-        <ThemeToggle className="fixed bottom-4 right-4 z-40 shadow-lg" />
       </ThemeProvider>
     </React.StrictMode>
   );
