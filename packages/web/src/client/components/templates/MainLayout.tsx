@@ -11,6 +11,11 @@ interface MainLayoutProps {
  *
  * This is the main structural template used across all pages.
  * It provides the sidebar navigation and main content area.
+ *
+ * The row only becomes a row at `md`; below that `Sidebar` contributes a sticky
+ * header and a drawer instead of a column, so main content gets the full width
+ * down to 320px. `min-w-0` keeps a wide child (a table, a long code block) from
+ * stretching the flex row into a document-level horizontal scroll.
  */
 export function MainLayout({ children }: MainLayoutProps) {
   const { activeCount } = useJobsContext();
@@ -31,9 +36,9 @@ export function MainLayout({ children }: MainLayoutProps) {
   ];
 
   return (
-    <div className="min-h-screen flex">
+    <div className="min-h-screen supports-[min-height:100dvh]:min-h-[100dvh] md:flex">
       <Sidebar navItems={navItems} />
-      <main className="flex-1 p-8 overflow-auto">
+      <main className="min-w-0 flex-1 overflow-auto p-4 md:p-8">
         {children}
       </main>
     </div>
