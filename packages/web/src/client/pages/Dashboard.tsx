@@ -1,6 +1,15 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, IndexEntryRef } from '../lib/api';
+import { TypeBadge } from '../components/atoms/Badge';
+import { AlertBox } from '../components/molecules/AlertBox';
+
+/*
+ * Stat tiles are one column at 320px and only spread out from `md`, which is
+ * also where the sidebar stops eating width. The two "by type" tiles keep two
+ * columns throughout - a count and a one-word label still fit at 160px.
+ */
+const statCard = 'min-w-0 rounded-lg border border-edge bg-surface-raised p-4 sm:p-6';
 
 export function Dashboard() {
   const [entries, setEntries] = useState<IndexEntryRef[]>([]);
@@ -27,14 +36,14 @@ export function Dashboard() {
   }, []);
 
   if (loading) {
-    return <div className="text-slate-400">Loading...</div>;
+    return <div className="text-content-muted">Loading...</div>;
   }
 
   if (error) {
     return (
-      <div className="bg-red-500/20 text-red-300 p-4 rounded-lg">
-        Error: {error}
-      </div>
+      <AlertBox variant="error">
+        <span className="block break-words">Error: {error}</span>
+      </AlertBox>
     );
   }
 
@@ -42,71 +51,70 @@ export function Dashboard() {
   const entryCount = entries.filter(e => e.type === 'entry').length;
 
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-3xl font-bold text-slate-100">Knowledge Base</h1>
-        <p className="text-slate-400 mt-2">Version {config?.version}</p>
+    <div className="min-w-0 space-y-8">
+      <div className="min-w-0">
+        <h1 className="text-2xl font-bold text-content-strong sm:text-3xl">Knowledge Base</h1>
+        <p className="mt-2 break-words text-content-muted">Version {config?.version}</p>
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-slate-800 rounded-lg p-6">
-          <div className="text-3xl font-bold text-sky-400">{config?.entryCount || 0}</div>
-          <div className="text-slate-400 mt-1">Total Items</div>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <div className={statCard}>
+          <div className="text-3xl font-bold text-sky-700 dark:text-sky-400">{config?.entryCount || 0}</div>
+          <div className="mt-1 text-content-muted">Total Items</div>
         </div>
-        <div className="bg-slate-800 rounded-lg p-6">
-          <div className="text-3xl font-bold text-blue-400">{summaryCount}</div>
-          <div className="text-slate-400 mt-1">Summaries</div>
+        <div className={statCard}>
+          <div className="text-3xl font-bold text-blue-700 dark:text-blue-400">{summaryCount}</div>
+          <div className="mt-1 text-content-muted">Summaries</div>
         </div>
-        <div className="bg-slate-800 rounded-lg p-6">
-          <div className="text-3xl font-bold text-green-400">{entryCount}</div>
-          <div className="text-slate-400 mt-1">Entries</div>
+        <div className={statCard}>
+          <div className="text-3xl font-bold text-green-700 dark:text-green-400">{entryCount}</div>
+          <div className="mt-1 text-content-muted">Entries</div>
         </div>
       </div>
 
       {/* Entry Types */}
-      <div>
-        <h2 className="text-xl font-semibold text-slate-200 mb-4">By Type</h2>
+      <div className="min-w-0">
+        <h2 className="mb-4 text-lg font-semibold text-content-strong sm:text-xl">By Type</h2>
         <div className="grid grid-cols-2 gap-4">
           <Link
             to="/entries?type=summary"
-            className="bg-slate-800 rounded-lg p-4 hover:bg-slate-700 transition-colors"
+            className="min-w-0 rounded-lg border border-edge bg-surface-raised p-4 transition-colors hover:bg-surface-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
           >
-            <div className="text-2xl font-bold text-blue-300">{summaryCount}</div>
-            <div className="text-slate-400">Summaries</div>
+            <div className="text-2xl font-bold text-blue-700 dark:text-blue-300">{summaryCount}</div>
+            <div className="text-content-muted">Summaries</div>
           </Link>
           <Link
             to="/entries?type=entry"
-            className="bg-slate-800 rounded-lg p-4 hover:bg-slate-700 transition-colors"
+            className="min-w-0 rounded-lg border border-edge bg-surface-raised p-4 transition-colors hover:bg-surface-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
           >
-            <div className="text-2xl font-bold text-green-300">{entryCount}</div>
-            <div className="text-slate-400">Entries</div>
+            <div className="text-2xl font-bold text-green-700 dark:text-green-300">{entryCount}</div>
+            <div className="text-content-muted">Entries</div>
           </Link>
         </div>
       </div>
 
       {/* Recent */}
-      <div>
-        <h2 className="text-xl font-semibold text-slate-200 mb-4">Recent Items</h2>
+      <div className="min-w-0">
+        <h2 className="mb-4 text-lg font-semibold text-content-strong sm:text-xl">Recent Items</h2>
         <div className="space-y-2">
           {entries.slice(0, 5).map(entry => (
             <Link
               key={entry.id}
               to={`/entries/${entry.id}`}
-              className="block bg-slate-800 rounded-lg p-4 hover:bg-slate-700 transition-colors"
+              className="block min-w-0 rounded-lg border border-edge bg-surface-raised p-4 transition-colors hover:bg-surface-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
             >
-              <div className="flex items-center justify-between">
-                <span className="font-medium">{entry.id}</span>
-                <span className={`entry-type-badge ${
-                  entry.type === 'summary' 
-                    ? 'bg-blue-500/20 text-blue-300'
-                    : 'bg-green-500/20 text-green-300'
-                }`}>
-                  {entry.type}
-                </span>
+              {/* An id can be long enough to squeeze the badge off the row, so it
+                  truncates and the badge refuses to shrink. */}
+              <div className="flex items-center justify-between gap-3">
+                <span className="min-w-0 truncate font-medium text-content">{entry.id}</span>
+                <TypeBadge type={entry.type} className="flex-shrink-0" />
               </div>
             </Link>
           ))}
+          {entries.length === 0 && (
+            <p className="text-content-muted">No items yet.</p>
+          )}
         </div>
       </div>
     </div>

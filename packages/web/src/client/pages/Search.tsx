@@ -1,6 +1,12 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, SearchResult } from '../lib/api';
+import { Badge } from '../components/atoms/Badge';
+
+const typeVariant: Record<string, 'info' | 'primary' | 'success'> = {
+  summary: 'info',
+  primer: 'primary',
+};
 
 export function Search() {
   const [query, setQuery] = useState('');
@@ -27,23 +33,30 @@ export function Search() {
     }
   };
 
-  return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-slate-100">Search</h1>
+  const fieldStyles =
+    'w-full rounded-lg border border-edge bg-surface-raised text-content transition-colors placeholder:text-content-subtle hover:border-edge-strong focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/40';
 
+  return (
+    <div className="min-w-0 space-y-6">
+      <h1 className="text-xl font-bold text-content-strong sm:text-2xl">Search</h1>
+
+      {/* Query, filter and submit only fit one row from `sm`; below that they
+          stack full width so the submit button stays reachable at 320px. */}
       <form onSubmit={handleSearch} className="space-y-4">
-        <div className="flex gap-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:gap-4">
           <input
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search entries..."
-            className="flex-1 bg-slate-800 border border-slate-600 rounded-lg px-4 py-3 text-slate-100 focus:outline-none focus:border-sky-500"
+            aria-label="Search query"
+            className={`${fieldStyles} px-4 py-3 sm:flex-1`}
           />
           <select
             value={typeFilter}
             onChange={(e) => setTypeFilter(e.target.value as 'summary' | 'entry' | 'primer' | '')}
-            className="bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-slate-100"
+            aria-label="Filter by type"
+            className={`${fieldStyles} px-3 py-2 sm:w-auto`}
           >
             <option value="">All Types</option>
             <option value="summary">Summaries</option>
@@ -53,7 +66,7 @@ export function Search() {
           <button
             type="submit"
             disabled={loading}
-            className="bg-sky-500 hover:bg-sky-400 disabled:bg-slate-600 px-6 py-3 rounded-lg font-medium transition-colors"
+            className="rounded-lg bg-accent px-6 py-3 font-medium text-accent-fg transition-colors hover:bg-accent-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface disabled:cursor-not-allowed disabled:bg-control disabled:text-content-subtle sm:shrink-0"
           >
             {loading ? 'Searching...' : 'Search'}
           </button>
@@ -61,7 +74,7 @@ export function Search() {
       </form>
 
       {searched && (
-        <div className="text-sm text-slate-400">
+        <div className="break-words text-sm text-content-muted">
           {results.length} result{results.length !== 1 ? 's' : ''} for "{query}"
         </div>
       )}
@@ -71,29 +84,23 @@ export function Search() {
           <Link
             key={result.id}
             to={result.type === 'primer' ? `/primers/${encodeURIComponent(result.id)}` : `/entries/${encodeURIComponent(result.id)}`}
-            className="block bg-slate-800 rounded-lg p-4 hover:bg-slate-700 transition-colors"
+            className="block min-w-0 rounded-lg border border-edge bg-surface-raised p-4 transition-colors hover:bg-surface-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
           >
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                <h3 className="font-medium text-slate-100">{result.topic}</h3>
-                <p className="text-sm text-slate-400 mt-1">{result.id}</p>
+            {/* Badge and score move under the text at 320px rather than
+                squeezing the topic into a couple of characters. */}
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0 flex-1">
+                <h3 className="break-words font-medium text-content">{result.topic}</h3>
+                <p className="mt-1 break-all text-sm text-content-muted">{result.id}</p>
                 {result.snippet && (
-                  <p className="text-sm text-slate-500 mt-2 line-clamp-2">
+                  <p className="mt-2 line-clamp-2 break-words text-sm text-content-subtle">
                     {result.snippet}
                   </p>
                 )}
               </div>
-              <div className="flex items-center gap-2 ml-4">
-                <span className={`entry-type-badge ${
-                  result.type === 'summary'
-                    ? 'bg-blue-500/20 text-blue-300'
-                    : result.type === 'primer'
-                      ? 'bg-cyan-500/20 text-cyan-300'
-                      : 'bg-green-500/20 text-green-300'
-                }`}>
-                  {result.type}
-                </span>
-                <span className="text-xs text-slate-500">
+              <div className="flex flex-shrink-0 items-center gap-2 sm:ml-4">
+                <Badge variant={typeVariant[result.type] ?? 'success'}>{result.type}</Badge>
+                <span className="text-xs text-content-subtle">
                   {Math.round(result.score * 100)}%
                 </span>
               </div>
@@ -103,7 +110,7 @@ export function Search() {
       </div>
 
       {searched && results.length === 0 && !loading && (
-        <div className="text-center text-slate-400 py-8">
+        <div className="break-words py-8 text-center text-content-muted">
           No results found for "{query}"
         </div>
       )}
