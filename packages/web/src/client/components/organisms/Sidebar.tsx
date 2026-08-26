@@ -10,8 +10,7 @@ import {
 import { Link, useLocation } from 'react-router-dom';
 import { NavItem, NavGroup } from '../molecules/NavItem';
 import { StatusIndicator } from '../atoms/StatusIndicator';
-import { checkRagConnection, getRagApiUrl, setRagApiUrl } from '../../lib/ragApi';
-import { Input } from '../atoms/Input';
+import { checkRagConnection, getRagApiUrl } from '../../lib/ragApi';
 import { Button } from '../atoms/Button';
 import { useTheme, type ThemePreference } from '../../context/ThemeContext';
 
@@ -183,21 +182,20 @@ function NavList({ navItems, connection, onNavigate }: NavListProps) {
 }
 
 /**
- * RagStatusFooter - connection readout plus the backend URL settings popover.
+ * RagStatusFooter - connection readout plus backend details.
  *
- * Each mount keeps its own popover state, but they all read and write the one
- * shared connection from `useRagConnection`.
+ * Each mount keeps its own popover state, but they all read the one shared
+ * connection from `useRagConnection`.
+ *
+ * The endpoint is shown, not edited. RAG requests are proxied through the web
+ * server, so `getRagApiUrl()` is the fixed `/rag` prefix and `setRagApiUrl` is a
+ * no-op - an editable field and a "Save" button here would only pretend to
+ * reconfigure anything. Re-checking the connection is the one action that was
+ * ever real, so that is the one the popover offers.
  */
 function RagStatusFooter({ connection }: { connection: RagConnection }) {
   const { connected, documentsIndexed, checking, status, refresh } = connection;
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [apiUrl, setApiUrl] = useState(getRagApiUrl());
-
-  const handleSaveUrl = () => {
-    setRagApiUrl(apiUrl);
-    setSettingsOpen(false);
-    refresh();
-  };
 
   return (
     <div className="relative">
@@ -222,41 +220,36 @@ function RagStatusFooter({ connection }: { connection: RagConnection }) {
 
       {settingsOpen && (
         <div className="absolute bottom-full left-0 right-0 z-50 mb-2 rounded-lg border border-edge bg-surface-raised p-4 shadow-xl">
-          <h3 className="mb-3 font-medium text-content-strong">RAG Backend Settings</h3>
+          <h3 className="mb-3 font-medium text-content-strong">RAG Backend</h3>
 
           <div className="space-y-3">
             <div>
-              <label className="mb-1 block text-xs text-content-muted">
-                API URL
-              </label>
-              <Input
-                type="text"
-                value={apiUrl}
-                onChange={(e) => setApiUrl(e.target.value)}
-                placeholder="http://localhost:4735"
-                inputSize="sm"
-              />
+              <span className="mb-1 block text-xs text-content-muted">Endpoint</span>
+              <p className="break-all rounded border border-edge bg-surface-sunken px-2 py-1 font-mono text-sm text-content">
+                {getRagApiUrl()}
+              </p>
             </div>
+
+            <p className="text-xs text-content-subtle">
+              Requests are proxied through the web server, so the endpoint is fixed.
+            </p>
 
             <div className="flex flex-wrap gap-2">
               <Button
-                onClick={handleSaveUrl}
+                onClick={() => refresh()}
                 size="sm"
+                loading={checking}
                 className="flex-1"
               >
-                Save &amp; Reconnect
+                Retry
               </Button>
               <Button
                 variant="secondary"
                 size="sm"
                 onClick={() => setSettingsOpen(false)}
               >
-                Cancel
+                Close
               </Button>
-            </div>
-
-            <div className="break-all text-xs text-content-subtle">
-              Current: {getRagApiUrl()}
             </div>
           </div>
         </div>

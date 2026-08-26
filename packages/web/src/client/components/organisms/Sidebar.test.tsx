@@ -187,6 +187,29 @@ describe('Sidebar shell', () => {
     expect(document.activeElement).toBe(last);
   });
 
+  it('shows the proxied endpoint read-only instead of a settings form that does nothing', async () => {
+    await renderShell();
+    await userEvent.click(openMenu());
+
+    const panel = within(drawer()!);
+    await userEvent.click(panel.getByRole('button', { name: /RAG \(12 docs\)/ }));
+
+    // setRagApiUrl is a no-op and the endpoint is fixed by the server-side
+    // proxy, so an editable field and a Save button would only pretend to
+    // reconfigure it.
+    expect(panel.queryByRole('textbox')).toBeNull();
+    expect(panel.queryByRole('button', { name: /save/i })).toBeNull();
+    expect(panel.getByText('http://localhost:4735')).toBeDefined();
+
+    // Re-checking the connection is the one action that was ever real.
+    vi.mocked(checkRagConnection).mockClear();
+    await userEvent.click(panel.getByRole('button', { name: 'Retry' }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(checkRagConnection).toHaveBeenCalled();
+  });
+
   it('offers the theme control in every navigation surface', async () => {
     const { container } = await renderShell();
 
