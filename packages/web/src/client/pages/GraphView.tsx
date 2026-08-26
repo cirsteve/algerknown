@@ -194,11 +194,21 @@ export function GraphView() {
 
     draw();
 
-    // The box is viewport-relative, so a rotation or a resize changes its size
-    // without changing any of this effect's dependencies.
-    const observer = new ResizeObserver(draw);
-    observer.observe(canvas);
-    return () => observer.disconnect();
+    /*
+     * The box is viewport-relative, so a rotation or a resize changes its size
+     * without changing any of this effect's dependencies. ResizeObserver is the
+     * accurate signal - it also catches layout changes the window never sees -
+     * but constructing it must not be able to throw out of this effect, or an
+     * engine without it loses the whole route rather than just live resizing.
+     */
+    if (typeof ResizeObserver === 'function') {
+      const observer = new ResizeObserver(draw);
+      observer.observe(canvas);
+      return () => observer.disconnect();
+    }
+
+    window.addEventListener('resize', draw);
+    return () => window.removeEventListener('resize', draw);
   }, [graph, selectedEntry, theme]);
 
   return (

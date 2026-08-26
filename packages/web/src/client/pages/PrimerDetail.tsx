@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactElement, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -12,7 +12,7 @@ import { AlertBox } from '../components/molecules/AlertBox';
  * while leaving the table's own alignment intact.
  */
 const markdownComponents = {
-  table: ({ children }: { children?: ReactNode }) => (
+  table: ({ children }: { children?: ReactNode }): ReactElement => (
     <div className="my-5 overflow-x-auto rounded-lg border border-edge">
       {/* `!my-0` overrides the stylesheet's own table margin, which would
           otherwise show up as padding inside the scroll box. */}

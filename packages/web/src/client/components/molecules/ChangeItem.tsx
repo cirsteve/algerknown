@@ -92,7 +92,9 @@ function DiffBlock({ variant, value }: DiffBlockProps) {
   return (
     <div className={`mt-2 border rounded p-2 text-sm ${diffBg}`}>
       <span className={diffText}>{icon} </span>
-      <span className="text-content">{formatValue(value)}</span>
+      {/* formatValue pretty-prints objects, so the newlines and indentation
+          have to survive; break-words handles a long unbroken scalar. */}
+      <span className="whitespace-pre-wrap break-words text-content">{formatValue(value)}</span>
     </div>
   );
 }

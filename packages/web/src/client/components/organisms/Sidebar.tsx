@@ -94,7 +94,10 @@ type RagConnection = ReturnType<typeof useRagConnection>;
 const THEME_CHOICES: ReadonlyArray<{ value: ThemePreference; label: string; icon: string }> = [
   { value: 'light', label: 'Light', icon: '☀' },
   { value: 'dark', label: 'Dark', icon: '☾' },
-  { value: 'system', label: 'System', icon: '🖵' },
+  // U+25D0, not U+1F5B5 FRAME ON SCREEN: that codepoint is missing from many
+  // system font stacks, and the label only renders for the selected option, so
+  // anyone not on System would see a lone missing-glyph box.
+  { value: 'system', label: 'System', icon: '◐' },
 ];
 
 /**
