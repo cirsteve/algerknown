@@ -22,6 +22,10 @@ interface PageLayoutProps {
  * - Page header with title, subtitle, back link, and actions
  * - Loading and error states
  * - Main content area
+ *
+ * `min-w-0` on the column stops a wide child from stretching the page past the
+ * viewport; error text gets `break-words` because failures often carry an
+ * unbroken URL or path that would otherwise not fit at 320px.
  */
 export function PageLayout({
   title,
@@ -36,7 +40,7 @@ export function PageLayout({
 }: PageLayoutProps) {
   if (loading) {
     return (
-      <div className={`space-y-6 ${className}`}>
+      <div className={`min-w-0 space-y-6 ${className}`}>
         <LoadingState message={loadingMessage} />
       </div>
     );
@@ -44,20 +48,22 @@ export function PageLayout({
 
   if (error) {
     return (
-      <div className={`space-y-6 ${className}`}>
+      <div className={`min-w-0 space-y-6 ${className}`}>
         <PageHeader 
           title={title}
           subtitle={subtitle}
           backLink={backLink}
           actions={actions}
         />
-        <AlertBox variant="error">{error}</AlertBox>
+        <AlertBox variant="error">
+          <span className="block break-words">{error}</span>
+        </AlertBox>
       </div>
     );
   }
 
   return (
-    <div className={`space-y-6 ${className}`}>
+    <div className={`min-w-0 space-y-6 ${className}`}>
       <PageHeader 
         title={title} 
         subtitle={subtitle}
@@ -80,9 +86,9 @@ interface ContentSectionProps {
  */
 export function ContentSection({ title, children, className = '' }: ContentSectionProps) {
   return (
-    <section className={className}>
+    <section className={`min-w-0 ${className}`}>
       {title && (
-        <h2 className="text-xl font-semibold text-slate-200 mb-4">{title}</h2>
+        <h2 className="mb-4 text-lg font-semibold text-content-strong sm:text-xl">{title}</h2>
       )}
       {children}
     </section>
@@ -100,9 +106,9 @@ interface CardSectionProps {
  */
 export function CardSection({ title, children, className = '' }: CardSectionProps) {
   return (
-    <section className={`bg-slate-800 rounded-lg p-6 ${className}`}>
+    <section className={`min-w-0 rounded-lg border border-edge bg-surface-raised p-4 sm:p-6 ${className}`}>
       {title && (
-        <h2 className="text-lg font-semibold text-slate-200 mb-4">{title}</h2>
+        <h2 className="mb-4 text-base font-semibold text-content-strong sm:text-lg">{title}</h2>
       )}
       {children}
     </section>

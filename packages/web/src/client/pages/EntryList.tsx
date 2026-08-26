@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { api, IndexEntryRef } from '../lib/api';
 import { EntryCard } from '../components/EntryCard';
+import { AlertBox } from '../components/molecules/AlertBox';
 
 export function EntryList() {
   const [searchParams] = useSearchParams();
@@ -44,32 +45,35 @@ export function EntryList() {
   }, [filteredEntries, selectedType]);
 
   if (loading) {
-    return <div className="text-slate-400">Loading...</div>;
+    return <div className="text-content-muted">Loading...</div>;
   }
 
   if (error) {
     return (
-      <div className="bg-red-500/20 text-red-300 p-4 rounded-lg">
-        Error: {error}
-      </div>
+      <AlertBox variant="error">
+        <span className="block break-words">Error: {error}</span>
+      </AlertBox>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-slate-100">Entries</h1>
-        <div className="flex gap-4">
+    <div className="min-w-0 space-y-6">
+      {/* The action pair needs about 24rem beside the title, so it only shares
+          the row from `sm`. Below that both controls go full width. */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="min-w-0 text-xl font-bold text-content-strong sm:text-2xl">Entries</h1>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
           <Link
             to="/entries/new"
-            className="bg-sky-600 hover:bg-sky-500 text-white px-4 py-2 rounded-lg text-sm font-medium"
+            className="inline-flex items-center justify-center rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-fg transition-colors hover:bg-accent-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
           >
             + New Entry
           </Link>
           <select
+            aria-label="Filter by type"
             value={selectedType}
             onChange={(e) => setSelectedType(e.target.value)}
-            className="bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-slate-100"
+            className="w-full rounded-lg border border-edge bg-surface-raised px-3 py-2 text-content transition-colors hover:border-edge-strong focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/40 sm:w-auto"
           >
             <option value="">All Types</option>
             <option value="summary">Summaries</option>
@@ -78,14 +82,14 @@ export function EntryList() {
         </div>
       </div>
 
-      <div className="text-sm text-slate-400">
+      <div className="text-sm text-content-muted">
         Showing {filteredEntries.length} of {entries.length} entries
       </div>
 
       {summaryEntries.length > 0 && (
-        <section className="space-y-4">
-          <h2 className="text-xl font-semibold text-slate-200">Summaries</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <section className="min-w-0 space-y-4">
+          <h2 className="text-lg font-semibold text-content-strong sm:text-xl">Summaries</h2>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             {summaryEntries.map(entry => (
               <EntryCard key={entry.id} entry={entry} />
             ))}
@@ -94,9 +98,9 @@ export function EntryList() {
       )}
 
       {journalEntries.length > 0 && (
-        <section className="space-y-4">
-          <h2 className="text-xl font-semibold text-slate-200">Journal Entries</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <section className="min-w-0 space-y-4">
+          <h2 className="text-lg font-semibold text-content-strong sm:text-xl">Journal Entries</h2>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             {journalEntries.map(entry => (
               <EntryCard key={entry.id} entry={entry} />
             ))}
@@ -105,7 +109,7 @@ export function EntryList() {
       )}
 
       {filteredEntries.length === 0 && (
-        <div className="text-center text-slate-400 py-8">
+        <div className="py-8 text-center text-content-muted">
           No entries found
         </div>
       )}

@@ -5,14 +5,23 @@ import { Spinner } from './Spinner';
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'success';
 type ButtonSize = 'sm' | 'md' | 'lg';
 
-const baseStyles = 'inline-flex items-center justify-center font-medium transition-colors rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 disabled:opacity-50 disabled:cursor-not-allowed';
+const baseStyles = [
+  'inline-flex items-center justify-center font-medium transition-colors rounded-lg',
+  'focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-surface',
+  'disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none',
+].join(' ');
 
+/*
+ * Neutral variants ride the semantic control/content tokens so they follow the
+ * scheme automatically. Destructive and success fills keep an explicit hue -
+ * the shade is chosen so white text clears AA against it in both schemes.
+ */
 const variantStyles: Record<ButtonVariant, string> = {
-  primary: 'bg-sky-500 hover:bg-sky-400 text-white focus:ring-sky-500',
-  secondary: 'bg-slate-700 hover:bg-slate-600 text-slate-100 focus:ring-slate-500',
-  ghost: 'bg-transparent hover:bg-slate-700 text-slate-300 focus:ring-slate-500',
-  danger: 'bg-red-600 hover:bg-red-500 text-white focus:ring-red-500',
-  success: 'bg-green-600 hover:bg-green-500 text-white focus:ring-green-500',
+  primary: 'bg-accent hover:bg-accent-hover active:bg-accent-hover text-accent-fg focus-visible:ring-accent',
+  secondary: 'bg-control hover:bg-control-hover active:bg-control-active text-content focus-visible:ring-accent',
+  ghost: 'bg-transparent hover:bg-control active:bg-control-hover text-content-muted hover:text-content focus-visible:ring-accent',
+  danger: 'bg-red-600 hover:bg-red-700 active:bg-red-800 dark:hover:bg-red-500 dark:active:bg-red-400 text-white focus-visible:ring-red-500',
+  success: 'bg-green-700 hover:bg-green-800 active:bg-green-900 dark:hover:bg-green-600 dark:active:bg-green-500 text-white focus-visible:ring-green-600',
 };
 
 const sizeStyles: Record<ButtonSize, string> = {

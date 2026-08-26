@@ -2,21 +2,83 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --bg-primary: #0f172a;
-  --bg-secondary: #1e293b;
-  --text-primary: #f1f5f9;
-  --text-secondary: #94a3b8;
-  --accent: #38bdf8;
-  --accent-hover: #7dd3fc;
-}
+@layer base {
+  /*
+   * Semantic theme contract. Values are space-separated RGB triples so the
+   * Tailwind tokens in `tailwind.config.js` can apply `<alpha-value>` modifiers.
+   * `:root` carries the light scheme; `.dark` on <html> swaps in the dark one.
+   */
+  :root {
+    color-scheme: light;
 
-body {
-  @apply bg-slate-900 text-slate-100 font-sans;
+    --surface: 255 255 255;          /* white       */
+    --surface-raised: 248 250 252;   /* slate-50    */
+    --surface-hover: 241 245 249;    /* slate-100   */
+    --surface-sunken: 241 245 249;   /* slate-100   */
+    --surface-muted: 226 232 240;    /* slate-200   */
+
+    --content: 15 23 42;             /* slate-900   */
+    --content-strong: 2 6 23;        /* slate-950   */
+    --content-muted: 71 85 105;      /* slate-600   */
+    --content-subtle: 100 116 139;   /* slate-500   */
+
+    --edge: 226 232 240;             /* slate-200   */
+    --edge-strong: 203 213 225;      /* slate-300   */
+
+    --control: 226 232 240;          /* slate-200   */
+    --control-hover: 203 213 225;    /* slate-300   */
+    --control-active: 148 163 184;   /* slate-400   */
+
+    --accent: 3 105 161;             /* sky-700     */
+    --accent-hover: 7 89 133;        /* sky-800     */
+    --accent-fg: 255 255 255;        /* white       */
+
+    --link: 3 105 161;               /* sky-700     */
+    --link-hover: 12 74 110;         /* sky-900     */
+  }
+
+  .dark {
+    color-scheme: dark;
+
+    --surface: 15 23 42;             /* slate-900   */
+    --surface-raised: 30 41 59;      /* slate-800   */
+    --surface-hover: 51 65 85;       /* slate-700   */
+    --surface-sunken: 2 6 23;        /* slate-950   */
+    --surface-muted: 51 65 85;       /* slate-700   */
+
+    --content: 241 245 249;          /* slate-100   */
+    --content-strong: 248 250 252;   /* slate-50    */
+    --content-muted: 203 213 225;    /* slate-300   */
+    --content-subtle: 148 163 184;   /* slate-400   */
+
+    --edge: 51 65 85;                /* slate-700   */
+    --edge-strong: 71 85 105;        /* slate-600   */
+
+    --control: 51 65 85;             /* slate-700   */
+    --control-hover: 71 85 105;      /* slate-600   */
+    --control-active: 100 116 139;   /* slate-500   */
+
+    --accent: 14 165 233;            /* sky-500     */
+    --accent-hover: 56 189 248;      /* sky-400     */
+    --accent-fg: 2 6 23;             /* slate-950   */
+
+    --link: 56 189 248;              /* sky-400     */
+    --link-hover: 125 211 252;       /* sky-300     */
+  }
+
+  html {
+    @apply bg-surface;
+  }
+
+  body {
+    @apply bg-surface text-content font-sans antialiased;
+  }
 }
 
 .entry-card {
-  @apply bg-slate-800 rounded-lg p-4 hover:bg-slate-700 transition-colors cursor-pointer;
+  @apply block rounded-lg border border-edge bg-surface-raised p-4 transition-colors cursor-pointer
+         hover:bg-surface-hover
+         focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface;
 }
 
 .entry-type-badge {
@@ -24,41 +86,46 @@ body {
 }
 
 .entry-type-concept {
-  @apply bg-blue-500/20 text-blue-300;
+  @apply bg-blue-100 text-blue-800 dark:bg-blue-500/20 dark:text-blue-300;
 }
 
 .entry-type-project {
-  @apply bg-green-500/20 text-green-300;
+  @apply bg-green-100 text-green-800 dark:bg-green-500/20 dark:text-green-300;
 }
 
 .entry-type-insight {
-  @apply bg-purple-500/20 text-purple-300;
+  @apply bg-purple-100 text-purple-800 dark:bg-purple-500/20 dark:text-purple-300;
 }
 
 .entry-type-question {
-  @apply bg-yellow-500/20 text-yellow-300;
+  @apply bg-yellow-100 text-yellow-800 dark:bg-yellow-500/20 dark:text-yellow-300;
 }
 
 .entry-type-resource {
-  @apply bg-orange-500/20 text-orange-300;
+  @apply bg-orange-100 text-orange-800 dark:bg-orange-500/20 dark:text-orange-300;
 }
 
 .link-badge {
-  @apply text-xs px-2 py-0.5 rounded bg-slate-600 text-slate-300;
+  @apply text-xs px-2 py-0.5 rounded bg-control text-content transition-colors hover:bg-control-hover;
 }
 
-.primer-markdown { @apply text-base leading-7 text-slate-200; }
-.primer-markdown h1 { @apply mb-5 mt-8 text-3xl font-bold text-slate-50; }
-.primer-markdown h2 { @apply mb-4 mt-8 border-b border-slate-700 pb-2 text-2xl font-semibold text-slate-100; }
-.primer-markdown h3 { @apply mb-3 mt-6 text-xl font-semibold text-slate-100; }
+.primer-markdown { @apply text-base leading-7 text-content; }
+.primer-markdown h1 { @apply mb-5 mt-8 text-3xl font-bold text-content-strong; }
+.primer-markdown h2 { @apply mb-4 mt-8 border-b border-edge pb-2 text-2xl font-semibold text-content-strong; }
+.primer-markdown h3 { @apply mb-3 mt-6 text-xl font-semibold text-content-strong; }
 .primer-markdown p { @apply my-4; }
 .primer-markdown ul { @apply my-4 list-disc space-y-1 pl-6; }
 .primer-markdown ol { @apply my-4 list-decimal space-y-1 pl-6; }
-.primer-markdown a { @apply text-sky-400 underline hover:text-sky-300; }
-.primer-markdown blockquote { @apply my-4 border-l-4 border-slate-600 pl-4 text-slate-400; }
-.primer-markdown code { @apply rounded bg-slate-900 px-1.5 py-0.5 text-sm text-sky-200; }
-.primer-markdown pre { @apply my-4 overflow-x-auto rounded-lg bg-slate-950 p-4; }
-.primer-markdown pre code { @apply bg-transparent p-0; }
+.primer-markdown a {
+  @apply rounded-sm text-link underline underline-offset-2 transition-colors hover:text-link-hover
+         focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface;
+}
+.primer-markdown blockquote { @apply my-4 border-l-4 border-edge-strong pl-4 text-content-muted; }
+.primer-markdown code { @apply rounded bg-surface-sunken px-1.5 py-0.5 text-sm text-sky-700 dark:text-sky-300; }
+.primer-markdown pre { @apply my-4 overflow-x-auto rounded-lg border border-edge bg-surface-sunken p-4; }
+.primer-markdown pre code { @apply border-0 bg-transparent p-0; }
 .primer-markdown table { @apply my-5 w-full border-collapse; }
-.primer-markdown th, .primer-markdown td { @apply border border-slate-600 px-3 py-2 text-left; }
+.primer-markdown th, .primer-markdown td { @apply border border-edge-strong px-3 py-2 text-left; }
+.primer-markdown th { @apply bg-surface-hover font-semibold text-content-strong; }
 .primer-markdown img { @apply my-5 max-w-full rounded; }
+.primer-markdown hr { @apply my-8 border-edge; }

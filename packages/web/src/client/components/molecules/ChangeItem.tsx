@@ -7,22 +7,22 @@ interface ChangeItemProps {
 
 const typeConfig = {
   added: {
-    color: 'bg-green-600 text-green-100',
+    color: 'bg-green-700 text-white dark:bg-green-600 dark:text-green-50',
     icon: '+',
-    diffBg: 'bg-green-900/30 border-green-800',
-    diffText: 'text-green-400',
+    diffBg: 'bg-green-50 border-green-300 dark:bg-green-900/30 dark:border-green-800',
+    diffText: 'text-green-700 dark:text-green-400',
   },
   modified: {
-    color: 'bg-yellow-600 text-yellow-100',
+    color: 'bg-yellow-700 text-white dark:bg-yellow-600 dark:text-yellow-50',
     icon: '~',
-    diffBg: 'bg-yellow-900/30 border-yellow-800',
-    diffText: 'text-yellow-400',
+    diffBg: 'bg-yellow-50 border-yellow-300 dark:bg-yellow-900/30 dark:border-yellow-800',
+    diffText: 'text-yellow-800 dark:text-yellow-400',
   },
   removed: {
-    color: 'bg-red-600 text-red-100',
+    color: 'bg-red-700 text-white dark:bg-red-600 dark:text-red-50',
     icon: '-',
-    diffBg: 'bg-red-900/30 border-red-800',
-    diffText: 'text-red-400',
+    diffBg: 'bg-red-50 border-red-300 dark:bg-red-900/30 dark:border-red-800',
+    diffText: 'text-red-700 dark:text-red-400',
   },
 } as const;
 
@@ -44,7 +44,7 @@ export function ChangeItem({ change, className = '' }: ChangeItemProps) {
   const config = typeConfig[change.type as keyof typeof typeConfig] || typeConfig.modified;
 
   return (
-    <div className={`bg-slate-800 border border-slate-700 rounded-lg p-4 ${className}`}>
+    <div className={`bg-surface-raised border border-edge rounded-lg p-4 ${className}`}>
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
           <span
@@ -53,8 +53,8 @@ export function ChangeItem({ change, className = '' }: ChangeItemProps) {
             {config.icon}
           </span>
           <div>
-            <div className="font-mono text-sm text-sky-400">{change.path}</div>
-            <div className="text-xs text-slate-500">{formatTimestamp(change.timestamp)}</div>
+            <div className="font-mono text-sm text-link">{change.path}</div>
+            <div className="text-xs text-content-subtle">{formatTimestamp(change.timestamp)}</div>
           </div>
         </div>
       </div>
@@ -87,15 +87,12 @@ interface DiffBlockProps {
  * DiffBlock molecule - Shows added or removed content
  */
 function DiffBlock({ variant, value }: DiffBlockProps) {
-  const isAdded = variant === 'added';
-  const bgClass = isAdded ? 'bg-green-900/30 border-green-800' : 'bg-red-900/30 border-red-800';
-  const textClass = isAdded ? 'text-green-400' : 'text-red-400';
-  const prefix = isAdded ? '+' : '-';
+  const { diffBg, diffText, icon } = typeConfig[variant];
 
   return (
-    <div className={`mt-2 border rounded p-2 text-sm ${bgClass}`}>
-      <span className={textClass}>{prefix} </span>
-      <span className="text-slate-300">{formatValue(value)}</span>
+    <div className={`mt-2 border rounded p-2 text-sm ${diffBg}`}>
+      <span className={diffText}>{icon} </span>
+      <span className="text-content">{formatValue(value)}</span>
     </div>
   );
 }
