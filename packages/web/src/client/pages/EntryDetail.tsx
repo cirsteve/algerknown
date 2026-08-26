@@ -2,8 +2,39 @@ import { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { api, Entry, Link as EntryLink } from '../lib/api';
 import { HistoryTab } from '../components/HistoryTab';
+import { Badge, TypeBadge } from '../components/atoms/Badge';
+import { AlertBox } from '../components/molecules/AlertBox';
+import { ConfirmDialog } from '../components/molecules/ConfirmDialog';
+import { Tab, TabBar } from '../components/molecules/TabBar';
 
 type TabType = 'content' | 'history';
+
+/*
+ * Every section is a card on the page surface. `min-w-0` is what stops a long
+ * artifact path or a wide code fragment inside one from stretching the column
+ * and taking the whole document past the viewport at 320px.
+ */
+const card = 'min-w-0 rounded-lg border border-edge bg-surface-raised p-4 sm:p-6';
+
+/* Section headings keep their hue as the semantic - a darker shade carries it
+ * on white, a lighter one on the dark surface. */
+const headings = {
+  worked: 'text-green-700 dark:text-green-400',
+  failed: 'text-red-700 dark:text-red-400',
+  surprised: 'text-purple-700 dark:text-purple-400',
+  learnings: 'text-indigo-800 dark:text-indigo-200',
+  decisions: 'text-teal-800 dark:text-teal-200',
+  questions: 'text-amber-800 dark:text-amber-200',
+};
+
+const headerAction =
+  'rounded-lg bg-control px-4 py-2 text-sm text-content transition-colors hover:bg-control-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface';
+
+function statusVariant(status?: string) {
+  if (status === 'active') return 'success' as const;
+  if (status === 'archived') return 'default' as const;
+  return 'warning' as const;
+}
 
 export function EntryDetail() {
   const { id } = useParams<{ id: string }>();
@@ -12,7 +43,6 @@ export function EntryDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>('content');
 
@@ -31,8 +61,10 @@ export function EntryDetail() {
     loadData();
   }, [id]);
 
+  // ConfirmDialog owns the "type the id to confirm" gate, so by the time it
+  // calls back the text has already matched.
   const handleDelete = async () => {
-    if (!id || deleteConfirmText !== id) return;
+    if (!id) return;
     setDeleting(true);
     try {
       await api.deleteEntry(id);
@@ -40,91 +72,57 @@ export function EntryDetail() {
     } catch (err) {
       setError((err as Error).message);
       setDeleting(false);
+      setShowDeleteModal(false);
     }
   };
 
   if (loading) {
-    return <div className="text-slate-400">Loading...</div>;
+    return <div className="text-content-muted">Loading...</div>;
   }
 
   if (error) {
     return (
-      <div className="bg-red-500/20 text-red-300 p-4 rounded-lg">
-        Error: {error}
-      </div>
+      <AlertBox variant="error">
+        <span className="block break-words">Error: {error}</span>
+      </AlertBox>
     );
   }
 
   if (!entry) {
-    return <div className="text-slate-400">Entry not found</div>;
+    return <div className="text-content-muted">Entry not found</div>;
   }
 
-  // Explicit field rendering - no generic loop
-
   return (
-    <div className="space-y-6">
-      {/* Delete Confirmation Modal */}
-      {showDeleteModal && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-          <div className="bg-slate-800 rounded-lg p-6 max-w-md w-full mx-4 space-y-4">
-            <h2 className="text-xl font-bold text-red-400">Delete Entry</h2>
-            <p className="text-slate-300">
-              This action cannot be undone. To confirm, type the entry ID:
-            </p>
-            <p className="font-mono text-sm bg-slate-900 p-2 rounded text-slate-100">
-              {id}
-            </p>
-            <input
-              type="text"
-              value={deleteConfirmText}
-              onChange={(e) => setDeleteConfirmText(e.target.value)}
-              placeholder="Type entry ID to confirm"
-              className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-slate-100 font-mono text-sm focus:border-red-500 focus:outline-none"
-              autoFocus
-            />
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={() => { setShowDeleteModal(false); setDeleteConfirmText(''); }}
-                className="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg text-sm"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleDelete}
-                disabled={deleteConfirmText !== id || deleting}
-                className="bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2 rounded-lg text-sm"
-              >
-                {deleting ? 'Deleting...' : 'Delete'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+    <div className="min-w-0 space-y-6">
+      <ConfirmDialog
+        open={showDeleteModal}
+        onClose={() => setShowDeleteModal(false)}
+        onConfirm={handleDelete}
+        title="Delete Entry"
+        message="This action cannot be undone. To confirm, type the entry ID:"
+        confirmLabel={deleting ? 'Deleting...' : 'Delete'}
+        variant="danger"
+        loading={deleting}
+        confirmText={id}
+      />
 
-      {/* Header */}
-      <div className="flex items-start justify-between">
-        <div>
-          <Link to="/entries" className="text-sky-400 hover:text-sky-300 text-base">
+      {/* Header - the meta strip and the action group each wrap on their own so
+          neither pushes the other out of the viewport. */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0 flex-1">
+          <Link
+            to="/entries"
+            className="rounded-sm text-base text-link transition-colors hover:text-link-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
             ← Back to entries
           </Link>
-          <h1 className="text-2xl font-bold text-slate-100 mt-2">
+          <h1 className="mt-2 break-words text-xl font-bold text-content-strong sm:text-2xl">
             {entry.topic || entry.id}
           </h1>
-          {/* Date Display removed from here */}
-          <div className="flex items-center gap-4 mt-2 text-lg text-slate-400">
-            <span className={`entry-type-badge ${entry.type === 'summary'
-              ? 'bg-blue-500/20 text-blue-300'
-              : 'bg-green-500/20 text-green-300'
-              }`}>
-              {entry.type}
-            </span>
-            <span>{entry.id}</span>
-            <span className={`px-2 py-0.5 rounded text-base ${entry.status === 'active' ? 'bg-green-500/20 text-green-300' :
-              entry.status === 'archived' ? 'bg-gray-500/20 text-gray-300' :
-                'bg-yellow-500/20 text-yellow-300'
-              }`}>
-              {entry.status}
-            </span>
+          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-content-muted">
+            <TypeBadge type={entry.type} />
+            <span className="break-all">{entry.id}</span>
+            <Badge variant={statusVariant(entry.status)}>{entry.status}</Badge>
             {/* Date Display */}
             {(entry as any).date_range ? (
               <span>
@@ -137,34 +135,28 @@ export function EntryDetail() {
             ) : null}
             {/* Time Display */}
             {(entry as any).time_hours ? (
-              <span className="text-slate-500 text-base">
+              <span className="text-content-subtle">
                 • {(entry as any).time_hours}h
               </span>
             ) : null}
             {/* Last Ingested Display */}
             {(entry as any).last_ingested ? (
-              <span className="text-slate-500 text-base" title="Last Ingested">
+              <span className="text-content-subtle" title="Last Ingested">
                 • Ingested: {(entry as any).last_ingested}
               </span>
             ) : null}
           </div>
         </div>
-        <div className="flex gap-2">
-          <Link
-            to={`/entries/${id}/edit`}
-            className="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg text-sm"
-          >
+        <div className="flex flex-wrap gap-2 sm:shrink-0">
+          <Link to={`/entries/${id}/edit`} className={headerAction}>
             Edit
           </Link>
-          <Link
-            to={`/graph/${id}`}
-            className="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg text-sm"
-          >
+          <Link to={`/graph/${id}`} className={headerAction}>
             View Graph
           </Link>
           <button
             onClick={() => setShowDeleteModal(true)}
-            className="bg-red-600/20 hover:bg-red-600/40 text-red-400 px-4 py-2 rounded-lg text-sm"
+            className="rounded-lg bg-red-100 px-4 py-2 text-sm text-red-800 transition-colors hover:bg-red-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 focus-visible:ring-offset-surface dark:bg-red-600/20 dark:text-red-300 dark:hover:bg-red-600/40"
           >
             Delete
           </button>
@@ -175,7 +167,7 @@ export function EntryDetail() {
       {entry.tags && entry.tags.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {entry.tags.map(tag => (
-            <span key={tag} className="text-sm px-2 py-1 bg-slate-700 rounded text-slate-300">
+            <span key={tag} className="rounded bg-control px-2 py-1 text-sm text-content">
               #{tag}
             </span>
           ))}
@@ -183,67 +175,54 @@ export function EntryDetail() {
       )}
 
       {/* Tabs */}
-      <div className="flex border-b border-slate-700">
-        <button
-          onClick={() => setActiveTab('content')}
-          className={`px-4 py-2 text-base font-medium transition-colors ${activeTab === 'content'
-            ? 'text-sky-400 border-b-2 border-sky-400'
-            : 'text-slate-400 hover:text-slate-200'
-            }`}
-        >
+      <TabBar>
+        <Tab active={activeTab === 'content'} onClick={() => setActiveTab('content')}>
           Content
-        </button>
-        <button
-          onClick={() => setActiveTab('history')}
-          className={`px-4 py-2 text-base font-medium transition-colors ${activeTab === 'history'
-            ? 'text-sky-400 border-b-2 border-sky-400'
-            : 'text-slate-400 hover:text-slate-200'
-            }`}
-        >
+        </Tab>
+        <Tab active={activeTab === 'history'} onClick={() => setActiveTab('history')}>
           History
-        </button>
-      </div>
+        </Tab>
+      </TabBar>
 
       {/* Tab Content */}
       {activeTab === 'content' ? (
         <>
-          {/* Content */}
           {/* Summary (for Summaries) */}
           {entry.summary && (
-            <div className="bg-slate-800 rounded-lg p-6 space-y-4">
-              <h2 className="text-xl font-semibold text-slate-200">Summary</h2>
-              <p className="text-lg text-slate-100 whitespace-pre-wrap">{entry.summary}</p>
+            <div className={`${card} space-y-4`}>
+              <h2 className="text-lg font-semibold text-content-strong sm:text-xl">Summary</h2>
+              <p className="whitespace-pre-wrap break-words text-content">{entry.summary}</p>
             </div>
           )}
 
           {/* Context (for Entries) */}
           {entry.context && (
-            <div className="bg-slate-800 rounded-lg p-6 space-y-4">
-              <h2 className="text-xl font-semibold text-slate-200">Context</h2>
-              <p className="text-lg text-slate-100 whitespace-pre-wrap">{entry.context}</p>
+            <div className={`${card} space-y-4`}>
+              <h2 className="text-lg font-semibold text-content-strong sm:text-xl">Context</h2>
+              <p className="whitespace-pre-wrap break-words text-content">{entry.context}</p>
             </div>
           )}
 
           {/* Approach */}
           {(entry as any).approach && (
-            <div className="bg-slate-800 rounded-lg p-6 space-y-4">
-              <h2 className="text-xl font-semibold text-slate-200">Approach</h2>
-              <p className="text-lg text-slate-100 whitespace-pre-wrap">{(entry as any).approach}</p>
+            <div className={`${card} space-y-4`}>
+              <h2 className="text-lg font-semibold text-content-strong sm:text-xl">Approach</h2>
+              <p className="whitespace-pre-wrap break-words text-content">{(entry as any).approach}</p>
             </div>
           )}
 
           {/* Outcome */}
           {(entry as any).outcome && (
-            <div className="bg-slate-800 rounded-lg p-6 space-y-6">
-              <h2 className="text-xl font-semibold text-slate-200">Outcome</h2>
+            <div className={`${card} space-y-6`}>
+              <h2 className="text-lg font-semibold text-content-strong sm:text-xl">Outcome</h2>
 
               {/* Worked */}
               {(entry as any).outcome.worked && (entry as any).outcome.worked.length > 0 && (
                 <div>
-                  <h3 className="text-lg font-medium text-green-400 mb-2">What Worked</h3>
-                  <ul className="list-disc list-inside space-y-1">
+                  <h3 className={`mb-2 font-medium ${headings.worked}`}>What Worked</h3>
+                  <ul className="list-inside list-disc space-y-1">
                     {(entry as any).outcome.worked.map((item: string, idx: number) => (
-                      <li key={idx} className="text-lg text-slate-100">{item}</li>
+                      <li key={idx} className="break-words text-content">{item}</li>
                     ))}
                   </ul>
                 </div>
@@ -252,10 +231,10 @@ export function EntryDetail() {
               {/* Failed */}
               {(entry as any).outcome.failed && (entry as any).outcome.failed.length > 0 && (
                 <div>
-                  <h3 className="text-lg font-medium text-red-400 mb-2">What Failed</h3>
-                  <ul className="list-disc list-inside space-y-1">
+                  <h3 className={`mb-2 font-medium ${headings.failed}`}>What Failed</h3>
+                  <ul className="list-inside list-disc space-y-1">
                     {(entry as any).outcome.failed.map((item: string, idx: number) => (
-                      <li key={idx} className="text-lg text-slate-100">{item}</li>
+                      <li key={idx} className="break-words text-content">{item}</li>
                     ))}
                   </ul>
                 </div>
@@ -264,10 +243,10 @@ export function EntryDetail() {
               {/* Surprised */}
               {(entry as any).outcome.surprised && (entry as any).outcome.surprised.length > 0 && (
                 <div>
-                  <h3 className="text-lg font-medium text-purple-400 mb-2">Surprises</h3>
-                  <ul className="list-disc list-inside space-y-1">
+                  <h3 className={`mb-2 font-medium ${headings.surprised}`}>Surprises</h3>
+                  <ul className="list-inside list-disc space-y-1">
                     {(entry as any).outcome.surprised.map((item: string, idx: number) => (
-                      <li key={idx} className="text-lg text-slate-100">{item}</li>
+                      <li key={idx} className="break-words text-content">{item}</li>
                     ))}
                   </ul>
                 </div>
@@ -277,20 +256,24 @@ export function EntryDetail() {
 
           {/* Learnings */}
           {(entry as any).learnings && (entry as any).learnings.length > 0 && (
-            <div className="bg-slate-800 rounded-lg p-6">
-              <h2 className="text-xl font-semibold text-indigo-200 mb-4">Learnings</h2>
+            <div className={card}>
+              <h2 className={`mb-4 text-lg font-semibold sm:text-xl ${headings.learnings}`}>Learnings</h2>
               <div className="space-y-4">
                 {(entry as any).learnings.map((learning: any, idx: number) => (
-                  <div key={idx} className="bg-slate-900/30 rounded-lg p-4 space-y-2 border border-slate-700/50">
-                    <p className="text-lg text-slate-100 font-medium">{learning.insight}</p>
+                  <div key={idx} className="min-w-0 space-y-2 rounded-lg border border-edge bg-surface-sunken p-4">
+                    <p className="break-words font-medium text-content">{learning.insight}</p>
                     {learning.context && (
-                      <p className="text-base text-slate-400 italic">Context: {learning.context}</p>
+                      <p className="break-words italic text-content-muted">Context: {learning.context}</p>
                     )}
                     {learning.relevance && learning.relevance.length > 0 && (
-                      <div className="flex gap-2 items-center flex-wrap">
-                        <span className="text-xs uppercase tracking-wide text-slate-500">Relevance:</span>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-xs uppercase tracking-wide text-content-subtle">Relevance:</span>
                         {learning.relevance.map((relId: string) => (
-                          <Link key={relId} to={`/entries/${relId}`} className="text-sm text-indigo-400 hover:text-indigo-300 hover:underline">
+                          <Link
+                            key={relId}
+                            to={`/entries/${relId}`}
+                            className="break-all rounded-sm text-sm text-indigo-700 transition-colors hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-accent dark:text-indigo-400 dark:hover:text-indigo-300"
+                          >
                             {relId}
                           </Link>
                         ))}
@@ -304,35 +287,41 @@ export function EntryDetail() {
 
           {/* Decisions */}
           {(entry as any).decisions && (entry as any).decisions.length > 0 && (
-            <div className="bg-slate-800 rounded-lg p-6">
-              <h2 className="text-xl font-semibold text-teal-200 mb-4">Decisions</h2>
+            <div className={card}>
+              <h2 className={`mb-4 text-lg font-semibold sm:text-xl ${headings.decisions}`}>Decisions</h2>
               <div className="space-y-6">
                 {(entry as any).decisions.map((decision: any, idx: number) => (
-                  <div key={idx} className="bg-slate-900/50 rounded-lg p-4 space-y-3 border border-slate-700">
-                    <div className="flex justify-between items-start gap-4">
-                      <h3 className="text-lg font-medium text-slate-100">{decision.decision}</h3>
+                  <div key={idx} className="min-w-0 space-y-3 rounded-lg border border-edge bg-surface-sunken p-4">
+                    <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+                      <h3 className="min-w-0 break-words font-medium text-content">{decision.decision}</h3>
                       {decision.date && (
-                        <span className="text-sm font-mono text-slate-500 whitespace-nowrap">{decision.date}</span>
+                        <span className="font-mono text-sm text-content-subtle sm:whitespace-nowrap">{decision.date}</span>
                       )}
                     </div>
 
                     {decision.superseded_by && (
-                      <div className="bg-red-500/10 text-red-300 text-sm px-3 py-1.5 rounded inline-block">
-                        Superseded by: <Link to={`/entries/${decision.superseded_by}`} className="underline hover:text-red-200">{decision.superseded_by}</Link>
+                      <div className="inline-block rounded bg-red-100 px-3 py-1.5 text-sm text-red-800 dark:bg-red-500/10 dark:text-red-300">
+                        Superseded by:{' '}
+                        <Link
+                          to={`/entries/${decision.superseded_by}`}
+                          className="break-all rounded-sm underline focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+                        >
+                          {decision.superseded_by}
+                        </Link>
                       </div>
                     )}
 
                     {decision.rationale && (
                       <div>
-                        <div className="text-xs uppercase tracking-wider text-slate-500 mb-1">Rationale</div>
-                        <p className="text-base text-slate-300">{decision.rationale}</p>
+                        <div className="mb-1 text-xs uppercase tracking-wider text-content-subtle">Rationale</div>
+                        <p className="break-words text-content-muted">{decision.rationale}</p>
                       </div>
                     )}
 
                     {decision.trade_offs && (
                       <div>
-                        <div className="text-xs uppercase tracking-wider text-slate-500 mb-1">Trade-offs</div>
-                        <p className="text-base text-slate-300">{decision.trade_offs}</p>
+                        <div className="mb-1 text-xs uppercase tracking-wider text-content-subtle">Trade-offs</div>
+                        <p className="break-words text-content-muted">{decision.trade_offs}</p>
                       </div>
                     )}
                   </div>
@@ -343,11 +332,11 @@ export function EntryDetail() {
 
           {/* Open Questions */}
           {(entry as any).open_questions && (entry as any).open_questions.length > 0 && (
-            <div className="bg-slate-800 rounded-lg p-6">
-              <h2 className="text-xl font-semibold text-amber-200 mb-4">Open Questions</h2>
-              <ul className="list-disc list-inside space-y-2">
+            <div className={card}>
+              <h2 className={`mb-4 text-lg font-semibold sm:text-xl ${headings.questions}`}>Open Questions</h2>
+              <ul className="list-inside list-disc space-y-2">
                 {(entry as any).open_questions.map((question: string, idx: number) => (
-                  <li key={idx} className="text-lg text-slate-200">{question}</li>
+                  <li key={idx} className="break-words text-content">{question}</li>
                 ))}
               </ul>
             </div>
@@ -355,21 +344,21 @@ export function EntryDetail() {
 
           {/* Resources */}
           {(entry as any).resources && (entry as any).resources.length > 0 && (
-            <div className="bg-slate-800 rounded-lg p-6">
-              <h2 className="text-xl font-semibold text-slate-200 mb-4">Resources</h2>
+            <div className={card}>
+              <h2 className="mb-4 text-lg font-semibold text-content-strong sm:text-xl">Resources</h2>
               <div className="space-y-3">
                 {(entry as any).resources.map((resource: any, idx: number) => (
-                  <div key={idx} className="flex flex-col gap-1">
+                  <div key={idx} className="flex min-w-0 flex-col gap-1">
                     <a
                       href={resource.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-sky-400 hover:text-sky-300 text-lg hover:underline"
+                      className="break-all rounded-sm text-link transition-colors hover:text-link-hover hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                     >
                       {resource.title || resource.url}
                     </a>
                     {resource.notes && (
-                      <span className="text-base text-slate-500">{resource.notes}</span>
+                      <span className="break-words text-content-subtle">{resource.notes}</span>
                     )}
                   </div>
                 ))}
@@ -379,24 +368,24 @@ export function EntryDetail() {
 
           {/* Artifacts */}
           {(entry as any).artifacts && (entry as any).artifacts.length > 0 && (
-            <div className="bg-slate-800 rounded-lg p-6">
-              <h2 className="text-xl font-semibold text-slate-200 mb-4">Artifacts</h2>
+            <div className={card}>
+              <h2 className="mb-4 text-lg font-semibold text-content-strong sm:text-xl">Artifacts</h2>
               <div className="space-y-4">
                 {(entry as any).artifacts.map((artifact: any, idx: number) => (
-                  <div key={idx} className="flex flex-col gap-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-lg text-slate-100 font-mono break-all">{artifact.path}</span>
+                  <div key={idx} className="flex min-w-0 flex-col gap-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="break-all font-mono text-content">{artifact.path}</span>
                       {artifact.repo && (
-                        <span className="text-sm text-slate-400 bg-slate-700 px-2 py-0.5 rounded">{artifact.repo}</span>
+                        <span className="rounded bg-control px-2 py-0.5 text-sm text-content-muted">{artifact.repo}</span>
                       )}
                     </div>
                     {artifact.commit && (
-                      <div className="text-sm font-mono text-slate-500">
+                      <div className="break-all font-mono text-sm text-content-subtle">
                         Commit: {artifact.commit}
                       </div>
                     )}
                     {artifact.notes && (
-                      <span className="text-base text-slate-400">{artifact.notes}</span>
+                      <span className="break-words text-content-muted">{artifact.notes}</span>
                     )}
                   </div>
                 ))}
@@ -406,11 +395,11 @@ export function EntryDetail() {
 
           {/* Commits */}
           {(entry as any).commits && (entry as any).commits.length > 0 && (
-            <div className="bg-slate-800 rounded-lg p-6">
-              <h2 className="text-xl font-semibold text-slate-200 mb-4">Commits</h2>
-              <ul className="list-disc list-inside space-y-1">
+            <div className={card}>
+              <h2 className="mb-4 text-lg font-semibold text-content-strong sm:text-xl">Commits</h2>
+              <ul className="list-inside list-disc space-y-1">
                 {(entry as any).commits.map((commit: string, idx: number) => (
-                  <li key={idx} className="text-lg font-mono text-slate-300">
+                  <li key={idx} className="break-all font-mono text-content-muted">
                     {commit}
                   </li>
                 ))}
@@ -418,26 +407,24 @@ export function EntryDetail() {
             </div>
           )}
 
-          {/* Open Questions moved from here */}
-
           {/* Links */}
           {entry.links && entry.links.length > 0 && (
-            <div className="bg-slate-800 rounded-lg p-6">
-              <h2 className="text-xl font-semibold text-slate-200 mb-4">Links</h2>
+            <div className={card}>
+              <h2 className="mb-4 text-lg font-semibold text-content-strong sm:text-xl">Links</h2>
               <div className="space-y-3">
                 {entry.links.map((link: EntryLink, idx: number) => (
-                  <div key={idx} className="flex items-center gap-3">
-                    <span className="text-sm px-2 py-1 bg-slate-700 rounded text-slate-400">
+                  <div key={idx} className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+                    <span className="rounded bg-control px-2 py-1 text-sm text-content">
                       {link.relationship.replace(/_/g, ' ')}
                     </span>
                     <Link
                       to={`/entries/${link.id}`}
-                      className="text-sky-400 hover:text-sky-300 text-lg" // Added text-lg
+                      className="break-all rounded-sm text-link transition-colors hover:text-link-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                     >
                       {link.id}
                     </Link>
                     {link.notes && (
-                      <span className="text-base text-slate-500">— {link.notes}</span>
+                      <span className="w-full break-words text-content-subtle sm:w-auto">— {link.notes}</span>
                     )}
                   </div>
                 ))}
